@@ -1,0 +1,19 @@
+packages:
+  "framer-motion": "For smooth page transitions, scroll animations, and chat widget interactions"
+  "react-hook-form": "For robust contact form handling and validation"
+  "@hookform/resolvers": "For zod schema validation integration in the contact form"
+  "zod": "For defining contact form validation schema"
+  "uuid": "For generating unique visitor IDs for the tracking endpoint"
+  "@types/uuid": "Types for UUID package"
+
+images:
+  - path: "artifacts/advantix-website/public/images/hero-bg.png"
+    description: "Deep charcoal and electric blue abstract gradient mesh, dark professional agency aesthetic, subtle light leaks, high resolution, 3D abstract"
+    aspect_ratio: "16:9"
+  - path: "artifacts/advantix-website/public/images/logo-mark.png"
+    description: "Minimal modern geometric letter A logo mark in electric blue on a dark transparent background, clean sharp edges, tech agency aesthetic"
+    aspect_ratio: "1:1"
+
+notes:
+  - API hooks are imported directly from @workspace/api-client-react
+  - Visitor tracking uses a generated UUID stored in localStorage
