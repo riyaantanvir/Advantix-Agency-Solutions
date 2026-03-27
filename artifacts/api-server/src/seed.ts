@@ -24,6 +24,28 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS tool_users (
+      id serial PRIMARY KEY,
+      name text NOT NULL,
+      email text NOT NULL UNIQUE,
+      password_hash text NOT NULL,
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS short_urls (
+      id serial PRIMARY KEY,
+      short_code text NOT NULL UNIQUE,
+      original_url text NOT NULL,
+      title text,
+      user_id integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      clicks integer NOT NULL DEFAULT 0,
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
   logger.info("Migrations applied");
 }
 

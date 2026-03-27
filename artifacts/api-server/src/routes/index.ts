@@ -8,6 +8,8 @@ import leadsRouter from "./leads.js";
 import statsRouter from "./stats.js";
 import chatRouter from "./chat.js";
 import servicesRouter from "./services.js";
+import toolsAuthRouter from "./toolsAuth.js";
+import shortUrlsRouter from "./shortUrls.js";
 
 const router: IRouter = Router();
 
@@ -20,5 +22,7 @@ router.use(teamRouter);
 router.use(leadsRouter);
 router.use(statsRouter);
 router.use(chatRouter);
+router.use(toolsAuthRouter);
+router.use(shortUrlsRouter);
 
 export default router;

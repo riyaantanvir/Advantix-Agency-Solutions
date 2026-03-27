@@ -1,15 +1,21 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Menu, X, LogIn } from "lucide-react";
+import { Menu, X, LogIn, Wrench, ChevronDown, Link2, Video } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const expo = [0.22, 1, 0.36, 1] as const;
 
+const tools = [
+  { href: "/tools/url-shortener", icon: Link2, label: "URL Shortener", desc: "Shorten & track links" },
+  { href: "#", icon: Video, label: "Screen Recorder", desc: "Coming soon", disabled: true },
+];
+
 export function Navbar() {
   const [location] = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
@@ -19,6 +25,7 @@ export function Navbar() {
 
   useEffect(() => {
     setMobileMenuOpen(false);
+    setToolsOpen(false);
   }, [location]);
 
   const navLinks = [
@@ -26,6 +33,8 @@ export function Navbar() {
     { href: "/portfolio", label: "Portfolio" },
     { href: "/team", label: "Team" },
   ];
+
+  const isToolsActive = location.startsWith("/tools");
 
   return (
     <motion.header
@@ -55,7 +64,7 @@ export function Navbar() {
           </Link>
 
           {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-8">
+          <nav className="hidden md:flex items-center gap-6">
             {navLinks.map((link) => {
               const isActive = location === link.href;
               return (
@@ -77,6 +86,67 @@ export function Navbar() {
                 </Link>
               );
             })}
+
+            {/* Tools dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setToolsOpen(!toolsOpen)}
+                onBlur={() => setTimeout(() => setToolsOpen(false), 150)}
+                className={`relative flex items-center gap-1 text-sm font-medium transition-colors duration-200 hover:text-primary ${isToolsActive ? "text-primary" : "text-muted-foreground"}`}
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                Tools
+                <motion.span animate={{ rotate: toolsOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </motion.span>
+                {isToolsActive && (
+                  <motion.span
+                    layoutId="nav-underline"
+                    className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary rounded-full"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {toolsOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                    transition={{ duration: 0.18, ease: expo }}
+                    className="absolute top-full mt-3 left-1/2 -translate-x-1/2 w-60 bg-card border border-border/60 rounded-2xl shadow-xl overflow-hidden"
+                  >
+                    <div className="p-1.5">
+                      {tools.map((tool) => {
+                        const Icon = tool.icon;
+                        const inner = (
+                          <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${tool.disabled ? "opacity-50 cursor-not-allowed" : "hover:bg-secondary/60 cursor-pointer"}`}>
+                            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                              <Icon className="w-4 h-4 text-primary" />
+                            </div>
+                            <div className="text-left">
+                              <p className="text-sm font-semibold text-foreground leading-none mb-0.5">{tool.label}</p>
+                              <p className="text-xs text-muted-foreground">{tool.desc}</p>
+                            </div>
+                          </div>
+                        );
+                        return tool.disabled ? (
+                          <div key={tool.label}>{inner}</div>
+                        ) : (
+                          <Link key={tool.label} href={tool.href}>{inner}</Link>
+                        );
+                      })}
+                    </div>
+                    <div className="border-t border-border/50 px-4 py-3">
+                      <Link href="/tools">
+                        <p className="text-xs text-center text-primary font-medium hover:underline">View all tools →</p>
+                      </Link>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             <a href="/admin/login">
               <Button variant="ghost" size="sm" className="font-semibold gap-1.5 text-muted-foreground hover:text-foreground">
@@ -147,10 +217,33 @@ export function Navbar() {
                   </Link>
                 </motion.div>
               ))}
+
+              {/* Tools section in mobile */}
               <motion.div
                 initial={{ opacity: 0, x: -16 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.18, duration: 0.3, ease: expo }}
+              >
+                <p className="px-3 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-widest mt-2">Tools</p>
+                {tools.map(tool => {
+                  const Icon = tool.icon;
+                  const inner = (
+                    <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${tool.disabled ? "opacity-50" : "hover:bg-secondary/60"}`}>
+                      <Icon className="w-4 h-4 text-primary" />
+                      <span className={`text-base font-medium ${isToolsActive && location.includes("url-shortener") && tool.href.includes("url-shortener") ? "text-primary" : "text-muted-foreground"}`}>
+                        {tool.label}
+                      </span>
+                      {tool.disabled && <span className="text-xs bg-secondary rounded-full px-2 py-0.5">Soon</span>}
+                    </div>
+                  );
+                  return tool.disabled ? <div key={tool.label}>{inner}</div> : <Link key={tool.label} href={tool.href}>{inner}</Link>;
+                })}
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, x: -16 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.24, duration: 0.3, ease: expo }}
                 className="pt-2 flex flex-col gap-2"
               >
                 <a href="/admin/login" className="block">
