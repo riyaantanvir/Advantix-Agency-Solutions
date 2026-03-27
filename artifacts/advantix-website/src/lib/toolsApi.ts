@@ -44,14 +44,22 @@ export const toolsApi = {
   },
   urls: {
     list: () => request<ShortUrl[]>("/tools/urls"),
-    create: (originalUrl: string, title?: string) =>
+    create: (originalUrl: string, title?: string, customSlug?: string) =>
       request<ShortUrl>("/tools/urls", {
         method: "POST",
-        body: JSON.stringify({ originalUrl, title }),
+        body: JSON.stringify({ originalUrl, title, customSlug }),
       }),
     delete: (id: number) =>
       request<{ ok: boolean }>(`/tools/urls/${id}`, { method: "DELETE" }),
     resolve: (code: string) =>
       request<{ url: string; title: string | null }>(`/tools/urls/resolve/${code}`),
+    analytics: (id: number) =>
+      request<{
+        totalClicks: number;
+        byDay: Array<{ day: string; clicks: string }>;
+        byCountry: Array<{ country: string; country_code: string; clicks: string }>;
+        byReferrer: Array<{ referrer: string; clicks: string }>;
+        byDevice: Array<{ device: string; clicks: string }>;
+      }>(`/tools/urls/${id}/analytics`),
   },
 };

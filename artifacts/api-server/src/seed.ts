@@ -62,6 +62,19 @@ export async function runMigrations(): Promise<void> {
     ON conversations (session_token) WHERE session_token IS NOT NULL
   `);
 
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS url_clicks (
+      id serial PRIMARY KEY,
+      url_id integer NOT NULL REFERENCES short_urls(id) ON DELETE CASCADE,
+      country_code text,
+      country text,
+      city text,
+      referrer text,
+      device text,
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
   logger.info("Migrations applied");
 }
 
