@@ -7,6 +7,8 @@ import teamRouter from "./team.js";
 import leadsRouter from "./leads.js";
 import statsRouter from "./stats.js";
 import chatRouter from "./chat.js";
+import chatSessionRouter from "./chatSession.js";
+import adminChatRouter from "./adminChat.js";
 import servicesRouter from "./services.js";
 import toolsAuthRouter from "./toolsAuth.js";
 import shortUrlsRouter from "./shortUrls.js";
@@ -22,6 +24,8 @@ router.use(teamRouter);
 router.use(leadsRouter);
 router.use(statsRouter);
 router.use(chatRouter);
+router.use(chatSessionRouter);
+router.use(adminChatRouter);
 router.use(toolsAuthRouter);
 router.use(shortUrlsRouter);
 

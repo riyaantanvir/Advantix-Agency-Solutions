@@ -46,6 +46,22 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  await db.execute(sql`
+    ALTER TABLE conversations
+      ADD COLUMN IF NOT EXISTS visitor_name text,
+      ADD COLUMN IF NOT EXISTS visitor_email text,
+      ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'ai',
+      ADD COLUMN IF NOT EXISTS session_token text,
+      ADD COLUMN IF NOT EXISTS has_unread_admin boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS has_unread_visitor boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()
+  `);
+
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_session_token
+    ON conversations (session_token) WHERE session_token IS NOT NULL
+  `);
+
   logger.info("Migrations applied");
 }
 

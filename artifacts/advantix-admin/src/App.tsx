@@ -11,6 +11,7 @@ import Leads from "./pages/Leads";
 import Portfolio from "./pages/Portfolio";
 import Services from "./pages/Services";
 import Team from "./pages/Team";
+import AssistantRequests from "./pages/AssistantRequests";
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminLayout } from "./components/layout/AdminLayout";
@@ -63,6 +64,10 @@ function Router() {
       
       <Route path="/team">
         <ProtectedLayout><Team /></ProtectedLayout>
+      </Route>
+
+      <Route path="/assistant-requests">
+        <ProtectedLayout><AssistantRequests /></ProtectedLayout>
       </Route>
 
       <Route>
