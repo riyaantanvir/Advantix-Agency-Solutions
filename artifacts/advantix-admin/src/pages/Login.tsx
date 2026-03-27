@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useLocation } from "wouter";
 import { useLogin } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -10,6 +9,13 @@ import { Loader2, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+
+const publicNavLinks = [
+  { href: "/", label: "Home" },
+  { href: "/portfolio", label: "Portfolio" },
+  { href: "/team", label: "Team" },
+  { href: "/contact", label: "Contact" },
+];
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -52,6 +58,31 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-background">
+      {/* Top Navbar */}
+      <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4 bg-background/60 backdrop-blur-md border-b border-border/40">
+        <a href="/" className="flex items-center gap-2 group">
+          <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center font-display font-bold text-white text-sm shadow shadow-primary/30">
+            A
+          </div>
+          <span className="font-display font-bold text-lg tracking-tight text-foreground">Advantix</span>
+        </a>
+        <nav className="flex items-center gap-6">
+          {publicNavLinks.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors hidden sm:block"
+            >
+              {link.label}
+            </a>
+          ))}
+          <a href="/contact">
+            <Button size="sm" className="font-semibold bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg">
+              Get Started
+            </Button>
+          </a>
+        </nav>
+      </header>
       {/* Background Image/Gradients */}
       <div className="absolute inset-0 z-0">
         <img 
