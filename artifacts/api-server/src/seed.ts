@@ -1,7 +1,31 @@
 import bcrypt from "bcryptjs";
 import { db, adminsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { logger } from "./lib/logger.js";
+
+export async function ensureSessionTable(): Promise<void> {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "session" (
+      "sid" varchar NOT NULL COLLATE "default",
+      "sess" json NOT NULL,
+      "expire" timestamp(6) NOT NULL
+    );
+  `);
+  await db.execute(sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'session_pkey'
+      ) THEN
+        ALTER TABLE "session" ADD CONSTRAINT "session_pkey"
+          PRIMARY KEY ("sid") NOT DEFERRABLE INITIALLY IMMEDIATE;
+      END IF;
+    END $$;
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
+  `);
+}
 
 export async function seedAdmin(): Promise<void> {
   const username = "admin";

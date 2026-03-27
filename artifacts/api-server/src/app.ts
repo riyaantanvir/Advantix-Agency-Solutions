@@ -1,12 +1,17 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
 import router from "./routes/index.js";
 import { logger } from "./lib/logger.js";
 
 if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET must be set.");
+}
+
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL must be set.");
 }
 
 const ALLOWED_ORIGINS = (process.env.REPLIT_DOMAINS ?? "")
@@ -18,6 +23,8 @@ const ALLOWED_ORIGINS = (process.env.REPLIT_DOMAINS ?? "")
 if (process.env.NODE_ENV !== "production") {
   ALLOWED_ORIGINS.push("http://localhost:3000", "http://localhost:5173", "http://localhost:8080", "http://localhost:8081");
 }
+
+const PgSession = connectPgSimple(session);
 
 const app: Express = express();
 
@@ -60,6 +67,9 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(
   session({
+    store: new PgSession({
+      conString: process.env.DATABASE_URL,
+    }),
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,

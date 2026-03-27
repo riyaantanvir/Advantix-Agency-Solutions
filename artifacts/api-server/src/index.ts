@@ -1,6 +1,6 @@
 import app from "./app.js";
 import { logger } from "./lib/logger.js";
-import { seedAdmin } from "./seed.js";
+import { seedAdmin, ensureSessionTable } from "./seed.js";
 
 const rawPort = process.env["PORT"];
 
@@ -17,6 +17,7 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 async function start(): Promise<void> {
+  await ensureSessionTable();
   await seedAdmin();
 
   app.listen(port, (err) => {
