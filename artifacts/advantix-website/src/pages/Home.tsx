@@ -207,12 +207,12 @@ export default function Home() {
             initial={{ opacity: 0, scale: 0.8, y: -10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ duration: 0.6, ease: expo, delay: 0.1 }}
-            className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 text-primary rounded-full px-4 py-1.5 text-xs font-mono font-semibold tracking-widest uppercase mb-8"
+            className="inline-flex items-center gap-3 bg-primary/10 border border-primary/25 text-primary rounded-full px-6 py-2.5 text-sm md:text-base font-mono font-bold tracking-[0.18em] uppercase mb-8"
           >
             <motion.span
-              animate={{ scale: [1, 1.4, 1] }}
+              animate={{ scale: [1, 1.5, 1] }}
               transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-              className="w-1.5 h-1.5 rounded-full bg-primary inline-block"
+              className="w-2 h-2 rounded-full bg-primary inline-block shrink-0"
             />
             advantix.agency
           </motion.div>
