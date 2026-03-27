@@ -132,6 +132,7 @@ export default function Contacts() {
                 <th className={thClass} onClick={() => toggleSort("replied")}>
                   <span className="flex items-center">Status <SortIcon column="replied" sortKey={sortKey} sortDir={sortDir} /></span>
                 </th>
+                <th className="px-6 py-4 font-semibold text-muted-foreground hidden lg:table-cell">Message</th>
                 <th className="px-6 py-4 font-semibold text-muted-foreground text-right">Actions</th>
               </tr>
             </thead>
@@ -144,6 +145,7 @@ export default function Contacts() {
                     <td className="px-6 py-4"><Skeleton className="h-4 w-40" /></td>
                     <td className="px-6 py-4"><Skeleton className="h-4 w-24" /></td>
                     <td className="px-6 py-4"><Skeleton className="h-6 w-20 rounded-full" /></td>
+                    <td className="px-6 py-4 hidden lg:table-cell"><Skeleton className="h-4 w-48" /></td>
                     <td className="px-6 py-4 text-right"><Skeleton className="h-8 w-8 inline-block rounded-lg" /></td>
                   </tr>
                 ))
@@ -167,6 +169,9 @@ export default function Contacts() {
                         <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">Pending</Badge>
                       )}
                     </td>
+                    <td className="px-6 py-4 hidden lg:table-cell max-w-[200px]">
+                      <p className="text-sm text-muted-foreground truncate">{contact.message}</p>
+                    </td>
                     <td className="px-6 py-4 text-right space-x-2">
                       <Button variant="ghost" size="sm" onClick={() => setSelectedContact(contact)} className="h-8 hover:bg-primary/20 hover:text-primary">
                         View
@@ -184,7 +189,7 @@ export default function Contacts() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-6 py-16 text-center">
+                  <td colSpan={7} className="px-6 py-16 text-center">
                     <Mail className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground text-lg">No contacts found.</p>
                   </td>

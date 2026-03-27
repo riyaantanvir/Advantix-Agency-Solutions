@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useLogout } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -28,13 +29,16 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const logoutMutation = useLogout();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
       onSuccess: () => {
         queryClient.clear();
+        toast({ title: "Logged out", description: "You have been signed out." });
         setLocation("/login");
-      }
+      },
+      onError: () => toast({ variant: "destructive", title: "Error", description: "Could not log out. Please try again." }),
     });
   };
 
