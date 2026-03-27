@@ -24,10 +24,6 @@ interface AdminUser {
   createdAt: string;
 }
 
-interface CurrentAdmin {
-  username: string;
-}
-
 async function apiFetch(url: string, options?: RequestInit) {
   const res = await fetch(url, { credentials: "include", ...options });
   const data = await res.json();
@@ -84,7 +80,12 @@ function ConfirmDialog({
   );
 }
 
-function UsersTab({ meUsername }: { meUsername: string | undefined }) {
+interface UsersTabProps {
+  users: ToolUser[];
+  isLoading: boolean;
+}
+
+function UsersTab({ users, isLoading }: UsersTabProps) {
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ToolUser | null>(null);
@@ -93,11 +94,6 @@ function UsersTab({ meUsername }: { meUsername: string | undefined }) {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
-  const { data: users = [], isLoading } = useQuery<ToolUser[]>({
-    queryKey: ["/api/admin/users"],
-    queryFn: () => apiFetch(`${BASE}/admin/users`),
-  });
 
   const createMutation = useMutation({
     mutationFn: (body: typeof form) =>
@@ -222,6 +218,7 @@ function UsersTab({ meUsername }: { meUsername: string | undefined }) {
             <DialogTitle className="font-display text-xl flex items-center gap-2">
               <UserCheck className="w-5 h-5 text-primary" /> Create New User
             </DialogTitle>
+            <DialogDescription className="sr-only">Fill in the details to create a new portal user account.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-4 mt-2">
             <div className="space-y-2">
@@ -268,7 +265,13 @@ function UsersTab({ meUsername }: { meUsername: string | undefined }) {
   );
 }
 
-function AdminsTab({ meUsername }: { meUsername: string | undefined }) {
+interface AdminsTabProps {
+  admins: AdminUser[];
+  isLoading: boolean;
+  meUsername: string | undefined;
+}
+
+function AdminsTab({ admins, isLoading, meUsername }: AdminsTabProps) {
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
@@ -277,11 +280,6 @@ function AdminsTab({ meUsername }: { meUsername: string | undefined }) {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
-  const { data: admins = [], isLoading } = useQuery<AdminUser[]>({
-    queryKey: ["/api/admin/admins"],
-    queryFn: () => apiFetch(`${BASE}/admin/admins`),
-  });
 
   const createMutation = useMutation({
     mutationFn: ({ username, password }: { username: string; password: string }) =>
@@ -415,6 +413,7 @@ function AdminsTab({ meUsername }: { meUsername: string | undefined }) {
             <DialogTitle className="font-display text-xl flex items-center gap-2">
               <UserCog className="w-5 h-5 text-primary" /> Create New Admin
             </DialogTitle>
+            <DialogDescription className="sr-only">Fill in the details to create a new administrator account.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate} className="space-y-4 mt-2">
             <div className="space-y-2">
@@ -464,17 +463,17 @@ function AdminsTab({ meUsername }: { meUsername: string | undefined }) {
 export default function UserManagement() {
   const [tab, setTab] = useState<"users" | "admins">("users");
 
-  const { data: me } = useQuery<CurrentAdmin>({
+  const { data: me } = useQuery<{ authenticated: boolean; username: string }>({
     queryKey: ["/api/auth/me"],
     queryFn: () => apiFetch(`${BASE}/auth/me`),
   });
 
-  const { data: users = [] } = useQuery<ToolUser[]>({
+  const { data: users = [], isLoading: usersLoading } = useQuery<ToolUser[]>({
     queryKey: ["/api/admin/users"],
     queryFn: () => apiFetch(`${BASE}/admin/users`),
   });
 
-  const { data: admins = [] } = useQuery<AdminUser[]>({
+  const { data: admins = [], isLoading: adminsLoading } = useQuery<AdminUser[]>({
     queryKey: ["/api/admin/admins"],
     queryFn: () => apiFetch(`${BASE}/admin/admins`),
   });
@@ -514,11 +513,11 @@ export default function UserManagement() {
         ))}
       </div>
 
-      {/* Tab Content */}
+      {/* Tab Content — data passed from parent to avoid duplicate fetches */}
       {tab === "users" ? (
-        <UsersTab meUsername={me?.username} />
+        <UsersTab users={users} isLoading={usersLoading} />
       ) : (
-        <AdminsTab meUsername={me?.username} />
+        <AdminsTab admins={admins} isLoading={adminsLoading} meUsername={me?.username} />
       )}
     </div>
   );
