@@ -12,6 +12,7 @@ import Portfolio from "./pages/Portfolio";
 import Services from "./pages/Services";
 import Team from "./pages/Team";
 import AssistantRequests from "./pages/AssistantRequests";
+import UserManagement from "./pages/UserManagement";
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminLayout } from "./components/layout/AdminLayout";
@@ -68,6 +69,10 @@ function Router() {
 
       <Route path="/assistant-requests">
         <ProtectedLayout><AssistantRequests /></ProtectedLayout>
+      </Route>
+
+      <Route path="/user-management">
+        <ProtectedLayout><UserManagement /></ProtectedLayout>
       </Route>
 
       <Route>

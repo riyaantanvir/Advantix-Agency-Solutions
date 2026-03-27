@@ -15,6 +15,7 @@ import {
   X,
   Package,
   HeadphonesIcon,
+  UserCog,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -26,6 +27,7 @@ const navLinks = [
   { path: "/portfolio", label: "Portfolio", icon: Briefcase },
   { path: "/services", label: "Services", icon: Package },
   { path: "/team", label: "Team", icon: Users },
+  { path: "/user-management", label: "User Management", icon: UserCog },
 ];
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {

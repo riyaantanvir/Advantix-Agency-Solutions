@@ -12,11 +12,13 @@ import adminChatRouter from "./adminChat.js";
 import servicesRouter from "./services.js";
 import toolsAuthRouter from "./toolsAuth.js";
 import shortUrlsRouter from "./shortUrls.js";
+import adminUsersRouter from "./adminUsers.js";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(authRouter);
+router.use(adminUsersRouter);
 router.use(contactsRouter);
 router.use(portfolioRouter);
 router.use(servicesRouter);
