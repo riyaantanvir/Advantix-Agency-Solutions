@@ -13,6 +13,7 @@ import Contact from "@/pages/Contact";
 import Tools from "@/pages/Tools";
 import UrlShortener from "@/pages/UrlShortener";
 import ToolsDashboard from "@/pages/ToolsDashboard";
+import ScreenRecorder from "@/pages/ScreenRecorder";
 import Login from "@/pages/Login";
 import Redirect from "@/pages/Redirect";
 
@@ -43,6 +44,7 @@ function Router() {
             <Route path="/tools" component={Tools} />
             <Route path="/tools/dashboard" component={ToolsDashboard} />
             <Route path="/tools/url-shortener" component={UrlShortener} />
+            <Route path="/tools/screen-recorder" component={ScreenRecorder} />
             <Route component={NotFound} />
           </Switch>
         </AppLayout>

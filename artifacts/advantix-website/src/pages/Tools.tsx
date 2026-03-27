@@ -19,12 +19,12 @@ const tools = [
   {
     icon: Video,
     name: "Screen Recorder",
-    description: "Record your screen and share it instantly. No software downloads needed — runs right in your browser.",
-    href: "#",
-    available: false,
+    description: "Record your screen up to 10 minutes. No software needed — runs in your browser and saves in the best format for your device.",
+    href: "/tools/screen-recorder",
+    available: true,
     color: "text-purple-400",
     bg: "bg-purple-500/10",
-    badge: "Coming Soon",
+    badge: null,
   },
 ];
 

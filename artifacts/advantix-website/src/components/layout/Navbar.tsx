@@ -9,7 +9,7 @@ const expo = [0.22, 1, 0.36, 1] as const;
 
 const tools = [
   { href: "/tools/url-shortener", icon: Link2, label: "URL Shortener", desc: "Shorten & track links" },
-  { href: "#", icon: Video, label: "Screen Recorder", desc: "Coming soon", disabled: true },
+  { href: "/tools/screen-recorder", icon: Video, label: "Screen Recorder", desc: "Record up to 10 min" },
 ];
 
 export function Navbar() {
@@ -244,16 +244,17 @@ export function Navbar() {
                 <p className="px-3 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-widest mt-2">Tools</p>
                 {tools.map(tool => {
                   const Icon = tool.icon;
-                  const inner = (
-                    <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${tool.disabled ? "opacity-50" : "hover:bg-secondary/60"}`}>
-                      <Icon className="w-4 h-4 text-primary" />
-                      <span className={`text-base font-medium ${isToolsActive && location.includes("url-shortener") && tool.href.includes("url-shortener") ? "text-primary" : "text-muted-foreground"}`}>
-                        {tool.label}
-                      </span>
-                      {tool.disabled && <span className="text-xs bg-secondary rounded-full px-2 py-0.5">Soon</span>}
-                    </div>
+                  const isActive = isToolsActive && location.includes(tool.href.split("/tools/")[1] ?? "");
+                  return (
+                    <Link key={tool.label} href={tool.href}>
+                      <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-secondary/60">
+                        <Icon className="w-4 h-4 text-primary" />
+                        <span className={`text-base font-medium ${isActive ? "text-primary" : "text-muted-foreground"}`}>
+                          {tool.label}
+                        </span>
+                      </div>
+                    </Link>
                   );
-                  return tool.disabled ? <div key={tool.label}>{inner}</div> : <Link key={tool.label} href={tool.href}>{inner}</Link>;
                 })}
               </motion.div>
 

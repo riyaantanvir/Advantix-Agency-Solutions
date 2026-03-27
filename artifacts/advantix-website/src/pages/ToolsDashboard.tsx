@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link, useLocation } from "wouter";
-import { Link2, BarChart2, ExternalLink, Copy, CheckCircle, MessageSquare, ArrowRight, LogOut, Settings, Plus, Zap } from "lucide-react";
+import { Link2, BarChart2, ExternalLink, Copy, CheckCircle, MessageSquare, ArrowRight, LogOut, Settings, Plus, Zap, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toolsApi, type ShortUrl } from "@/lib/toolsApi";
@@ -79,7 +79,7 @@ export default function ToolsDashboard() {
           {[
             { label: "Total Links", value: urls.length, icon: Link2, color: "text-primary", bg: "bg-primary/10" },
             { label: "Total Clicks", value: totalClicks, icon: BarChart2, color: "text-green-400", bg: "bg-green-500/10" },
-            { label: "Tools Available", value: 1, icon: Zap, color: "text-orange-400", bg: "bg-orange-500/10" },
+            { label: "Tools Available", value: 2, icon: Zap, color: "text-orange-400", bg: "bg-orange-500/10" },
           ].map(({ label, value, icon: Icon, color, bg }) => (
             <Card key={label} className="p-5 border-border/50 bg-card">
               <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center mb-3`}>
@@ -169,6 +169,21 @@ export default function ToolsDashboard() {
                     <p className="text-xs text-muted-foreground">Create & manage links</p>
                   </div>
                   <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                </div>
+              </Card>
+            </Link>
+
+            <Link href="/tools/screen-recorder">
+              <Card className="p-4 border-border/40 bg-card hover:border-purple-500/30 hover:bg-purple-500/5 transition-all cursor-pointer group">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-purple-500/10 flex items-center justify-center shrink-0">
+                    <Video className="w-5 h-5 text-purple-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold">Screen Recorder</p>
+                    <p className="text-xs text-muted-foreground">Record up to 10 minutes</p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-purple-400 transition-colors" />
                 </div>
               </Card>
             </Link>
