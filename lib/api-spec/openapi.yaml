@@ -3,13 +3,27 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Advantix Agency API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: contacts
+    description: Contact form submissions
+  - name: portfolio
+    description: Portfolio items
+  - name: team
+    description: Team members
+  - name: leads
+    description: Lead tracking
+  - name: stats
+    description: Visitor stats and analytics
+  - name: chat
+    description: AI chat assistant
 paths:
   /healthz:
     get:
@@ -24,6 +38,369 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Admin login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginBody"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Admin logout
+      responses:
+        "200":
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current admin session
+      responses:
+        "200":
+          description: Current session info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /contacts:
+    post:
+      operationId: createContact
+      tags: [contacts]
+      summary: Submit contact form (public)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateContactBody"
+      responses:
+        "201":
+          description: Contact created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+    get:
+      operationId: listContacts
+      tags: [contacts]
+      summary: List all contacts (admin only)
+      responses:
+        "200":
+          description: List of contacts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Contact"
+
+  /contacts/{id}:
+    patch:
+      operationId: updateContact
+      tags: [contacts]
+      summary: Update contact replied status (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateContactBody"
+      responses:
+        "200":
+          description: Contact updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+    delete:
+      operationId: deleteContact
+      tags: [contacts]
+      summary: Delete contact (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /portfolio:
+    get:
+      operationId: listPortfolio
+      tags: [portfolio]
+      summary: List portfolio items (public)
+      responses:
+        "200":
+          description: List of portfolio items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PortfolioItem"
+    post:
+      operationId: createPortfolioItem
+      tags: [portfolio]
+      summary: Create portfolio item (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePortfolioItemBody"
+      responses:
+        "201":
+          description: Portfolio item created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioItem"
+
+  /portfolio/{id}:
+    put:
+      operationId: updatePortfolioItem
+      tags: [portfolio]
+      summary: Update portfolio item (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePortfolioItemBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioItem"
+    delete:
+      operationId: deletePortfolioItem
+      tags: [portfolio]
+      summary: Delete portfolio item (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /team:
+    get:
+      operationId: listTeamMembers
+      tags: [team]
+      summary: List team members (public)
+      responses:
+        "200":
+          description: List of team members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamMember"
+    post:
+      operationId: createTeamMember
+      tags: [team]
+      summary: Create team member (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTeamMemberBody"
+      responses:
+        "201":
+          description: Team member created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMember"
+
+  /team/{id}:
+    put:
+      operationId: updateTeamMember
+      tags: [team]
+      summary: Update team member (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTeamMemberBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamMember"
+    delete:
+      operationId: deleteTeamMember
+      tags: [team]
+      summary: Delete team member (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /leads:
+    post:
+      operationId: createLead
+      tags: [leads]
+      summary: Create a lead (public)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLeadBody"
+      responses:
+        "201":
+          description: Lead created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lead"
+    get:
+      operationId: listLeads
+      tags: [leads]
+      summary: List all leads (admin only)
+      responses:
+        "200":
+          description: List of leads
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Lead"
+
+  /track:
+    post:
+      operationId: trackPageView
+      tags: [stats]
+      summary: Track a page view (public)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TrackPageViewBody"
+      responses:
+        "200":
+          description: Tracked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /stats:
+    get:
+      operationId: getStats
+      tags: [stats]
+      summary: Get visitor stats (admin only)
+      responses:
+        "200":
+          description: Stats data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsResponse"
+
+  /chat:
+    post:
+      operationId: chat
+      tags: [chat]
+      summary: AI chat with Advantix assistant (public)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatBody"
+      responses:
+        "200":
+          description: Chat response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +411,321 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
+
+    LoginBody:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required:
+        - username
+        - password
+
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        username:
+          type: string
+      required:
+        - success
+        - username
+
+    MeResponse:
+      type: object
+      properties:
+        authenticated:
+          type: boolean
+        username:
+          type: string
+      required:
+        - authenticated
+
+    Contact:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        service:
+          type: string
+          nullable: true
+        message:
+          type: string
+        replied:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - email
+        - message
+        - replied
+        - createdAt
+
+    CreateContactBody:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        service:
+          type: string
+        message:
+          type: string
+      required:
+        - name
+        - email
+        - message
+
+    UpdateContactBody:
+      type: object
+      properties:
+        replied:
+          type: boolean
+
+    PortfolioItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        category:
+          type: string
+        description:
+          type: string
+          nullable: true
+        imageUrl:
+          type: string
+          nullable: true
+        videoUrl:
+          type: string
+          nullable: true
+        clientName:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - category
+        - createdAt
+
+    CreatePortfolioItemBody:
+      type: object
+      properties:
+        title:
+          type: string
+        category:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: string
+        videoUrl:
+          type: string
+        clientName:
+          type: string
+      required:
+        - title
+        - category
+
+    TeamMember:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        role:
+          type: string
+        bio:
+          type: string
+          nullable: true
+        photoUrl:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        linkedinUrl:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - role
+        - createdAt
+
+    CreateTeamMemberBody:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+        bio:
+          type: string
+        photoUrl:
+          type: string
+        email:
+          type: string
+        linkedinUrl:
+          type: string
+      required:
+        - name
+        - role
+
+    Lead:
+      type: object
+      properties:
+        id:
+          type: integer
+        service:
+          type: string
+        sourcePage:
+          type: string
+          nullable: true
+        visitorId:
+          type: string
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          nullable: true
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - service
+        - status
+        - createdAt
+
+    CreateLeadBody:
+      type: object
+      properties:
+        service:
+          type: string
+        sourcePage:
+          type: string
+        visitorId:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+      required:
+        - service
+
+    TrackPageViewBody:
+      type: object
+      properties:
+        visitorId:
+          type: string
+        page:
+          type: string
+        userAgent:
+          type: string
+        referrer:
+          type: string
+      required:
+        - visitorId
+        - page
+
+    StatsResponse:
+      type: object
+      properties:
+        activeVisitors:
+          type: integer
+        todayViews:
+          type: integer
+        totalContacts:
+          type: integer
+        totalLeads:
+          type: integer
+        topPages:
+          type: array
+          items:
+            type: object
+            properties:
+              page:
+                type: string
+              count:
+                type: integer
+            required:
+              - page
+              - count
+      required:
+        - activeVisitors
+        - todayViews
+        - totalContacts
+        - totalLeads
+        - topPages
+
+    ChatBody:
+      type: object
+      properties:
+        message:
+          type: string
+        conversationHistory:
+          type: array
+          items:
+            type: object
+            properties:
+              role:
+                type: string
+              content:
+                type: string
+            required:
+              - role
+              - content
+      required:
+        - message
+
+    ChatResponse:
+      type: object
+      properties:
+        reply:
+          type: string
+      required:
+        - reply
