@@ -3,6 +3,16 @@ import { db, adminsTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { logger } from "./lib/logger.js";
 
+export async function runMigrations(): Promise<void> {
+  await db.execute(sql`
+    ALTER TABLE contacts
+      ADD COLUMN IF NOT EXISTS whatsapp text,
+      ADD COLUMN IF NOT EXISTS budget text,
+      ADD COLUMN IF NOT EXISTS details text
+  `);
+  logger.info("Migrations applied");
+}
+
 export async function ensureSessionTable(): Promise<void> {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "session" (

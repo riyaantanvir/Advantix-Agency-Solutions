@@ -223,6 +223,18 @@ export default function Contacts() {
                 <p className="text-xs text-muted-foreground mb-1">Phone</p>
                 <p className="text-sm font-medium text-foreground">{selectedContact?.phone ?? "Not provided"}</p>
               </div>
+              {selectedContact?.whatsapp && (
+                <div className="p-3 bg-secondary/50 rounded-xl">
+                  <p className="text-xs text-muted-foreground mb-1">WhatsApp</p>
+                  <p className="text-sm font-medium text-foreground">{selectedContact.whatsapp}</p>
+                </div>
+              )}
+              {selectedContact?.budget && (
+                <div className="p-3 bg-secondary/50 rounded-xl">
+                  <p className="text-xs text-muted-foreground mb-1">Budget</p>
+                  <p className="text-sm font-medium text-foreground">{selectedContact.budget}</p>
+                </div>
+              )}
             </div>
 
             <div className="p-3 bg-secondary/50 rounded-xl">
@@ -230,7 +242,36 @@ export default function Contacts() {
               <p className="text-sm font-medium text-foreground">{selectedContact?.service ?? "General Inquiry"}</p>
             </div>
 
-            <div className="p-4 bg-secondary/30 rounded-xl border border-border/50 min-h-[150px]">
+            {selectedContact?.details && (() => {
+              try {
+                const parsed = JSON.parse(selectedContact.details) as Record<string, string>;
+                const entries = Object.entries(parsed).filter(([, v]) => v);
+                if (entries.length === 0) return null;
+                return (
+                  <div className="p-3 bg-secondary/50 rounded-xl">
+                    <p className="text-xs text-muted-foreground mb-2">Service-Specific Details</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                      {entries.map(([k, v]) => (
+                        <div key={k}>
+                          <p className="text-xs text-muted-foreground capitalize">{k.replace(/([A-Z])/g, " $1")}</p>
+                          <p className="text-sm font-medium text-foreground">{v}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              } catch {
+                return (
+                  <div className="p-3 bg-secondary/50 rounded-xl">
+                    <p className="text-xs text-muted-foreground mb-1">Service Details</p>
+                    <p className="text-sm font-medium text-foreground">{selectedContact.details}</p>
+                  </div>
+                );
+              }
+            })()}
+
+            <div className="p-4 bg-secondary/30 rounded-xl border border-border/50 min-h-[120px]">
+              <p className="text-xs text-muted-foreground mb-2">Message / Additional Notes</p>
               <p className="text-sm whitespace-pre-wrap leading-relaxed text-foreground">
                 {selectedContact?.message}
               </p>

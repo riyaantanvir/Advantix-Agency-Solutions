@@ -10,6 +10,9 @@ export interface CreateContactBody {
   name: string;
   email: string;
   phone?: string;
+  whatsapp?: string;
   service?: string;
+  budget?: string;
+  details?: string;
   message: string;
 }

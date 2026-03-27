@@ -11,7 +11,10 @@ export interface Contact {
   name: string;
   email: string;
   phone?: string | null;
+  whatsapp?: string | null;
   service?: string | null;
+  budget?: string | null;
+  details?: string | null;
   message: string;
   replied: boolean;
   createdAt: Date;

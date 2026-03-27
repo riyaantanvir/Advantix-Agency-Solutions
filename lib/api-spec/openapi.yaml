@@ -494,7 +494,16 @@ components:
         phone:
           type: string
           nullable: true
+        whatsapp:
+          type: string
+          nullable: true
         service:
+          type: string
+          nullable: true
+        budget:
+          type: string
+          nullable: true
+        details:
           type: string
           nullable: true
         message:
@@ -521,7 +530,13 @@ components:
           type: string
         phone:
           type: string
+        whatsapp:
+          type: string
         service:
+          type: string
+        budget:
+          type: string
+        details:
           type: string
         message:
           type: string

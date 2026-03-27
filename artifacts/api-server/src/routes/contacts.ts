@@ -6,11 +6,14 @@ import { requireAdmin } from "../middleware/auth.js";
 const router: IRouter = Router();
 
 router.post("/contacts", async (req, res) => {
-  const { name, email, phone, service, message } = req.body as {
+  const { name, email, phone, whatsapp, service, budget, details, message } = req.body as {
     name?: string;
     email?: string;
     phone?: string;
+    whatsapp?: string;
     service?: string;
+    budget?: string;
+    details?: string;
     message?: string;
   };
 
@@ -21,7 +24,16 @@ router.post("/contacts", async (req, res) => {
 
   const [contact] = await db
     .insert(contactsTable)
-    .values({ name, email, phone: phone ?? null, service: service ?? null, message })
+    .values({
+      name,
+      email,
+      phone: phone ?? null,
+      whatsapp: whatsapp ?? null,
+      service: service ?? null,
+      budget: budget ?? null,
+      details: details ?? null,
+      message,
+    })
     .returning();
 
   res.status(201).json(contact);
