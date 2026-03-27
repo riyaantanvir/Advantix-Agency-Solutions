@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Link2, Copy, Trash2, ExternalLink, LogOut, User, Plus, CheckCircle, X, Eye, Link, ArrowLeft, Loader2, BarChart2, Globe, TrendingUp, Smartphone, MousePointer } from "lucide-react";
-import { Link as RouterLink } from "wouter";
+import { Link2, Copy, Trash2, ExternalLink, LogOut, User, Plus, CheckCircle, X, Eye, Link, ArrowLeft, Loader2, BarChart2, Globe, TrendingUp, Smartphone, MousePointer, LayoutDashboard } from "lucide-react";
+import { Link as RouterLink, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toolsApi, type ToolUser, type ShortUrl } from "@/lib/toolsApi";
+import { useToolsUser } from "@/context/ToolsUserContext";
 import { format } from "date-fns";
 
 const expo = [0.22, 1, 0.36, 1] as const;
@@ -292,8 +293,8 @@ function UrlRow({ item, shortBase, onDelete, onAnalytics }: { item: ShortUrl; sh
 
 /* ══════════════════════════════════════════════════════════ */
 export default function UrlShortener() {
-  const [user, setUser] = useState<ToolUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, setUser, loading, logout: ctxLogout } = useToolsUser();
+  const [, navigate] = useLocation();
   const [authOpen, setAuthOpen] = useState(false);
   const [urls, setUrls] = useState<ShortUrl[]>([]);
   const [urlsLoading, setUrlsLoading] = useState(false);
@@ -309,13 +310,6 @@ export default function UrlShortener() {
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
 
   const shortBase = typeof window !== "undefined" ? window.location.origin : "";
-
-  useEffect(() => {
-    toolsApi.auth.me()
-      .then(({ user }) => setUser(user))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
-  }, []);
 
   const loadUrls = useCallback(async () => {
     if (!user) return;
@@ -354,8 +348,7 @@ export default function UrlShortener() {
   };
 
   const handleLogout = async () => {
-    await toolsApi.auth.logout();
-    setUser(null);
+    await ctxLogout();
     setUrls([]);
   };
 
@@ -399,10 +392,15 @@ export default function UrlShortener() {
 
           {user ? (
             <div className="flex items-center gap-2">
-              <div className="hidden sm:block text-right">
-                <p className="text-sm font-semibold text-foreground">{user.name}</p>
-                <p className="text-xs text-muted-foreground">{user.email}</p>
-              </div>
+              <RouterLink href="/tools/dashboard">
+                <button className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-secondary/80 transition-colors text-left">
+                  <div className="hidden sm:block text-right">
+                    <p className="text-sm font-semibold text-foreground">{user.name}</p>
+                    <p className="text-xs text-muted-foreground">{user.email}</p>
+                  </div>
+                  <LayoutDashboard className="w-4 h-4 text-muted-foreground" />
+                </button>
+              </RouterLink>
               <button onClick={handleLogout} className="p-2 rounded-xl hover:bg-secondary/80 text-muted-foreground hover:text-foreground transition-colors" title="Sign out">
                 <LogOut className="w-5 h-5" />
               </button>
@@ -542,7 +540,7 @@ export default function UrlShortener() {
         )}
       </div>
 
-      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} onSuccess={u => { setUser(u); setAuthOpen(false); }} />
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} onSuccess={u => { setUser(u); setAuthOpen(false); navigate("/tools/dashboard"); }} />
       <AnalyticsModal open={analyticsOpen} onClose={() => setAnalyticsOpen(false)} url={analyticsUrl} shortBase={shortBase} />
     </div>
   );

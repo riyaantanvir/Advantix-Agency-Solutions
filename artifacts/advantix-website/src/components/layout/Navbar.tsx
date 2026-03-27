@@ -1,8 +1,9 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Menu, X, LogIn, Wrench, ChevronDown, Link2, Video } from "lucide-react";
+import { Menu, X, LogIn, Wrench, ChevronDown, Link2, Video, LayoutDashboard, LogOut } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useToolsUser } from "@/context/ToolsUserContext";
 
 const expo = [0.22, 1, 0.36, 1] as const;
 
@@ -16,6 +17,7 @@ export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const { user, logout } = useToolsUser();
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
@@ -148,11 +150,26 @@ export function Navbar() {
               </AnimatePresence>
             </div>
 
-            <a href="/admin/login">
-              <Button variant="ghost" size="sm" className="font-semibold gap-1.5 text-muted-foreground hover:text-foreground">
-                <LogIn className="w-4 h-4" /> Login
-              </Button>
-            </a>
+            {/* Conditional: logged-in user OR login button */}
+            {user ? (
+              <div className="flex items-center gap-2">
+                <Link href="/tools/dashboard">
+                  <Button variant="ghost" size="sm" className="gap-1.5 font-semibold text-muted-foreground hover:text-foreground">
+                    <LayoutDashboard className="w-4 h-4" />
+                    {user.name.split(" ")[0]}
+                  </Button>
+                </Link>
+                <button onClick={logout} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors" title="Sign out">
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <a href="/admin/login">
+                <Button variant="ghost" size="sm" className="font-semibold gap-1.5 text-muted-foreground hover:text-foreground">
+                  <LogIn className="w-4 h-4" /> Login
+                </Button>
+              </a>
+            )}
 
             <Link href="/contact">
               <motion.div
@@ -246,11 +263,24 @@ export function Navbar() {
                 transition={{ delay: 0.24, duration: 0.3, ease: expo }}
                 className="pt-2 flex flex-col gap-2"
               >
-                <a href="/admin/login" className="block">
-                  <Button variant="outline" className="w-full font-semibold gap-2">
-                    <LogIn className="w-4 h-4" /> Login
-                  </Button>
-                </a>
+                {user ? (
+                  <>
+                    <Link href="/tools/dashboard" className="block">
+                      <Button variant="outline" className="w-full font-semibold gap-2">
+                        <LayoutDashboard className="w-4 h-4" /> My Dashboard
+                      </Button>
+                    </Link>
+                    <Button variant="ghost" className="w-full font-semibold gap-2 text-muted-foreground" onClick={logout}>
+                      <LogOut className="w-4 h-4" /> Sign out
+                    </Button>
+                  </>
+                ) : (
+                  <a href="/admin/login" className="block">
+                    <Button variant="outline" className="w-full font-semibold gap-2">
+                      <LogIn className="w-4 h-4" /> Login
+                    </Button>
+                  </a>
+                )}
                 <Link href="/contact">
                   <Button className="w-full font-semibold bg-primary hover:bg-primary/90 text-primary-foreground">
                     Get Started

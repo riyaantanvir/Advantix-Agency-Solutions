@@ -91,6 +91,13 @@ export function ChatWidget() {
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   useEffect(() => { if (isOpen) scrollToBottom(); }, [messages, isOpen]);
 
+  /* Listen for external open event (e.g. from tools dashboard) */
+  useEffect(() => {
+    const handler = () => { setIsOpen(true); setHasNewMsg(false); };
+    window.addEventListener("open-chat-widget", handler);
+    return () => window.removeEventListener("open-chat-widget", handler);
+  }, []);
+
   /* Open chat — start flow */
   const handleOpen = () => {
     setIsOpen(true);
