@@ -306,3 +306,20 @@ export const ChatBody = zod.object({
 export const ChatResponse = zod.object({
   reply: zod.string(),
 });
+
+/**
+ * Same as /chat but returns a Server-Sent Events stream. Each event has the shape `data: {"token":"<text>"}` and the stream ends with `data: [DONE]`.
+
+ * @summary Streaming AI chat with Advantix assistant (SSE, public)
+ */
+export const ChatStreamBody = zod.object({
+  message: zod.string(),
+  conversationHistory: zod
+    .array(
+      zod.object({
+        role: zod.string(),
+        content: zod.string(),
+      }),
+    )
+    .optional(),
+});

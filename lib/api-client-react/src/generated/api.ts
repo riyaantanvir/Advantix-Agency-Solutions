@@ -1736,3 +1736,91 @@ export const useChat = <
 > => {
   return useMutation(getChatMutationOptions(options));
 };
+
+/**
+ * Same as /chat but returns a Server-Sent Events stream. Each event has the shape `data: {"token":"<text>"}` and the stream ends with `data: [DONE]`.
+
+ * @summary Streaming AI chat with Advantix assistant (SSE, public)
+ */
+export const getChatStreamUrl = () => {
+  return `/api/chat/stream`;
+};
+
+export const chatStream = async (
+  chatBody: ChatBody,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getChatStreamUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(chatBody),
+  });
+};
+
+export const getChatStreamMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof chatStream>>,
+    TError,
+    { data: BodyType<ChatBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof chatStream>>,
+  TError,
+  { data: BodyType<ChatBody> },
+  TContext
+> => {
+  const mutationKey = ["chatStream"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof chatStream>>,
+    { data: BodyType<ChatBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return chatStream(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ChatStreamMutationResult = NonNullable<
+  Awaited<ReturnType<typeof chatStream>>
+>;
+export type ChatStreamMutationBody = BodyType<ChatBody>;
+export type ChatStreamMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Streaming AI chat with Advantix assistant (SSE, public)
+ */
+export const useChatStream = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof chatStream>>,
+    TError,
+    { data: BodyType<ChatBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof chatStream>>,
+  TError,
+  { data: BodyType<ChatBody> },
+  TContext
+> => {
+  return useMutation(getChatStreamMutationOptions(options));
+};

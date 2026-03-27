@@ -401,6 +401,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/ChatResponse"
 
+  /chat/stream:
+    post:
+      operationId: chatStream
+      tags: [chat]
+      summary: Streaming AI chat with Advantix assistant (SSE, public)
+      description: >
+        Same as /chat but returns a Server-Sent Events stream. Each event has
+        the shape `data: {"token":"<text>"}` and the stream ends with `data: [DONE]`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatBody"
+      responses:
+        "200":
+          description: SSE token stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events stream of chat tokens
+
 components:
   schemas:
     HealthStatus:

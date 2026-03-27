@@ -20,16 +20,16 @@ export function Footer() {
               Building Brands That Convert. Full-stack digital agency delivering premium tech and marketing solutions.
             </p>
             <div className="flex gap-4">
-              <a href="#" onClick={(e) => e.preventDefault()} className="text-muted-foreground hover:text-primary transition-colors">
+              <a href="https://facebook.com/advantixagency" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors" aria-label="Advantix on Facebook">
                 <Facebook size={20} />
               </a>
-              <a href="#" onClick={(e) => e.preventDefault()} className="text-muted-foreground hover:text-primary transition-colors">
+              <a href="https://instagram.com/advantixagency" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors" aria-label="Advantix on Instagram">
                 <Instagram size={20} />
               </a>
-              <a href="#" onClick={(e) => e.preventDefault()} className="text-muted-foreground hover:text-primary transition-colors">
+              <a href="https://twitter.com/advantixagency" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors" aria-label="Advantix on Twitter">
                 <Twitter size={20} />
               </a>
-              <a href="#" onClick={(e) => e.preventDefault()} className="text-muted-foreground hover:text-primary transition-colors">
+              <a href="https://linkedin.com/company/advantixagency" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors" aria-label="Advantix on LinkedIn">
                 <Linkedin size={20} />
               </a>
             </div>
