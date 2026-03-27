@@ -34,17 +34,10 @@ When answering questions:
 
 If you don't know something specific about Advantix, be honest but still be helpful.`;
 
-router.post("/chat", async (req, res) => {
-  const { message, conversationHistory } = req.body as {
-    message?: string;
-    conversationHistory?: Array<{ role: string; content: string }>;
-  };
-
-  if (!message) {
-    res.status(400).json({ error: "Message is required" });
-    return;
-  }
-
+function buildMessages(
+  message: string,
+  conversationHistory?: Array<{ role: string; content: string }>
+): Array<{ role: "system" | "user" | "assistant"; content: string }> {
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: SYSTEM_PROMPT },
   ];
@@ -58,16 +51,67 @@ router.post("/chat", async (req, res) => {
   }
 
   messages.push({ role: "user", content: message });
+  return messages;
+}
+
+router.post("/chat", async (req, res) => {
+  const { message, conversationHistory } = req.body as {
+    message?: string;
+    conversationHistory?: Array<{ role: string; content: string }>;
+  };
+
+  if (!message) {
+    res.status(400).json({ error: "Message is required" });
+    return;
+  }
 
   const completion = await openai.chat.completions.create({
     model: "gpt-5.2",
     max_completion_tokens: 8192,
-    messages,
+    messages: buildMessages(message, conversationHistory),
   });
 
   const reply = completion.choices[0]?.message?.content ?? "I'm sorry, I couldn't process your request.";
-
   res.json({ reply });
+});
+
+router.post("/chat/stream", async (req, res) => {
+  const { message, conversationHistory } = req.body as {
+    message?: string;
+    conversationHistory?: Array<{ role: string; content: string }>;
+  };
+
+  if (!message) {
+    res.status(400).json({ error: "Message is required" });
+    return;
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  try {
+    const stream = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      max_completion_tokens: 8192,
+      messages: buildMessages(message, conversationHistory),
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      const token = chunk.choices[0]?.delta?.content ?? "";
+      if (token) {
+        res.write(`data: ${JSON.stringify({ token })}\n\n`);
+      }
+    }
+
+    res.write("data: [DONE]\n\n");
+  } catch (err) {
+    res.write(`data: ${JSON.stringify({ error: "Stream error" })}\n\n`);
+  } finally {
+    res.end();
+  }
 });
 
 export default router;

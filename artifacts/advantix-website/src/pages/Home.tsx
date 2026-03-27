@@ -49,6 +49,14 @@ export default function Home() {
             transition={{ duration: 0.8, ease: "easeOut" }}
             className="max-w-4xl mx-auto"
           >
+            <motion.p
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="text-primary font-mono text-sm md:text-base font-semibold tracking-widest uppercase mb-5 letter-spacing-widest"
+            >
+              advantix.agency
+            </motion.p>
             <h1 className="text-5xl md:text-7xl lg:text-8xl font-display font-extrabold tracking-tight mb-6">
               We Build Brands <br className="hidden md:block"/>
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent">That Convert</span>

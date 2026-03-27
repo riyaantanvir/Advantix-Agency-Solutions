@@ -75,6 +75,15 @@ export default function Portfolio() {
                 >
                   {item.imageUrl ? (
                     <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                  ) : item.videoUrl ? (
+                    <video
+                      src={item.videoUrl}
+                      className="w-full h-full object-cover"
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                    />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-secondary to-muted flex items-center justify-center">
                       <span className="font-display font-bold text-2xl text-muted-foreground/30">{item.title}</span>
