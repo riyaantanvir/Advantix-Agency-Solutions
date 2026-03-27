@@ -1,6 +1,7 @@
 export * from "./admins";
 export * from "./contacts";
 export * from "./portfolio";
+export * from "./services";
 export * from "./team";
 export * from "./leads";
 export * from "./visitors";

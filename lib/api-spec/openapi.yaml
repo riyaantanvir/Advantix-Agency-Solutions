@@ -16,6 +16,8 @@ tags:
     description: Contact form submissions
   - name: portfolio
     description: Portfolio items
+  - name: services
+    description: Agency services
   - name: team
     description: Team members
   - name: leads
@@ -230,6 +232,95 @@ paths:
       operationId: deletePortfolioItem
       tags: [portfolio]
       summary: Delete portfolio item (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /services:
+    get:
+      operationId: listServices
+      tags: [services]
+      summary: List active services (public)
+      responses:
+        "200":
+          description: List of active services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Service"
+    post:
+      operationId: createService
+      tags: [services]
+      summary: Create service (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServiceBody"
+      responses:
+        "201":
+          description: Created service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+
+  /services/all:
+    get:
+      operationId: listAllServices
+      tags: [services]
+      summary: List all services including inactive (admin only)
+      responses:
+        "200":
+          description: All services
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Service"
+
+  /services/{id}:
+    put:
+      operationId: updateService
+      tags: [services]
+      summary: Update service (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateServiceBody"
+      responses:
+        "200":
+          description: Updated service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Service"
+    delete:
+      operationId: deleteService
+      tags: [services]
+      summary: Delete service (admin only)
       parameters:
         - name: id
           in: path
@@ -481,6 +572,55 @@ components:
           type: string
       required:
         - authenticated
+
+    Service:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        icon:
+          type: string
+        description:
+          type: string
+        details:
+          type: string
+          nullable: true
+        order:
+          type: integer
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - icon
+        - description
+        - order
+        - isActive
+        - createdAt
+
+    CreateServiceBody:
+      type: object
+      properties:
+        name:
+          type: string
+        icon:
+          type: string
+        description:
+          type: string
+        details:
+          type: string
+        order:
+          type: integer
+        isActive:
+          type: boolean
+      required:
+        - name
+        - description
 
     Contact:
       type: object

@@ -177,6 +177,86 @@ export const DeletePortfolioItemResponse = zod.object({
 });
 
 /**
+ * @summary List active services (public)
+ */
+export const ListServicesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  icon: zod.string(),
+  description: zod.string(),
+  details: zod.string().nullish(),
+  order: zod.number(),
+  isActive: zod.boolean(),
+  createdAt: zod.date(),
+});
+export const ListServicesResponse = zod.array(ListServicesResponseItem);
+
+/**
+ * @summary Create service (admin only)
+ */
+export const CreateServiceBody = zod.object({
+  name: zod.string(),
+  icon: zod.string().optional(),
+  description: zod.string(),
+  details: zod.string().optional(),
+  order: zod.number().optional(),
+  isActive: zod.boolean().optional(),
+});
+
+/**
+ * @summary List all services including inactive (admin only)
+ */
+export const ListAllServicesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  icon: zod.string(),
+  description: zod.string(),
+  details: zod.string().nullish(),
+  order: zod.number(),
+  isActive: zod.boolean(),
+  createdAt: zod.date(),
+});
+export const ListAllServicesResponse = zod.array(ListAllServicesResponseItem);
+
+/**
+ * @summary Update service (admin only)
+ */
+export const UpdateServiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateServiceBody = zod.object({
+  name: zod.string(),
+  icon: zod.string().optional(),
+  description: zod.string(),
+  details: zod.string().optional(),
+  order: zod.number().optional(),
+  isActive: zod.boolean().optional(),
+});
+
+export const UpdateServiceResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  icon: zod.string(),
+  description: zod.string(),
+  details: zod.string().nullish(),
+  order: zod.number(),
+  isActive: zod.boolean(),
+  createdAt: zod.date(),
+});
+
+/**
+ * @summary Delete service (admin only)
+ */
+export const DeleteServiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteServiceResponse = zod.object({
+  message: zod.string(),
+});
+
+/**
  * @summary List team members (public)
  */
 export const ListTeamMembersResponseItem = zod.object({

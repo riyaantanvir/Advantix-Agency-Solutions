@@ -12,7 +12,8 @@ import {
   TrendingUp,
   LogOut,
   Menu,
-  X
+  X,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -21,6 +22,7 @@ const navLinks = [
   { path: "/contacts", label: "Contacts", icon: Mail },
   { path: "/leads", label: "Leads", icon: TrendingUp },
   { path: "/portfolio", label: "Portfolio", icon: Briefcase },
+  { path: "/services", label: "Services", icon: Package },
   { path: "/team", label: "Team", icon: Users },
 ];
 

@@ -32,6 +32,26 @@ export interface MeResponse {
   username?: string;
 }
 
+export interface Service {
+  id: number;
+  name: string;
+  icon: string;
+  description: string;
+  details?: string | null;
+  order: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CreateServiceBody {
+  name: string;
+  icon?: string;
+  description: string;
+  details?: string;
+  order?: number;
+  isActive?: boolean;
+}
+
 export interface Contact {
   id: number;
   name: string;

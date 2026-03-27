@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import Contacts from "./pages/Contacts";
 import Leads from "./pages/Leads";
 import Portfolio from "./pages/Portfolio";
+import Services from "./pages/Services";
 import Team from "./pages/Team";
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
@@ -54,6 +55,10 @@ function Router() {
       
       <Route path="/portfolio">
         <ProtectedLayout><Portfolio /></ProtectedLayout>
+      </Route>
+
+      <Route path="/services">
+        <ProtectedLayout><Services /></ProtectedLayout>
       </Route>
       
       <Route path="/team">

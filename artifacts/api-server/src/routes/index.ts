@@ -7,6 +7,7 @@ import teamRouter from "./team.js";
 import leadsRouter from "./leads.js";
 import statsRouter from "./stats.js";
 import chatRouter from "./chat.js";
+import servicesRouter from "./services.js";
 
 const router: IRouter = Router();
 
@@ -14,6 +15,7 @@ router.use(healthRouter);
 router.use(authRouter);
 router.use(contactsRouter);
 router.use(portfolioRouter);
+router.use(servicesRouter);
 router.use(teamRouter);
 router.use(leadsRouter);
 router.use(statsRouter);

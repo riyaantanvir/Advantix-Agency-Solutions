@@ -1,47 +1,141 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useListPortfolio } from "@workspace/api-client-react";
-import { 
-  Monitor, Database, LayoutTemplate, ShoppingCart, 
-  Bot, Users, UserPlus, Palette, Facebook, 
-  Share2, ClipboardList, TrendingUp, ArrowRight
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useListPortfolio, useListServices } from "@workspace/api-client-react";
+import type { Service } from "@workspace/api-client-react";
+import {
+  Monitor, Database, LayoutTemplate, ShoppingCart,
+  Bot, Users, UserPlus, Palette, Facebook,
+  Share2, ClipboardList, TrendingUp, ArrowRight,
+  Globe, Code2, Briefcase, Mail, Megaphone, BarChart3,
+  Headphones, FileText, Zap, Search, Settings, Star, CheckCircle, X
 } from "lucide-react";
 
-const services = [
-  { icon: LayoutTemplate, title: "Website Development", desc: "Custom, responsive, and blazing fast web applications." },
-  { icon: Database, title: "CRM Integration", desc: "Streamline your customer relationships and data flow." },
-  { icon: Monitor, title: "Sales Page Design", desc: "High-converting landing pages engineered for sales." },
-  { icon: ShoppingCart, title: "Ecommerce Solutions", desc: "Robust online stores with seamless payment flows." },
-  { icon: Bot, title: "Python Bot Automation", desc: "Automate repetitive tasks and scale your operations." },
-  { icon: Users, title: "Team Management", desc: "Systems to track, manage, and empower your workforce." },
-  { icon: UserPlus, title: "Virtual Assistants", desc: "Dedicated professionals to handle your day-to-day." },
-  { icon: Palette, title: "Graphics & Branding", desc: "Stunning visual identities that capture attention." },
-  { icon: Facebook, title: "Facebook Marketing", desc: "Targeted ad campaigns with high ROI." },
-  { icon: Share2, title: "Social Media Management", desc: "Grow your audience with consistent, engaging content." },
-  { icon: ClipboardList, title: "Data Entry & Ops", desc: "Accurate, efficient data processing and management." },
-  { icon: TrendingUp, title: "Lead Generation", desc: "Qualified inbound leads ready to convert." },
-];
+const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+  Monitor, Database, LayoutTemplate, ShoppingCart, Bot, Users, UserPlus,
+  Palette, Facebook, Share2, ClipboardList, TrendingUp, Globe, Code2,
+  Briefcase, Mail, Megaphone, BarChart3, Headphones, FileText, Zap,
+  Search, Settings, Star, CheckCircle,
+};
+
+function getIcon(name: string): React.ComponentType<{ className?: string }> {
+  return iconMap[name] ?? Briefcase;
+}
+
+function renderDetails(text: string) {
+  const paragraphs = text.split(/\n\n+/);
+  return paragraphs.map((para, pi) => {
+    if (para.startsWith("- ") || para.includes("\n- ")) {
+      const lines = para.split("\n").filter(Boolean);
+      const header = lines[0].startsWith("- ") ? null : lines[0];
+      const bullets = lines.filter(l => l.startsWith("- ")).map(l => l.slice(2));
+      return (
+        <div key={pi} className="mb-4">
+          {header && <p className="font-semibold mb-2">{renderInline(header)}</p>}
+          <ul className="space-y-1.5">
+            {bullets.map((b, bi) => (
+              <li key={bi} className="flex items-start gap-2 text-sm text-muted-foreground">
+                <CheckCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <span>{renderInline(b)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+    return (
+      <p key={pi} className="text-sm text-muted-foreground mb-4 leading-relaxed">
+        {renderInline(para)}
+      </p>
+    );
+  });
+}
+
+function renderInline(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i} className="text-foreground font-semibold">{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
+
+function ServiceModal({ service, onClose }: { service: Service; onClose: () => void }) {
+  const Icon = getIcon(service.icon);
+  return (
+    <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto bg-card border-border/50">
+      <DialogHeader>
+        <div className="flex items-center gap-4 mb-2">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+            <Icon className="w-7 h-7 text-primary" />
+          </div>
+          <div>
+            <DialogTitle className="text-2xl font-display font-bold">{service.name}</DialogTitle>
+            <p className="text-muted-foreground text-sm mt-1">{service.description}</p>
+          </div>
+        </div>
+      </DialogHeader>
+      <div className="mt-2 border-t border-border/50 pt-5">
+        {service.details ? (
+          renderDetails(service.details)
+        ) : (
+          <p className="text-sm text-muted-foreground">{service.description}</p>
+        )}
+      </div>
+      <div className="pt-4 border-t border-border/50 flex flex-col sm:flex-row gap-3">
+        <Link href={`/contact?service=${encodeURIComponent(service.name)}`} className="flex-1">
+          <Button className="w-full bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20" onClick={onClose}>
+            Get a Quote for This Service <ArrowRight className="w-4 h-4 ml-2" />
+          </Button>
+        </Link>
+        <Button variant="outline" onClick={onClose} className="sm:w-auto">
+          <X className="w-4 h-4 mr-2" /> Close
+        </Button>
+      </div>
+    </DialogContent>
+  );
+}
+
+const fallbackServices = [
+  { id: 1, name: "Website Development", icon: "LayoutTemplate", description: "Custom, responsive, and blazing fast web applications.", details: null, order: 1, isActive: true, createdAt: "" },
+  { id: 2, name: "CRM Integration", icon: "Database", description: "Streamline your customer relationships and data flow.", details: null, order: 2, isActive: true, createdAt: "" },
+  { id: 3, name: "Sales Page Design", icon: "Monitor", description: "High-converting landing pages engineered for sales.", details: null, order: 3, isActive: true, createdAt: "" },
+  { id: 4, name: "Ecommerce Solutions", icon: "ShoppingCart", description: "Robust online stores with seamless payment flows.", details: null, order: 4, isActive: true, createdAt: "" },
+  { id: 5, name: "Python Bot Automation", icon: "Bot", description: "Automate repetitive tasks and scale your operations.", details: null, order: 5, isActive: true, createdAt: "" },
+  { id: 6, name: "Team Management", icon: "Users", description: "Systems to track, manage, and empower your workforce.", details: null, order: 6, isActive: true, createdAt: "" },
+  { id: 7, name: "Virtual Assistants", icon: "UserPlus", description: "Dedicated professionals to handle your day-to-day.", details: null, order: 7, isActive: true, createdAt: "" },
+  { id: 8, name: "Graphics & Branding", icon: "Palette", description: "Stunning visual identities that capture attention.", details: null, order: 8, isActive: true, createdAt: "" },
+  { id: 9, name: "Facebook Marketing", icon: "Facebook", description: "Targeted ad campaigns with high ROI.", details: null, order: 9, isActive: true, createdAt: "" },
+  { id: 10, name: "Social Media Management", icon: "Share2", description: "Grow your audience with consistent, engaging content.", details: null, order: 10, isActive: true, createdAt: "" },
+  { id: 11, name: "Data Entry & Ops", icon: "ClipboardList", description: "Accurate, efficient data processing and management.", details: null, order: 11, isActive: true, createdAt: "" },
+  { id: 12, name: "Lead Generation", icon: "TrendingUp", description: "Qualified inbound leads ready to convert.", details: null, order: 12, isActive: true, createdAt: "" },
+] satisfies Service[];
 
 export default function Home() {
   const { data: portfolioItems } = useListPortfolio();
-  
-  const featuredPortfolio = portfolioItems?.slice(0, 3) || [];
+  const { data: servicesData } = useListServices();
+  const [activeService, setActiveService] = useState<Service | null>(null);
+
+  const services = servicesData ?? fallbackServices;
+  const featuredPortfolio = portfolioItems?.slice(0, 3) ?? [];
 
   return (
     <div className="w-full">
       {/* Hero Section */}
       <section className="relative min-h-screen flex items-center justify-center pt-20 overflow-hidden">
         <div className="absolute inset-0 z-0">
-          <img 
-            src={`${import.meta.env.BASE_URL}images/hero-bg.png`} 
-            alt="Hero Background" 
+          <img
+            src={`${import.meta.env.BASE_URL}images/hero-bg.png`}
+            alt="Hero Background"
             className="w-full h-full object-cover opacity-60 mix-blend-screen"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/80 to-background" />
         </div>
-        
+
         <div className="container relative z-10 mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -53,12 +147,12 @@ export default function Home() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.2 }}
-              className="text-primary font-mono text-sm md:text-base font-semibold tracking-widest uppercase mb-5 letter-spacing-widest"
+              className="text-primary font-mono text-sm md:text-base font-semibold tracking-widest uppercase mb-5"
             >
               advantix.agency
             </motion.p>
             <h1 className="text-5xl md:text-7xl lg:text-8xl font-display font-extrabold tracking-tight mb-6">
-              We Build Brands <br className="hidden md:block"/>
+              We Build Brands <br className="hidden md:block" />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-accent">That Convert</span>
             </h1>
             <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
@@ -85,30 +179,46 @@ export default function Home() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-16">
             <h2 className="text-3xl md:text-4xl font-display font-bold mb-4">Everything You Need to Scale</h2>
-            <p className="text-muted-foreground">Comprehensive digital solutions tailored to your unique business goals.</p>
+            <p className="text-muted-foreground">Comprehensive digital solutions tailored to your unique business goals. Click any service to learn more.</p>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {services.map((service, index) => (
-              <motion.div
-                key={service.title}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-50px" }}
-                transition={{ duration: 0.5, delay: index * 0.05 }}
-              >
-                <Card className="p-6 h-full bg-card hover:bg-secondary/50 border-border/50 hover:border-primary/50 transition-all duration-300 group">
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
-                    <service.icon className="w-6 h-6 text-primary" />
-                  </div>
-                  <h3 className="font-display font-bold text-lg mb-2">{service.title}</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{service.desc}</p>
-                </Card>
-              </motion.div>
-            ))}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {services.map((service, index) => {
+              const Icon = getIcon(service.icon);
+              return (
+                <motion.div
+                  key={service.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-50px" }}
+                  transition={{ duration: 0.5, delay: index * 0.05 }}
+                >
+                  <button
+                    onClick={() => setActiveService(service)}
+                    className="w-full text-left"
+                  >
+                    <Card className="p-6 h-full bg-card hover:bg-secondary/50 border-border/50 hover:border-primary/50 transition-all duration-300 group cursor-pointer hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-1">
+                      <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                        <Icon className="w-6 h-6 text-primary" />
+                      </div>
+                      <h3 className="font-display font-bold text-lg mb-2 group-hover:text-primary transition-colors">{service.name}</h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{service.description}</p>
+                      <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                        Learn more <ArrowRight className="w-3 h-3" />
+                      </div>
+                    </Card>
+                  </button>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </section>
+
+      {/* Service Detail Modal */}
+      <Dialog open={!!activeService} onOpenChange={(open) => !open && setActiveService(null)}>
+        {activeService && <ServiceModal service={activeService} onClose={() => setActiveService(null)} />}
+      </Dialog>
 
       {/* Stats Section */}
       <section className="py-20 border-y border-border/50 bg-secondary/30 relative overflow-hidden">
@@ -120,7 +230,7 @@ export default function Home() {
               { value: "5+", label: "Years Experience" },
               { value: "98%", label: "Client Satisfaction" },
             ].map((stat, idx) => (
-              <motion.div 
+              <motion.div
                 key={stat.label}
                 initial={{ opacity: 0, scale: 0.9 }}
                 whileInView={{ opacity: 1, scale: 1 }}
@@ -188,7 +298,7 @@ export default function Home() {
       <section className="py-24 bg-card border-y border-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl md:text-4xl font-display font-bold text-center mb-16">What Our Clients Say</h2>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
               { text: "Advantix transformed our online presence completely. Our conversion rate doubled within the first month of launching the new site.", author: "Sarah M.", role: "CEO" },
