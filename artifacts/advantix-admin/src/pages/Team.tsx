@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useListTeamMembers, useCreateTeamMember, useUpdateTeamMember, useDeleteTeamMember } from "@workspace/api-client-react";
+import type { TeamMember } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
@@ -46,7 +47,7 @@ export default function Team() {
     setIsModalOpen(true);
   };
 
-  const openEdit = (member: any) => {
+  const openEdit = (member: TeamMember) => {
     form.reset({
       name: member.name,
       role: member.role,
@@ -65,7 +66,8 @@ export default function Team() {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/team"] });
         toast({ title: "Member removed" });
-      }
+      },
+      onError: () => toast({ variant: "destructive", title: "Error", description: "Could not remove member." }),
     });
   };
 
@@ -76,7 +78,8 @@ export default function Team() {
           queryClient.invalidateQueries({ queryKey: ["/api/team"] });
           toast({ title: "Member updated successfully" });
           setIsModalOpen(false);
-        }
+        },
+        onError: () => toast({ variant: "destructive", title: "Error", description: "Could not update member." }),
       });
     } else {
       createMutation.mutate({ data }, {
@@ -84,7 +87,8 @@ export default function Team() {
           queryClient.invalidateQueries({ queryKey: ["/api/team"] });
           toast({ title: "Member added successfully" });
           setIsModalOpen(false);
-        }
+        },
+        onError: () => toast({ variant: "destructive", title: "Error", description: "Could not add member." }),
       });
     }
   };

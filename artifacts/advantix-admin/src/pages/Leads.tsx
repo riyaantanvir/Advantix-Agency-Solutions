@@ -1,20 +1,61 @@
 import { useState } from "react";
 import { useListLeads } from "@workspace/api-client-react";
+import type { Lead } from "@workspace/api-client-react";
 import { format } from "date-fns";
-import { Search, TrendingUp } from "lucide-react";
+import { Search, TrendingUp, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
+type SortKey = keyof Pick<Lead, "createdAt" | "service" | "name" | "email" | "status">;
+type SortDir = "asc" | "desc";
+
+function SortIcon({ column, sortKey, sortDir }: { column: SortKey; sortKey: SortKey; sortDir: SortDir }) {
+  if (column !== sortKey) return <ArrowUpDown className="w-3.5 h-3.5 ml-1 opacity-40" />;
+  return sortDir === "asc"
+    ? <ArrowUp className="w-3.5 h-3.5 ml-1 text-primary" />
+    : <ArrowDown className="w-3.5 h-3.5 ml-1 text-primary" />;
+}
+
 export default function Leads() {
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("createdAt");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
   const { data: leads, isLoading } = useListLeads();
 
-  const filteredLeads = leads?.filter(l => 
-    l.service.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (l.email && l.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-    (l.name && l.name.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const filteredLeads = (leads ?? [])
+    .filter(l =>
+      l.service.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (l.email && l.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (l.name && l.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    )
+    .sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "createdAt") {
+        cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      } else if (sortKey === "service") {
+        cmp = a.service.localeCompare(b.service);
+      } else if (sortKey === "name") {
+        cmp = (a.name ?? "").localeCompare(b.name ?? "");
+      } else if (sortKey === "email") {
+        cmp = (a.email ?? "").localeCompare(b.email ?? "");
+      } else if (sortKey === "status") {
+        cmp = a.status.localeCompare(b.status);
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+
+  const thClass = "px-6 py-4 font-semibold text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors";
 
   return (
     <div className="space-y-6">
@@ -25,8 +66,8 @@ export default function Leads() {
         </div>
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search by service or email..." 
+          <Input
+            placeholder="Search by service or email..."
             className="pl-9 h-10 bg-card rounded-xl border-border/50"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -39,11 +80,19 @@ export default function Leads() {
           <table className="w-full text-left text-sm border-collapse">
             <thead>
               <tr className="bg-secondary/30">
-                <th className="px-6 py-4 font-semibold text-muted-foreground">Date</th>
-                <th className="px-6 py-4 font-semibold text-muted-foreground">Service</th>
-                <th className="px-6 py-4 font-semibold text-muted-foreground">Contact Info</th>
+                <th className={thClass} onClick={() => toggleSort("createdAt")}>
+                  <span className="flex items-center">Date <SortIcon column="createdAt" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                <th className={thClass} onClick={() => toggleSort("service")}>
+                  <span className="flex items-center">Service <SortIcon column="service" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                <th className={thClass} onClick={() => toggleSort("name")}>
+                  <span className="flex items-center">Contact Info <SortIcon column="name" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
                 <th className="px-6 py-4 font-semibold text-muted-foreground">Source Page</th>
-                <th className="px-6 py-4 font-semibold text-muted-foreground">Status</th>
+                <th className={thClass} onClick={() => toggleSort("status")}>
+                  <span className="flex items-center">Status <SortIcon column="status" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -57,7 +106,7 @@ export default function Leads() {
                     <td className="px-6 py-4"><Skeleton className="h-6 w-20 rounded-full" /></td>
                   </tr>
                 ))
-              ) : filteredLeads && filteredLeads.length > 0 ? (
+              ) : filteredLeads.length > 0 ? (
                 filteredLeads.map((lead) => (
                   <tr key={lead.id} className="border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap text-muted-foreground">
@@ -79,13 +128,13 @@ export default function Leads() {
                       )}
                     </td>
                     <td className="px-6 py-4 font-mono text-xs text-muted-foreground">
-                      {lead.sourcePage || '-'}
+                      {lead.sourcePage ?? "-"}
                     </td>
                     <td className="px-6 py-4">
-                      {lead.status === 'new' && <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20 shadow-none hover:bg-blue-500/20">New</Badge>}
-                      {lead.status === 'contacted' && <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 shadow-none hover:bg-amber-500/20">Contacted</Badge>}
-                      {lead.status === 'converted' && <Badge className="bg-green-500/10 text-green-500 border-green-500/20 shadow-none hover:bg-green-500/20">Converted</Badge>}
-                      {!['new','contacted','converted'].includes(lead.status) && <Badge variant="outline">{lead.status}</Badge>}
+                      {lead.status === "new" && <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/20 shadow-none hover:bg-blue-500/20">New</Badge>}
+                      {lead.status === "contacted" && <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 shadow-none hover:bg-amber-500/20">Contacted</Badge>}
+                      {lead.status === "converted" && <Badge className="bg-green-500/10 text-green-500 border-green-500/20 shadow-none hover:bg-green-500/20">Converted</Badge>}
+                      {!["new", "contacted", "converted"].includes(lead.status) && <Badge variant="outline">{lead.status}</Badge>}
                     </td>
                   </tr>
                 ))

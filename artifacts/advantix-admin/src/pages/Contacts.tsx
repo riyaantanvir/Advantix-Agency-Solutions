@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useListContacts, useUpdateContact, useDeleteContact } from "@workspace/api-client-react";
+import type { Contact } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Check, Trash2, Search, Mail, X } from "lucide-react";
+import { Check, Trash2, Search, Mail, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -10,21 +11,58 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
+type SortKey = "createdAt" | "name" | "email" | "service" | "replied";
+type SortDir = "asc" | "desc";
+
+function SortIcon({ column, sortKey, sortDir }: { column: SortKey; sortKey: SortKey; sortDir: SortDir }) {
+  if (column !== sortKey) return <ArrowUpDown className="w-3.5 h-3.5 ml-1 opacity-40" />;
+  return sortDir === "asc"
+    ? <ArrowUp className="w-3.5 h-3.5 ml-1 text-primary" />
+    : <ArrowDown className="w-3.5 h-3.5 ml-1 text-primary" />;
+}
+
 export default function Contacts() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedContact, setSelectedContact] = useState<any | null>(null);
-  
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("createdAt");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
+
   const { data: contacts, isLoading } = useListContacts();
   const updateMutation = useUpdateContact();
   const deleteMutation = useDeleteContact();
 
-  const filteredContacts = contacts?.filter(c => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    c.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const filteredContacts = (contacts ?? [])
+    .filter(c =>
+      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.email.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "createdAt") {
+        cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      } else if (sortKey === "name") {
+        cmp = a.name.localeCompare(b.name);
+      } else if (sortKey === "email") {
+        cmp = a.email.localeCompare(b.email);
+      } else if (sortKey === "service") {
+        cmp = (a.service ?? "").localeCompare(b.service ?? "");
+      } else if (sortKey === "replied") {
+        cmp = Number(a.replied) - Number(b.replied);
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
 
   const handleMarkReplied = (id: number) => {
     updateMutation.mutate(
@@ -34,7 +72,7 @@ export default function Contacts() {
           queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
           toast({ title: "Status updated", description: "Contact marked as replied." });
         },
-        onError: () => toast({ variant: "destructive", title: "Error", description: "Could not update status." })
+        onError: () => toast({ variant: "destructive", title: "Error", description: "Could not update status." }),
       }
     );
   };
@@ -49,10 +87,12 @@ export default function Contacts() {
           toast({ title: "Contact deleted" });
           setSelectedContact(null);
         },
-        onError: () => toast({ variant: "destructive", title: "Error", description: "Could not delete contact." })
+        onError: () => toast({ variant: "destructive", title: "Error", description: "Could not delete contact." }),
       }
     );
   };
+
+  const thClass = "px-6 py-4 font-semibold text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors";
 
   return (
     <div className="space-y-6">
@@ -63,8 +103,8 @@ export default function Contacts() {
         </div>
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input 
-            placeholder="Search by name or email..." 
+          <Input
+            placeholder="Search by name or email..."
             className="pl-9 h-10 bg-card rounded-xl border-border/50"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -77,11 +117,21 @@ export default function Contacts() {
           <table className="w-full text-left text-sm border-collapse">
             <thead>
               <tr className="bg-secondary/30">
-                <th className="px-6 py-4 font-semibold text-muted-foreground">Date</th>
-                <th className="px-6 py-4 font-semibold text-muted-foreground">Name</th>
-                <th className="px-6 py-4 font-semibold text-muted-foreground">Email</th>
-                <th className="px-6 py-4 font-semibold text-muted-foreground">Service</th>
-                <th className="px-6 py-4 font-semibold text-muted-foreground">Status</th>
+                <th className={thClass} onClick={() => toggleSort("createdAt")}>
+                  <span className="flex items-center">Date <SortIcon column="createdAt" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                <th className={thClass} onClick={() => toggleSort("name")}>
+                  <span className="flex items-center">Name <SortIcon column="name" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                <th className={thClass} onClick={() => toggleSort("email")}>
+                  <span className="flex items-center">Email <SortIcon column="email" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                <th className={thClass} onClick={() => toggleSort("service")}>
+                  <span className="flex items-center">Service <SortIcon column="service" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
+                <th className={thClass} onClick={() => toggleSort("replied")}>
+                  <span className="flex items-center">Status <SortIcon column="replied" sortKey={sortKey} sortDir={sortDir} /></span>
+                </th>
                 <th className="px-6 py-4 font-semibold text-muted-foreground text-right">Actions</th>
               </tr>
             </thead>
@@ -97,7 +147,7 @@ export default function Contacts() {
                     <td className="px-6 py-4 text-right"><Skeleton className="h-8 w-8 inline-block rounded-lg" /></td>
                   </tr>
                 ))
-              ) : filteredContacts && filteredContacts.length > 0 ? (
+              ) : filteredContacts.length > 0 ? (
                 filteredContacts.map((contact) => (
                   <tr key={contact.id} className="border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors group">
                     <td className="px-6 py-4 whitespace-nowrap text-muted-foreground">
@@ -105,7 +155,11 @@ export default function Contacts() {
                     </td>
                     <td className="px-6 py-4 font-medium text-foreground">{contact.name}</td>
                     <td className="px-6 py-4 text-muted-foreground">{contact.email}</td>
-                    <td className="px-6 py-4"><span className="px-2.5 py-1 bg-secondary rounded-md text-xs font-medium">{contact.service || 'General'}</span></td>
+                    <td className="px-6 py-4">
+                      <span className="px-2.5 py-1 bg-secondary rounded-md text-xs font-medium">
+                        {contact.service ?? "General"}
+                      </span>
+                    </td>
                     <td className="px-6 py-4">
                       {contact.replied ? (
                         <Badge variant="outline" className="bg-green-500/10 text-green-500 border-green-500/20">Replied</Badge>
@@ -151,7 +205,7 @@ export default function Contacts() {
               {selectedContact?.createdAt && format(new Date(selectedContact.createdAt), "PPpp")}
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="mt-4 space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 bg-secondary/50 rounded-xl">
@@ -162,13 +216,13 @@ export default function Contacts() {
               </div>
               <div className="p-3 bg-secondary/50 rounded-xl">
                 <p className="text-xs text-muted-foreground mb-1">Phone</p>
-                <p className="text-sm font-medium text-foreground">{selectedContact?.phone || 'Not provided'}</p>
+                <p className="text-sm font-medium text-foreground">{selectedContact?.phone ?? "Not provided"}</p>
               </div>
             </div>
-            
+
             <div className="p-3 bg-secondary/50 rounded-xl">
               <p className="text-xs text-muted-foreground mb-1">Service of Interest</p>
-              <p className="text-sm font-medium text-foreground">{selectedContact?.service || 'General Inquiry'}</p>
+              <p className="text-sm font-medium text-foreground">{selectedContact?.service ?? "General Inquiry"}</p>
             </div>
 
             <div className="p-4 bg-secondary/30 rounded-xl border border-border/50 min-h-[150px]">
@@ -178,8 +232,8 @@ export default function Contacts() {
             </div>
 
             <div className="flex justify-end gap-3 pt-4">
-              {!selectedContact?.replied && (
-                <Button 
+              {selectedContact && !selectedContact.replied && (
+                <Button
                   onClick={() => handleMarkReplied(selectedContact.id)}
                   disabled={updateMutation.isPending}
                   className="bg-green-600 hover:bg-green-700 text-white"
@@ -187,9 +241,11 @@ export default function Contacts() {
                   <Check className="w-4 h-4 mr-2" /> Mark as Replied
                 </Button>
               )}
-              <Button variant="destructive" onClick={() => handleDelete(selectedContact.id)} disabled={deleteMutation.isPending}>
-                <Trash2 className="w-4 h-4 mr-2" /> Delete
-              </Button>
+              {selectedContact && (
+                <Button variant="destructive" onClick={() => handleDelete(selectedContact.id)} disabled={deleteMutation.isPending}>
+                  <Trash2 className="w-4 h-4 mr-2" /> Delete
+                </Button>
+              )}
             </div>
           </div>
         </DialogContent>

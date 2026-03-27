@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useListPortfolio, useCreatePortfolioItem, useUpdatePortfolioItem, useDeletePortfolioItem } from "@workspace/api-client-react";
+import type { PortfolioItem } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
@@ -51,7 +52,7 @@ export default function Portfolio() {
     setIsModalOpen(true);
   };
 
-  const openEdit = (item: any) => {
+  const openEdit = (item: PortfolioItem) => {
     form.reset({
       title: item.title,
       category: item.category,
@@ -70,7 +71,8 @@ export default function Portfolio() {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ["/api/portfolio"] });
         toast({ title: "Item deleted" });
-      }
+      },
+      onError: () => toast({ variant: "destructive", title: "Error", description: "Could not delete item." }),
     });
   };
 
@@ -81,7 +83,8 @@ export default function Portfolio() {
           queryClient.invalidateQueries({ queryKey: ["/api/portfolio"] });
           toast({ title: "Item updated successfully" });
           setIsModalOpen(false);
-        }
+        },
+        onError: () => toast({ variant: "destructive", title: "Error", description: "Could not update item." }),
       });
     } else {
       createMutation.mutate({ data }, {
@@ -89,7 +92,8 @@ export default function Portfolio() {
           queryClient.invalidateQueries({ queryKey: ["/api/portfolio"] });
           toast({ title: "Item created successfully" });
           setIsModalOpen(false);
-        }
+        },
+        onError: () => toast({ variant: "destructive", title: "Error", description: "Could not create item." }),
       });
     }
   };

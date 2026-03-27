@@ -1,21 +1,68 @@
-import { useGetStats, getGetStatsQueryKey } from "@workspace/api-client-react";
-import { Users, Eye, Mail, TrendingUp } from "lucide-react";
+import { useGetStats, getGetStatsQueryKey, useListLeads, useListContacts } from "@workspace/api-client-react";
+import { Users, Eye, Mail, TrendingUp, MessageSquare, Activity } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isToday } from "date-fns";
 
 export default function Dashboard() {
-  const { data: stats, isLoading } = useGetStats({
+  const { data: stats, isLoading: statsLoading } = useGetStats({
     query: {
       queryKey: getGetStatsQueryKey(),
       refetchInterval: 30000,
     }
   });
 
+  const { data: leads, isLoading: leadsLoading } = useListLeads();
+  const { data: contacts, isLoading: contactsLoading } = useListContacts();
+
+  const isLoading = statsLoading || leadsLoading || contactsLoading;
+
+  const todayLeads = leads?.filter(l => isToday(new Date(l.createdAt))).length ?? 0;
+  const unreadContacts = contacts?.filter(c => !c.replied).length ?? 0;
+
   const statCards = [
-    { title: "Active Visitors", value: stats?.activeVisitors ?? 0, icon: Users, color: "text-blue-500", bg: "bg-blue-500/10" },
-    { title: "Today's Views", value: stats?.todayViews ?? 0, icon: Eye, color: "text-green-500", bg: "bg-green-500/10" },
-    { title: "Total Contacts", value: stats?.totalContacts ?? 0, icon: Mail, color: "text-purple-500", bg: "bg-purple-500/10" },
-    { title: "Total Leads", value: stats?.totalLeads ?? 0, icon: TrendingUp, color: "text-amber-500", bg: "bg-amber-500/10" },
+    {
+      title: "Active Visitors",
+      value: stats?.activeVisitors ?? 0,
+      icon: Activity,
+      color: "text-blue-500",
+      bg: "bg-blue-500/10",
+    },
+    {
+      title: "Today's Views",
+      value: stats?.todayViews ?? 0,
+      icon: Eye,
+      color: "text-green-500",
+      bg: "bg-green-500/10",
+    },
+    {
+      title: "Today's New Leads",
+      value: todayLeads,
+      icon: TrendingUp,
+      color: "text-amber-500",
+      bg: "bg-amber-500/10",
+    },
+    {
+      title: "Unread Messages",
+      value: unreadContacts,
+      icon: MessageSquare,
+      color: "text-purple-500",
+      bg: "bg-purple-500/10",
+    },
+    {
+      title: "Total Contacts",
+      value: stats?.totalContacts ?? 0,
+      icon: Mail,
+      color: "text-rose-500",
+      bg: "bg-rose-500/10",
+    },
+    {
+      title: "Total Leads",
+      value: stats?.totalLeads ?? 0,
+      icon: Users,
+      color: "text-cyan-500",
+      bg: "bg-cyan-500/10",
+    },
   ];
 
   return (
@@ -25,10 +72,9 @@ export default function Dashboard() {
         <p className="text-muted-foreground mt-1">Real-time metrics and agency performance.</p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => (
+          Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-32 rounded-2xl" />
           ))
         ) : (
@@ -51,7 +97,6 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Top Pages Table */}
       <Card className="rounded-2xl border-border/50 shadow-sm overflow-hidden bg-card">
         <div className="p-6 border-b border-border/50">
           <h3 className="text-xl font-display font-bold">Top Pages Today</h3>
@@ -65,7 +110,7 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {isLoading ? (
+              {statsLoading ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <tr key={i} className="border-b border-border/50">
                     <td className="px-6 py-4"><Skeleton className="h-5 w-48" /></td>
