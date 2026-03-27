@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Menu, X } from "lucide-react";
+import { Menu, X, LogIn } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -56,6 +56,11 @@ export function Navbar() {
                 {link.label}
               </Link>
             ))}
+            <a href="/admin/login">
+              <Button variant="ghost" className="font-semibold gap-1.5">
+                <LogIn className="w-4 h-4" /> Login
+              </Button>
+            </a>
             <Link href="/contact">
               <Button className="font-semibold bg-primary hover:bg-primary/90 text-primary-foreground">
                 Get Started
@@ -93,6 +98,11 @@ export function Navbar() {
                   {link.label}
                 </Link>
               ))}
+              <a href="/admin/login" className="block">
+                <Button variant="outline" className="w-full font-semibold gap-2">
+                  <LogIn className="w-4 h-4" /> Login
+                </Button>
+              </a>
               <Link href="/contact">
                 <Button className="w-full font-semibold bg-primary hover:bg-primary/90 text-primary-foreground">
                   Get Started
