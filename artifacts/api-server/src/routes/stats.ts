@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, pageViewsTable, contactsTable, leadsTable } from "@workspace/db";
+import { db, pageViewsTable, contactsTable, leadsTable, visitorSessionsTable } from "@workspace/db";
 import { sql, gte } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 
@@ -25,6 +25,28 @@ router.post("/track", async (req, res) => {
     referrer: referrer ?? null,
   });
 
+  const existingSession = await db
+    .select()
+    .from(visitorSessionsTable)
+    .where(sql`${visitorSessionsTable.visitorId} = ${visitorId}`)
+    .limit(1);
+
+  if (existingSession.length === 0) {
+    await db.insert(visitorSessionsTable).values({
+      visitorId,
+      userAgent: userAgent ?? null,
+      referrer: referrer ?? null,
+    });
+  } else {
+    await db
+      .update(visitorSessionsTable)
+      .set({
+        lastSeenAt: new Date(),
+        pageViewCount: sql`${visitorSessionsTable.pageViewCount} + 1`,
+      })
+      .where(sql`${visitorSessionsTable.visitorId} = ${visitorId}`);
+  }
+
   res.json({ message: "Tracked" });
 });
 
@@ -34,9 +56,9 @@ router.get("/stats", requireAdmin, async (_req, res) => {
   startOfToday.setHours(0, 0, 0, 0);
 
   const [activeResult] = await db
-    .select({ count: sql<number>`count(distinct ${pageViewsTable.visitorId})` })
-    .from(pageViewsTable)
-    .where(gte(pageViewsTable.createdAt, fiveMinutesAgo));
+    .select({ count: sql<number>`count(*)` })
+    .from(visitorSessionsTable)
+    .where(gte(visitorSessionsTable.lastSeenAt, fiveMinutesAgo));
 
   const [todayResult] = await db
     .select({ count: sql<number>`count(*)` })

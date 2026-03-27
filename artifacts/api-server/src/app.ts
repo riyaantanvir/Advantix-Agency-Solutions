@@ -9,6 +9,16 @@ if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET must be set.");
 }
 
+const ALLOWED_ORIGINS = (process.env.REPLIT_DOMAINS ?? "")
+  .split(",")
+  .map((d) => d.trim())
+  .filter(Boolean)
+  .flatMap((d) => [`https://${d}`, `http://${d}`]);
+
+if (process.env.NODE_ENV !== "production") {
+  ALLOWED_ORIGINS.push("http://localhost:3000", "http://localhost:5173", "http://localhost:8080", "http://localhost:8081");
+}
+
 const app: Express = express();
 
 app.use(
@@ -33,7 +43,13 @@ app.use(
 
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin || ALLOWED_ORIGINS.includes(origin) || process.env.NODE_ENV !== "production") {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin '${origin}' not allowed`));
+      }
+    },
     credentials: true,
   }),
 );
@@ -48,6 +64,7 @@ app.use(
     cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
+      sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   }),
