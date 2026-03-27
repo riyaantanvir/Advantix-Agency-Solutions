@@ -1,0 +1,15 @@
+packages:
+  "framer-motion": "Animations and page transitions"
+  "recharts": "Dashboard charts and data visualization"
+  "date-fns": "Date formatting"
+  "react-hook-form": "Form state management"
+  "@hookform/resolvers": "Zod validation for forms"
+  "zod": "Schema validation"
+images:
+  - path: "artifacts/advantix-admin/public/images/login-bg.png"
+    description: "Abstract deep space background with subtle electric blue glowing nodes, elegant, dark mode, highly professional, minimalistic"
+    aspect_ratio: "16:9"
+notes:
+  - API endpoints provided via @workspace/api-client-react
+  - Admin dashboard served at /admin/ base path
+  - Forms use react-hook-form and zod

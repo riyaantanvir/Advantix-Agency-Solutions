@@ -24,12 +24,24 @@ Full-stack pnpm workspace monorepo for Advantix Agency (advantix.agency). A comp
 - **Password**: `2816`
 - **Login endpoint**: `POST /api/auth/login`
 
+## Artifacts
+
+| Artifact | Path | Description |
+|---|---|---|
+| `advantix-website` | `/` | Public-facing marketing website (Home, Portfolio, Team, Contact) |
+| `advantix-admin` | `/admin/` | Protected admin dashboard (login, dashboard, contacts, leads, portfolio, team) |
+| `api-server` | — | Express REST API backend (all `/api/*` routes) |
+
+Admin dashboard credentials: **username=admin / password=2816** (login at `/admin/login`)
+
 ## Structure
 
 ```text
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
+│   ├── api-server/         # Express API server
+│   ├── advantix-website/   # Public marketing site (React + Vite)
+│   └── advantix-admin/     # Admin dashboard (React + Vite)
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks

@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/admin/"
+title = "Advantix Admin Dashboard"
+version = "1.0.0"
+id = "artifacts/advantix-admin"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/admin/" ]
+localPort = 23910
+
+[services.development]
+run = "pnpm --filter @workspace/advantix-admin run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/advantix-admin", "run", "build" ]
+publicDir = "artifacts/advantix-admin/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23910"
+BASE_PATH = "/admin/"
