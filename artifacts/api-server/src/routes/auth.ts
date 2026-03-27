@@ -49,7 +49,7 @@ router.get("/auth/me", (req, res) => {
   if (session.adminId) {
     res.json({ authenticated: true, username: session.username });
   } else {
-    res.status(401).json({ authenticated: false });
+    res.status(401).json({ error: "Not authenticated" });
   }
 });
 
