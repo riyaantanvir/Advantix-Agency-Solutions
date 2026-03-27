@@ -60,7 +60,9 @@ function Router() {
         <ProtectedLayout><Team /></ProtectedLayout>
       </Route>
 
-      <Route component={NotFound} />
+      <Route>
+        <ProtectedLayout><NotFound /></ProtectedLayout>
+      </Route>
     </Switch>
   );
 }
