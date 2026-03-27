@@ -41,7 +41,7 @@ router.post("/team", requireAdmin, async (req, res) => {
 });
 
 router.put("/team/:id", requireAdmin, async (req, res) => {
-  const id = parseInt(req.params.id ?? "0", 10);
+  const id = parseInt(String(req.params.id ?? "0"), 10);
   const { name, role, bio, photoUrl, email, linkedinUrl } = req.body as {
     name?: string;
     role?: string;
@@ -78,7 +78,7 @@ router.put("/team/:id", requireAdmin, async (req, res) => {
 });
 
 router.delete("/team/:id", requireAdmin, async (req, res) => {
-  const id = parseInt(req.params.id ?? "0", 10);
+  const id = parseInt(String(req.params.id ?? "0"), 10);
   await db.delete(teamMembersTable).where(eq(teamMembersTable.id, id));
   res.json({ message: "Deleted" });
 });

@@ -41,7 +41,7 @@ router.post("/portfolio", requireAdmin, async (req, res) => {
 });
 
 router.put("/portfolio/:id", requireAdmin, async (req, res) => {
-  const id = parseInt(req.params.id ?? "0", 10);
+  const id = parseInt(String(req.params.id ?? "0"), 10);
   const { title, category, description, imageUrl, videoUrl, clientName } = req.body as {
     title?: string;
     category?: string;
@@ -78,7 +78,7 @@ router.put("/portfolio/:id", requireAdmin, async (req, res) => {
 });
 
 router.delete("/portfolio/:id", requireAdmin, async (req, res) => {
-  const id = parseInt(req.params.id ?? "0", 10);
+  const id = parseInt(String(req.params.id ?? "0"), 10);
   await db.delete(portfolioItemsTable).where(eq(portfolioItemsTable.id, id));
   res.json({ message: "Deleted" });
 });

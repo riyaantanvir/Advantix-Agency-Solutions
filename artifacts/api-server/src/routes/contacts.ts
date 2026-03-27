@@ -33,7 +33,7 @@ router.get("/contacts", requireAdmin, async (_req, res) => {
 });
 
 router.patch("/contacts/:id", requireAdmin, async (req, res) => {
-  const id = parseInt(req.params.id ?? "0", 10);
+  const id = parseInt(String(req.params.id ?? "0"), 10);
   const { replied } = req.body as { replied?: boolean };
 
   const [updated] = await db
@@ -51,7 +51,7 @@ router.patch("/contacts/:id", requireAdmin, async (req, res) => {
 });
 
 router.delete("/contacts/:id", requireAdmin, async (req, res) => {
-  const id = parseInt(req.params.id ?? "0", 10);
+  const id = parseInt(String(req.params.id ?? "0"), 10);
   await db.delete(contactsTable).where(eq(contactsTable.id, id));
   res.json({ message: "Deleted" });
 });

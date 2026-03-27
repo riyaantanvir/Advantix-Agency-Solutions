@@ -1,5 +1,5 @@
 import pLimit from "p-limit";
-import pRetry from "p-retry";
+import pRetry, { AbortError } from "p-retry";
 
 /**
  * Batch Processing Utilities
@@ -74,8 +74,8 @@ export async function batchProcess<T, R>(
             if (isRateLimitError(error)) {
               throw error;
             }
-            throw new pRetry.AbortError(
-              error instanceof Error ? error : new Error(String(error))
+            throw new AbortError(
+              error instanceof Error ? error.message : String(error)
             );
           }
         },
@@ -101,7 +101,7 @@ export async function batchProcessWithSSE<T, R>(
   let errors = 0;
 
   for (let index = 0; index < items.length; index++) {
-    const item = items[index];
+    const item = items[index]!;
     sendEvent({ type: "processing", index, item });
 
     try {
@@ -114,8 +114,8 @@ export async function batchProcessWithSSE<T, R>(
           factor: 2,
           onFailedAttempt: (error) => {
             if (!isRateLimitError(error)) {
-              throw new pRetry.AbortError(
-                error instanceof Error ? error : new Error(String(error))
+              throw new AbortError(
+                error instanceof Error ? error.message : String(error)
               );
             }
           },
