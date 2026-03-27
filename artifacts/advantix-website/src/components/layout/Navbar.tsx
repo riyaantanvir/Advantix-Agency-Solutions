@@ -4,6 +4,7 @@ import { Menu, X, LogIn, Wrench, ChevronDown, Link2, Video, LayoutDashboard, Log
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToolsUser } from "@/context/ToolsUserContext";
+import { LoginModal } from "@/components/LoginModal";
 
 const expo = [0.22, 1, 0.36, 1] as const;
 
@@ -17,6 +18,7 @@ export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
   const { user, logout } = useToolsUser();
 
   useEffect(() => {
@@ -122,21 +124,18 @@ export function Navbar() {
                     <div className="p-1.5">
                       {tools.map((tool) => {
                         const Icon = tool.icon;
-                        const inner = (
-                          <div className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${tool.disabled ? "opacity-50 cursor-not-allowed" : "hover:bg-secondary/60 cursor-pointer"}`}>
-                            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                              <Icon className="w-4 h-4 text-primary" />
+                        return (
+                          <Link key={tool.label} href={tool.href}>
+                            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors hover:bg-secondary/60 cursor-pointer">
+                              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                                <Icon className="w-4 h-4 text-primary" />
+                              </div>
+                              <div className="text-left">
+                                <p className="text-sm font-semibold text-foreground leading-none mb-0.5">{tool.label}</p>
+                                <p className="text-xs text-muted-foreground">{tool.desc}</p>
+                              </div>
                             </div>
-                            <div className="text-left">
-                              <p className="text-sm font-semibold text-foreground leading-none mb-0.5">{tool.label}</p>
-                              <p className="text-xs text-muted-foreground">{tool.desc}</p>
-                            </div>
-                          </div>
-                        );
-                        return tool.disabled ? (
-                          <div key={tool.label}>{inner}</div>
-                        ) : (
-                          <Link key={tool.label} href={tool.href}>{inner}</Link>
+                          </Link>
                         );
                       })}
                     </div>
@@ -164,11 +163,10 @@ export function Navbar() {
                 </button>
               </div>
             ) : (
-              <Link href="/login">
-                <Button variant="ghost" size="sm" className="font-semibold gap-1.5 text-muted-foreground hover:text-foreground">
-                  <LogIn className="w-4 h-4" /> Login
-                </Button>
-              </Link>
+              <Button variant="ghost" size="sm" className="font-semibold gap-1.5 text-muted-foreground hover:text-foreground"
+                onClick={() => setLoginOpen(true)}>
+                <LogIn className="w-4 h-4" /> Login
+              </Button>
             )}
 
             <Link href="/contact">
@@ -205,6 +203,9 @@ export function Navbar() {
           </motion.button>
         </div>
       </div>
+
+      {/* Login Modal */}
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
 
       {/* Mobile Menu */}
       <AnimatePresence>
@@ -276,11 +277,10 @@ export function Navbar() {
                     </Button>
                   </>
                 ) : (
-                  <Link href="/login" className="block">
-                    <Button variant="outline" className="w-full font-semibold gap-2">
-                      <LogIn className="w-4 h-4" /> Login
-                    </Button>
-                  </Link>
+                  <Button variant="outline" className="w-full font-semibold gap-2"
+                    onClick={() => { setMobileMenuOpen(false); setLoginOpen(true); }}>
+                    <LogIn className="w-4 h-4" /> Login
+                  </Button>
                 )}
                 <Link href="/contact">
                   <Button className="w-full font-semibold bg-primary hover:bg-primary/90 text-primary-foreground">
