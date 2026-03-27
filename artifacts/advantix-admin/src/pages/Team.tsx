@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useListTeamMembers, useCreateTeamMember, useUpdateTeamMember, useDeleteTeamMember } from "@workspace/api-client-react";
 import type { TeamMember } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Edit3, Trash2, Users, Mail, Linkedin } from "lucide-react";
+import { Plus, Edit3, Trash2, Users, Mail, Linkedin, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,13 +24,86 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
+function PhotoUploader({ value, onChange }: { value: string; onChange: (url: string) => void }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result;
+      if (typeof result === "string") onChange(result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearPhoto = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onChange("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  return (
+    <div className="space-y-3">
+      <label className="text-sm font-semibold">Photo</label>
+      <div className="flex items-center gap-4">
+        <div className="w-20 h-20 rounded-full border-2 border-dashed border-border bg-secondary/50 flex items-center justify-center overflow-hidden shrink-0 relative group">
+          {value ? (
+            <>
+              <img src={value} alt="Preview" className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={clearPhoto}
+                className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-full"
+              >
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </>
+          ) : (
+            <Upload className="w-6 h-6 text-muted-foreground/60" />
+          )}
+        </div>
+
+        <div className="flex-1 space-y-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="w-full"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="w-4 h-4 mr-2" />
+            {value ? "Change Photo" : "Upload Photo"}
+          </Button>
+          <p className="text-xs text-muted-foreground text-center">or paste a URL below</p>
+          <Input
+            value={value.startsWith("data:") ? "" : value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="https://..."
+            className="bg-secondary/50 border-border text-sm h-8"
+          />
+        </div>
+      </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+    </div>
+  );
+}
+
 export default function Team() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
+
   const { data: members, isLoading } = useListTeamMembers();
   const createMutation = useCreateTeamMember();
   const updateMutation = useUpdateTeamMember();
@@ -40,6 +113,8 @@ export default function Team() {
     resolver: zodResolver(formSchema),
     defaultValues: { name: "", role: "", bio: "", photoUrl: "", email: "", linkedinUrl: "" }
   });
+
+  const photoUrl = form.watch("photoUrl") ?? "";
 
   const openCreate = () => {
     form.reset({ name: "", role: "", bio: "", photoUrl: "", email: "", linkedinUrl: "" });
@@ -51,10 +126,10 @@ export default function Team() {
     form.reset({
       name: member.name,
       role: member.role,
-      bio: member.bio || "",
-      photoUrl: member.photoUrl || "",
-      email: member.email || "",
-      linkedinUrl: member.linkedinUrl || ""
+      bio: member.bio ?? "",
+      photoUrl: member.photoUrl ?? "",
+      email: member.email ?? "",
+      linkedinUrl: member.linkedinUrl ?? "",
     });
     setEditingId(member.id);
     setIsModalOpen(true);
@@ -135,10 +210,10 @@ export default function Team() {
                   </div>
                 )}
               </div>
-              
+
               <h3 className="text-lg font-display font-bold text-foreground">{member.name}</h3>
               <p className="text-sm font-medium text-primary mt-1">{member.role}</p>
-              
+
               {member.bio && (
                 <p className="text-sm text-muted-foreground mt-3 line-clamp-3">{member.bio}</p>
               )}
@@ -166,11 +241,11 @@ export default function Team() {
       </div>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-xl bg-card border-border/50">
+        <DialogContent className="sm:max-w-xl bg-card border-border/50 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-display">{editingId ? "Edit Member" : "Add Member"}</DialogTitle>
           </DialogHeader>
-          
+
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -196,10 +271,10 @@ export default function Team() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-semibold">Photo URL</label>
-              <Input {...form.register("photoUrl")} placeholder="https://..." className="bg-secondary/50 border-border" />
-            </div>
+            <PhotoUploader
+              value={photoUrl}
+              onChange={(url) => form.setValue("photoUrl", url)}
+            />
 
             <div className="space-y-2">
               <label className="text-sm font-semibold">Bio</label>
