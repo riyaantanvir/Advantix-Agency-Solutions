@@ -164,11 +164,11 @@ export function Navbar() {
                 </button>
               </div>
             ) : (
-              <a href="/admin/login">
+              <Link href="/login">
                 <Button variant="ghost" size="sm" className="font-semibold gap-1.5 text-muted-foreground hover:text-foreground">
                   <LogIn className="w-4 h-4" /> Login
                 </Button>
-              </a>
+              </Link>
             )}
 
             <Link href="/contact">
@@ -275,11 +275,11 @@ export function Navbar() {
                     </Button>
                   </>
                 ) : (
-                  <a href="/admin/login" className="block">
+                  <Link href="/login" className="block">
                     <Button variant="outline" className="w-full font-semibold gap-2">
                       <LogIn className="w-4 h-4" /> Login
                     </Button>
-                  </a>
+                  </Link>
                 )}
                 <Link href="/contact">
                   <Button className="w-full font-semibold bg-primary hover:bg-primary/90 text-primary-foreground">

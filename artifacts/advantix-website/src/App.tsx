@@ -13,6 +13,7 @@ import Contact from "@/pages/Contact";
 import Tools from "@/pages/Tools";
 import UrlShortener from "@/pages/UrlShortener";
 import ToolsDashboard from "@/pages/ToolsDashboard";
+import Login from "@/pages/Login";
 import Redirect from "@/pages/Redirect";
 
 const queryClient = new QueryClient({
@@ -38,6 +39,7 @@ function Router() {
             <Route path="/portfolio" component={Portfolio} />
             <Route path="/team" component={Team} />
             <Route path="/contact" component={Contact} />
+            <Route path="/login" component={Login} />
             <Route path="/tools" component={Tools} />
             <Route path="/tools/dashboard" component={ToolsDashboard} />
             <Route path="/tools/url-shortener" component={UrlShortener} />

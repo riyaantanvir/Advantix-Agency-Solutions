@@ -296,6 +296,7 @@ export default function UrlShortener() {
   const { user, setUser, loading, logout: ctxLogout } = useToolsUser();
   const [, navigate] = useLocation();
   const [authOpen, setAuthOpen] = useState(false);
+  const goToLogin = () => navigate("/login");
   const [urls, setUrls] = useState<ShortUrl[]>([]);
   const [urlsLoading, setUrlsLoading] = useState(false);
 
@@ -406,7 +407,7 @@ export default function UrlShortener() {
               </button>
             </div>
           ) : (
-            <Button onClick={() => setAuthOpen(true)} variant="outline" size="sm" className="gap-2">
+            <Button onClick={() => goToLogin()} variant="outline" size="sm" className="gap-2">
               <User className="w-4 h-4" /> Sign In
             </Button>
           )}
@@ -424,7 +425,7 @@ export default function UrlShortener() {
                   <p className="text-sm font-medium">Sign in to save your links</p>
                   <p className="text-xs text-muted-foreground">Your links will be stored and accessible anytime.</p>
                 </div>
-                <Button size="sm" onClick={() => setAuthOpen(true)} className="shrink-0">Sign In</Button>
+                <Button size="sm" onClick={() => goToLogin()} className="shrink-0">Sign In</Button>
               </div>
             )}
 
@@ -495,7 +496,7 @@ export default function UrlShortener() {
                 type="submit"
                 className="w-full h-12 text-base font-semibold shadow-lg shadow-primary/20"
                 disabled={creating || !user}
-                onClick={!user ? () => setAuthOpen(true) : undefined}
+                onClick={!user ? () => goToLogin() : undefined}
               >
                 {creating ? (
                   <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Shortening…</>
@@ -540,7 +541,6 @@ export default function UrlShortener() {
         )}
       </div>
 
-      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} onSuccess={u => { setUser(u); setAuthOpen(false); navigate("/tools/dashboard"); }} />
       <AnalyticsModal open={analyticsOpen} onClose={() => setAnalyticsOpen(false)} url={analyticsUrl} shortBase={shortBase} />
     </div>
   );
