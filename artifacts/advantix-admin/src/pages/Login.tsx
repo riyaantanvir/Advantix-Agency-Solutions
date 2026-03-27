@@ -61,9 +61,7 @@ export default function Login() {
       {/* Top Navbar */}
       <header className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4 bg-background/60 backdrop-blur-md border-b border-border/40">
         <a href="/" className="flex items-center gap-2 group">
-          <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center font-display font-bold text-white text-sm shadow shadow-primary/30">
-            A
-          </div>
+          <img src="/images/logo-icon.svg" alt="Advantix" className="w-7 h-7 object-contain" />
           <span className="font-display font-bold text-lg tracking-tight text-foreground">Advantix</span>
         </a>
         <nav className="flex items-center gap-6">

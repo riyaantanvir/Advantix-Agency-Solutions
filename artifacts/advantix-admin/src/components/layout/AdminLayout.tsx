@@ -52,9 +52,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     <>
       <div className="p-6">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center font-display font-bold text-white shadow-lg shadow-primary/25">
-            A
-          </div>
+          <img src="/images/logo-icon.svg" alt="Advantix" className="w-8 h-8 object-contain" />
           <span className="font-display font-bold text-xl tracking-tight text-foreground">Advantix</span>
         </div>
       </div>
@@ -104,10 +102,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       {/* Mobile Header */}
       <header className="md:hidden fixed top-0 left-0 right-0 h-16 border-b border-border/50 bg-background/80 backdrop-blur-xl z-30 flex items-center justify-between px-4">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center font-display font-bold text-white">
-            A
-          </div>
-          <span className="font-display font-bold text-lg">Admin</span>
+          <img src="/images/logo-icon.svg" alt="Advantix" className="w-8 h-8 object-contain" />
+          <span className="font-display font-bold text-lg">Advantix</span>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setIsMobileMenuOpen(true)}>
           <Menu className="w-6 h-6 text-foreground" />

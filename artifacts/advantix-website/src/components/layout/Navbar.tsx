@@ -56,7 +56,7 @@ export function Navbar() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 group">
             <motion.img
-              src={`${import.meta.env.BASE_URL}images/logo-mark.png`}
+              src={`${import.meta.env.BASE_URL}images/logo-icon.svg`}
               alt="Advantix Logo"
               className="w-8 h-8 object-contain"
               whileHover={{ rotate: -5, scale: 1.1 }}

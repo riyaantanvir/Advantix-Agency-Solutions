@@ -1,0 +1,26 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "zTMwU36cTHWShQMoCKnbi"
+uri = "file://attached_assets/generated_images/advantix-icon-transparent.png"
+type = "image"
+title = "Advantix Icon Mark (Transparent PNG) — Favicon + Social Profile"
+
+[[outputs]]
+id = "hgMSTzBkyX1IetmJ52GpZ"
+uri = "file://attached_assets/generated_images/advantix-logo-wordmark.png"
+type = "image"
+title = "Advantix Wordmark (Transparent PNG) — Header + Banner"
+
+[[outputs]]
+id = "x6nhr4nBx76jVBaG9_q2O"
+uri = "file://artifacts/advantix-website/public/images/logo-icon.svg"
+type = "image"
+title = "Advantix Icon (SVG Vector) — Scalable, Perfect Quality"
+
+[[outputs]]
+id = "iR2PM52JFzzRrtMvr7FBr"
+uri = "file://artifacts/advantix-website/public/images/logo-wordmark.svg"
+type = "image"
+title = "Advantix Wordmark (SVG Vector) — Light Background Use"
