@@ -58,7 +58,7 @@ export default function Login() {
       try {
         await adminLogin(identifier.trim(), password);
         // Admin success — redirect to admin panel
-        window.location.href = "/admin";
+        window.location.href = "/admin/";
         return;
       } catch {
         // Neither
