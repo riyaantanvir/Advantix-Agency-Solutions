@@ -3,9 +3,13 @@ import cors from "cors";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
+import path from "path";
+import { fileURLToPath } from "url";
 import router from "./routes/index.js";
 import redirectRouter from "./routes/shortRedirect.js";
 import { logger } from "./lib/logger.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET must be set.");
@@ -15,14 +19,35 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL must be set.");
 }
 
-const ALLOWED_ORIGINS = (process.env.REPLIT_DOMAINS ?? "")
-  .split(",")
-  .map((d) => d.trim())
-  .filter(Boolean)
-  .flatMap((d) => [`https://${d}`, `http://${d}`]);
+const isProd = process.env.NODE_ENV === "production";
 
-if (process.env.NODE_ENV !== "production") {
-  ALLOWED_ORIGINS.push("http://localhost:3000", "http://localhost:5173", "http://localhost:8080", "http://localhost:8081");
+// ── CORS origins ──────────────────────────────────────────────────────────────
+// In production, set ALLOWED_ORIGINS (comma-separated) or leave empty for
+// same-origin only. In dev we allow Replit + local dev servers.
+const ALLOWED_ORIGINS: string[] = [];
+
+if (isProd) {
+  const env = process.env.ALLOWED_ORIGINS ?? "";
+  env
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean)
+    .forEach((o) => ALLOWED_ORIGINS.push(o));
+} else {
+  const replitDomains = (process.env.REPLIT_DOMAINS ?? "")
+    .split(",")
+    .map((d) => d.trim())
+    .filter(Boolean);
+  replitDomains.forEach((d) => {
+    ALLOWED_ORIGINS.push(`https://${d}`);
+    ALLOWED_ORIGINS.push(`http://${d}`);
+  });
+  ALLOWED_ORIGINS.push(
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8080",
+    "http://localhost:8081",
+  );
 }
 
 const PgSession = connectPgSimple(session);
@@ -36,16 +61,10 @@ app.use(
     logger,
     serializers: {
       req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
+        return { id: req.id, method: req.method, url: req.url?.split("?")[0] };
       },
       res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
+        return { statusCode: res.statusCode };
       },
     },
   }),
@@ -54,7 +73,9 @@ app.use(
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || ALLOWED_ORIGINS.includes(origin) || process.env.NODE_ENV !== "production") {
+      // Same-origin requests have no Origin header — always allow
+      if (!origin) { callback(null, true); return; }
+      if (ALLOWED_ORIGINS.length === 0 || ALLOWED_ORIGINS.includes(origin) || !isProd) {
         callback(null, true);
       } else {
         callback(new Error(`CORS: origin '${origin}' not allowed`));
@@ -63,19 +84,18 @@ app.use(
     credentials: true,
   }),
 );
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(
   session({
-    store: new PgSession({
-      conString: process.env.DATABASE_URL,
-    }),
+    store: new PgSession({ conString: process.env.DATABASE_URL }),
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      secure: isProd,
       httpOnly: true,
       sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000,
@@ -83,7 +103,33 @@ app.use(
   }),
 );
 
+// ── URL shortener (must be before API prefix) ─────────────────────────────────
 app.use(redirectRouter);
+
+// ── API routes ────────────────────────────────────────────────────────────────
 app.use("/api", router);
+
+// ── Static file serving in production ─────────────────────────────────────────
+// The Dockerfile copies built frontends to these paths relative to dist/index.mjs
+if (isProd) {
+  const websiteDir = path.resolve(__dirname, "../../advantix-website/dist/public");
+  const adminDir   = path.resolve(__dirname, "../../advantix-admin/dist/public");
+
+  // Admin dashboard at /admin/
+  app.use("/admin", express.static(adminDir, { index: false }));
+  app.get(/^\/admin(\/.*)?$/, (_req, res) => {
+    res.sendFile(path.join(adminDir, "index.html"));
+  });
+
+  // Public website at /  (catch-all last)
+  app.use(express.static(websiteDir, { index: false }));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api") || req.path.startsWith("/s/")) {
+      next();
+      return;
+    }
+    res.sendFile(path.join(websiteDir, "index.html"));
+  });
+}
 
 export default app;
