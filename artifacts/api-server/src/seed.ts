@@ -76,6 +76,13 @@ export async function runMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
+    ALTER TABLE tool_users
+      ADD COLUMN IF NOT EXISTS company_name text,
+      ADD COLUMN IF NOT EXISTS phone text,
+      ADD COLUMN IF NOT EXISTS website text
+  `);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS recording_sessions (
       id serial PRIMARY KEY,
       user_id integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,

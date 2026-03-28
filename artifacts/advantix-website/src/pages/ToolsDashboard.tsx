@@ -210,17 +210,20 @@ export default function ToolsDashboard() {
               </div>
             </Card>
 
-            <Card className="p-4 border-dashed border-border/40 bg-transparent opacity-60">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-secondary flex items-center justify-center shrink-0">
-                  <Settings className="w-5 h-5 text-muted-foreground" />
+            <Link href="/tools/settings">
+              <Card className="p-4 border-border/50 bg-card/60 hover:border-primary/30 hover:bg-primary/5 cursor-pointer transition-all group">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                    <Settings className="w-5 h-5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold">Account Settings</p>
+                    <p className="text-xs text-muted-foreground">Update profile & change password</p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold">Account Settings</p>
-                  <p className="text-xs text-muted-foreground">Coming soon</p>
-                </div>
-              </div>
-            </Card>
+              </Card>
+            </Link>
           </motion.div>
         </div>
       </div>

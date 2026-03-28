@@ -6,6 +6,15 @@ export interface ToolUser {
   email: string;
 }
 
+export interface ToolUserProfile {
+  id: number;
+  name: string;
+  email: string;
+  companyName: string | null;
+  phone: string | null;
+  website: string | null;
+}
+
 export interface ShortUrl {
   id: number;
   shortCode: string;
@@ -41,6 +50,17 @@ export const toolsApi = {
         body: JSON.stringify({ name, email, password }),
       }),
     logout: () => request<{ ok: boolean }>("/tools/auth/logout", { method: "POST" }),
+    profile: () => request<ToolUserProfile>("/tools/auth/profile"),
+    updateProfile: (data: { name: string; companyName?: string; phone?: string; website?: string }) =>
+      request<{ ok: boolean; name: string }>("/tools/auth/profile", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    changePassword: (currentPassword: string, newPassword: string) =>
+      request<{ ok: boolean }>("/tools/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      }),
   },
   recordings: {
     save: (durationSeconds: number) =>

@@ -14,6 +14,7 @@ import Tools from "@/pages/Tools";
 import UrlShortener from "@/pages/UrlShortener";
 import ToolsDashboard from "@/pages/ToolsDashboard";
 import ScreenRecorder from "@/pages/ScreenRecorder";
+import AccountSettings from "@/pages/AccountSettings";
 import Login from "@/pages/Login";
 import Redirect from "@/pages/Redirect";
 
@@ -45,6 +46,7 @@ function Router() {
             <Route path="/tools/dashboard" component={ToolsDashboard} />
             <Route path="/tools/url-shortener" component={UrlShortener} />
             <Route path="/tools/screen-recorder" component={ScreenRecorder} />
+            <Route path="/tools/settings" component={AccountSettings} />
             <Route component={NotFound} />
           </Switch>
         </AppLayout>

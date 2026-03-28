@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { db, toolUsersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -93,6 +93,64 @@ router.get("/tools/auth/me", (req, res) => {
       email: req.session.toolUserEmail,
     },
   });
+});
+
+router.get("/tools/auth/profile", async (req, res) => {
+  if (!req.session.toolUserId) { res.status(401).json({ error: "Not authenticated" }); return; }
+  try {
+    const [user] = await db.select().from(toolUsersTable).where(eq(toolUsersTable.id, req.session.toolUserId)).limit(1);
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      companyName: (user as any).company_name ?? null,
+      phone: (user as any).phone ?? null,
+      website: (user as any).website ?? null,
+    });
+  } catch { res.status(500).json({ error: "Server error" }); }
+});
+
+router.patch("/tools/auth/profile", async (req, res) => {
+  if (!req.session.toolUserId) { res.status(401).json({ error: "Not authenticated" }); return; }
+  try {
+    const { name, companyName, phone, website } = req.body as {
+      name?: string; companyName?: string; phone?: string; website?: string;
+    };
+    if (!name?.trim()) { res.status(400).json({ error: "Name is required" }); return; }
+
+    await db.execute(sql`
+      UPDATE tool_users
+      SET name = ${name.trim()},
+          company_name = ${companyName?.trim() || null},
+          phone = ${phone?.trim() || null},
+          website = ${website?.trim() || null}
+      WHERE id = ${req.session.toolUserId}
+    `);
+
+    req.session.toolUserName = name.trim();
+    res.json({ ok: true, name: name.trim() });
+  } catch { res.status(500).json({ error: "Update failed" }); }
+});
+
+router.post("/tools/auth/change-password", async (req, res) => {
+  if (!req.session.toolUserId) { res.status(401).json({ error: "Not authenticated" }); return; }
+  try {
+    const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
+    if (!currentPassword || !newPassword) { res.status(400).json({ error: "Both passwords are required" }); return; }
+    if (newPassword.length < 6) { res.status(400).json({ error: "New password must be at least 6 characters" }); return; }
+
+    const [user] = await db.select().from(toolUsersTable).where(eq(toolUsersTable.id, req.session.toolUserId)).limit(1);
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) { res.status(400).json({ error: "Current password is incorrect" }); return; }
+
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await db.update(toolUsersTable).set({ passwordHash: newHash }).where(eq(toolUsersTable.id, user.id));
+
+    res.json({ ok: true });
+  } catch { res.status(500).json({ error: "Password change failed" }); }
 });
 
 router.post("/tools/auth/logout", (req, res) => {
