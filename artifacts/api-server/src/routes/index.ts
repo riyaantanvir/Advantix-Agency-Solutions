@@ -13,6 +13,7 @@ import servicesRouter from "./services.js";
 import toolsAuthRouter from "./toolsAuth.js";
 import shortUrlsRouter from "./shortUrls.js";
 import adminUsersRouter from "./adminUsers.js";
+import recordingStatsRouter from "./recordingStats.js";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(chatSessionRouter);
 router.use(adminChatRouter);
 router.use(toolsAuthRouter);
 router.use(shortUrlsRouter);
+router.use(recordingStatsRouter);
 
 export default router;

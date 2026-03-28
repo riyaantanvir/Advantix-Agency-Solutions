@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { useToolsUser } from "@/context/ToolsUserContext";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL, fetchFile } from "@ffmpeg/util";
+import { toolsApi } from "@/lib/toolsApi";
 
 const expo = [0.22, 1, 0.36, 1] as const;
 const MAX_SECONDS = 10 * 60;
@@ -191,6 +192,10 @@ export default function ScreenRecorder() {
       const recorded = new Blob(chunksRef.current, { type: mime || "video/webm" });
       setBlob(recorded);
       setBlobUrl(URL.createObjectURL(recorded));
+      setElapsed(prev => {
+        toolsApi.recordings.save(prev).catch(() => {});
+        return prev;
+      });
     };
     stream.getVideoTracks()[0].onended = () => {
       if (recorder.state !== "inactive") stopRecording();

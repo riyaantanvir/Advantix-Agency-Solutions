@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link, useLocation } from "wouter";
-import { Link2, BarChart2, ExternalLink, Copy, CheckCircle, MessageSquare, ArrowRight, LogOut, Settings, Plus, Zap, Video } from "lucide-react";
+import { Link2, BarChart2, Copy, CheckCircle, MessageSquare, ArrowRight, LogOut, Settings, Plus, Zap, Video, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toolsApi, type ShortUrl } from "@/lib/toolsApi";
@@ -25,6 +25,8 @@ export default function ToolsDashboard() {
   const [, navigate] = useLocation();
   const [urls, setUrls] = useState<ShortUrl[]>([]);
   const [loadingUrls, setLoadingUrls] = useState(true);
+  const [recStats, setRecStats] = useState({ totalRecordings: 0, totalSeconds: 0 });
+  const [loadingRec, setLoadingRec] = useState(true);
 
   const shortBase = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -34,9 +36,14 @@ export default function ToolsDashboard() {
       .then(setUrls)
       .catch(() => setUrls([]))
       .finally(() => setLoadingUrls(false));
+    toolsApi.recordings.stats()
+      .then(setRecStats)
+      .catch(() => setRecStats({ totalRecordings: 0, totalSeconds: 0 }))
+      .finally(() => setLoadingRec(false));
   }, [user]);
 
   const totalClicks = urls.reduce((s, u) => s + u.clicks, 0);
+  const totalMinutes = Math.round(recStats.totalSeconds / 60);
 
   const openChat = () => {
     window.dispatchEvent(new Event("open-chat-widget"));
@@ -75,17 +82,19 @@ export default function ToolsDashboard() {
 
         {/* Stat cards */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: expo, delay: 0.05 }}
-          className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
+          className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
           {[
-            { label: "Total Links", value: urls.length, icon: Link2, color: "text-primary", bg: "bg-primary/10" },
-            { label: "Total Clicks", value: totalClicks, icon: BarChart2, color: "text-green-400", bg: "bg-green-500/10" },
-            { label: "Tools Available", value: 2, icon: Zap, color: "text-orange-400", bg: "bg-orange-500/10" },
-          ].map(({ label, value, icon: Icon, color, bg }) => (
+            { label: "Total Links", value: urls.length, icon: Link2, color: "text-primary", bg: "bg-primary/10", loading: loadingUrls },
+            { label: "Total Clicks", value: totalClicks, icon: BarChart2, color: "text-green-400", bg: "bg-green-500/10", loading: loadingUrls },
+            { label: "Tools Available", value: 2, icon: Zap, color: "text-orange-400", bg: "bg-orange-500/10", loading: false },
+            { label: "Recordings", value: recStats.totalRecordings, icon: Video, color: "text-purple-400", bg: "bg-purple-500/10", loading: loadingRec },
+            { label: "Mins Recorded", value: totalMinutes, icon: Clock, color: "text-blue-400", bg: "bg-blue-500/10", loading: loadingRec },
+          ].map(({ label, value, icon: Icon, color, bg, loading }) => (
             <Card key={label} className="p-5 border-border/50 bg-card">
               <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center mb-3`}>
                 <Icon className={`w-5 h-5 ${color}`} />
               </div>
-              <p className="text-2xl font-bold tabular-nums">{loadingUrls && label !== "Tools Available" ? "—" : value}</p>
+              <p className="text-2xl font-bold tabular-nums">{loading ? "—" : value}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
             </Card>
           ))}

@@ -42,6 +42,15 @@ export const toolsApi = {
       }),
     logout: () => request<{ ok: boolean }>("/tools/auth/logout", { method: "POST" }),
   },
+  recordings: {
+    save: (durationSeconds: number) =>
+      request<{ ok: boolean }>("/tools/recordings", {
+        method: "POST",
+        body: JSON.stringify({ durationSeconds }),
+      }),
+    stats: () =>
+      request<{ totalRecordings: number; totalSeconds: number }>("/tools/recordings/stats"),
+  },
   urls: {
     list: () => request<ShortUrl[]>("/tools/urls"),
     create: (originalUrl: string, title?: string, customSlug?: string) =>

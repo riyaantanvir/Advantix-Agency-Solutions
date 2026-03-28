@@ -75,6 +75,15 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS recording_sessions (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      duration_seconds integer NOT NULL DEFAULT 0,
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
   logger.info("Migrations applied");
 }
 
