@@ -4,6 +4,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
 import router from "./routes/index.js";
+import redirectRouter from "./routes/shortRedirect.js";
 import { logger } from "./lib/logger.js";
 
 if (!process.env.SESSION_SECRET) {
@@ -82,6 +83,7 @@ app.use(
   }),
 );
 
+app.use(redirectRouter);
 app.use("/api", router);
 
 export default app;
