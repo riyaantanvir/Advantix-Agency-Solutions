@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquare, X, Send, Bot, User, HeadphonesIcon, Loader2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useToolsUser } from "@/context/ToolsUserContext";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const TOKEN_KEY = "adv_chat_token";
@@ -75,6 +76,7 @@ function MessageBubble({ msg }: { msg: Msg }) {
 }
 
 export function ChatWidget() {
+  const { user } = useToolsUser();
   const [isOpen, setIsOpen] = useState(false);
   const [phase, setPhase] = useState<ChatPhase>("idle");
   const [name, setName] = useState("");
@@ -98,6 +100,20 @@ export function ChatWidget() {
     return () => window.removeEventListener("open-chat-widget", handler);
   }, []);
 
+  /* Auto-start flow whenever widget opens while still idle */
+  useEffect(() => {
+    if (!isOpen || phase !== "idle") return;
+    const saved = localStorage.getItem(TOKEN_KEY);
+    if (saved) {
+      restoreSession(saved);
+    } else if (user) {
+      startLoggedInFlow(user.name, user.email);
+    } else {
+      startFlow();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   /* Open chat — start flow */
   const handleOpen = () => {
     setIsOpen(true);
@@ -105,8 +121,9 @@ export function ChatWidget() {
     if (phase === "idle") {
       const saved = localStorage.getItem(TOKEN_KEY);
       if (saved) {
-        // Try to restore session
         restoreSession(saved);
+      } else if (user) {
+        startLoggedInFlow(user.name, user.email);
       } else {
         startFlow();
       }
@@ -116,6 +133,37 @@ export function ChatWidget() {
   const startFlow = () => {
     setPhase("ask_name");
     setMessages([{ role: "assistant", content: "Hi there! 👋 Welcome to Advantix. What's your name?" }]);
+  };
+
+  const startLoggedInFlow = async (userName: string, userEmail: string) => {
+    setName(userName);
+    setEmail(userEmail);
+    setIsLoading(true);
+    setMessages([{ role: "assistant", content: `Hi ${userName}! 👋 How can we help you today?` }]);
+    setPhase("chatting");
+    try {
+      const savedToken = localStorage.getItem(TOKEN_KEY);
+      const res = await fetch(`${BASE}/api/chat/session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name: userName, email: userEmail, token: savedToken }),
+      });
+      const data = await res.json() as { sessionId: number; token: string; status: string };
+      localStorage.setItem(TOKEN_KEY, data.token);
+      setSessionToken(data.token);
+      const mRes = await fetch(`${BASE}/api/chat/session/${data.token}/messages`, { credentials: "include" });
+      const mData = await mRes.json() as { messages: Array<{ id: number; role: string; content: string }>; status: string };
+      const msgs: Msg[] = mData.messages.map(m => ({ id: m.id, role: m.role as Msg["role"], content: m.content }));
+      setMessages(msgs);
+      if (msgs.length > 0) setLastMsgId(msgs[msgs.length - 1].id ?? 0);
+      if (mData.status === "human") setPhase("human");
+      else if (mData.status === "pending_human") setPhase("pending_human");
+    } catch {
+      setMessages([{ role: "assistant", content: `Hi ${userName}! 👋 How can we help you today?` }]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const restoreSession = async (token: string) => {
