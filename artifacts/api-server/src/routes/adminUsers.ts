@@ -6,9 +6,7 @@ import { requireAdmin } from "../middleware/auth.js";
 
 const router = Router();
 
-router.use(requireAdmin);
-
-router.get("/admin/users", async (req, res) => {
+router.get("/admin/users", requireAdmin, async (req, res) => {
   try {
     const users = await db
       .select({ id: toolUsersTable.id, name: toolUsersTable.name, email: toolUsersTable.email, createdAt: toolUsersTable.createdAt })
@@ -20,7 +18,7 @@ router.get("/admin/users", async (req, res) => {
   }
 });
 
-router.post("/admin/users", async (req, res) => {
+router.post("/admin/users", requireAdmin, async (req, res) => {
   try {
     const { name, email, password } = req.body as { name?: string; email?: string; password?: string };
     if (!name || !email || !password) {
@@ -56,7 +54,7 @@ router.post("/admin/users", async (req, res) => {
   }
 });
 
-router.delete("/admin/users/:id", async (req, res) => {
+router.delete("/admin/users/:id", requireAdmin, async (req, res) => {
   try {
     const id = parseInt(String(req.params.id), 10);
     if (isNaN(id)) {
@@ -70,7 +68,7 @@ router.delete("/admin/users/:id", async (req, res) => {
   }
 });
 
-router.get("/admin/admins", async (req, res) => {
+router.get("/admin/admins", requireAdmin, async (req, res) => {
   try {
     const admins = await db
       .select({ id: adminsTable.id, username: adminsTable.username, createdAt: adminsTable.createdAt })
@@ -82,7 +80,7 @@ router.get("/admin/admins", async (req, res) => {
   }
 });
 
-router.post("/admin/admins", async (req, res) => {
+router.post("/admin/admins", requireAdmin, async (req, res) => {
   try {
     const { username, password } = req.body as { username?: string; password?: string };
     if (!username || !password) {
@@ -117,7 +115,7 @@ router.post("/admin/admins", async (req, res) => {
   }
 });
 
-router.delete("/admin/admins/:id", async (req, res) => {
+router.delete("/admin/admins/:id", requireAdmin, async (req, res) => {
   try {
     const id = parseInt(String(req.params.id), 10);
     if (isNaN(id)) {
