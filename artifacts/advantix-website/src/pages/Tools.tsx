@@ -96,7 +96,11 @@ export default function Tools() {
             );
 
             return tool.available ? (
-              <Link key={tool.name} href={tool.href}>{content}</Link>
+              tool.external ? (
+                <a key={tool.name} href={tool.href}>{content}</a>
+              ) : (
+                <Link key={tool.name} href={tool.href}>{content}</Link>
+              )
             ) : (
               <div key={tool.name}>{content}</div>
             );
