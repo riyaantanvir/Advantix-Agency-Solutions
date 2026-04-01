@@ -24,11 +24,22 @@ interface ProviderInfo {
 }
 
 function classifyIntent(message: string): IntentType {
-  const lower = message.toLowerCase();
-  if (/(generate|create|draw|make|show me|design).*(image|picture|photo|illustration|artwork|logo|banner|icon)/i.test(lower) ||
-      /(image|picture|photo) of/i.test(lower)) {
+  const lower = message.toLowerCase().trim();
+
+  // Image intent — detect visual/drawing requests
+  if (
+    // Message starts with a drawing verb → always image
+    /^(draw|paint|sketch|illustrate|render|depict|visualize|generate an? (image|picture|photo|illustration)|create an? (image|picture|photo|illustration)|make an? (image|picture|photo|illustration)|show me an? (image|picture|photo|illustration))\b/i.test(lower) ||
+    // Drawing verb anywhere followed by a visual subject or image-type word
+    /\b(draw|paint|sketch|illustrate|render)\b.*(city|person|animal|character|scene|landscape|nature|building|car|face|portrait|background|wallpaper|logo|icon|banner|image|picture|photo|poster|art|figure|dragon|robot|futuristic|abstract|realistic)/i.test(lower) ||
+    // Explicit generation + image-type words
+    /(generate|create|make|design|produce|give me).*(image|picture|photo|illustration|artwork|logo|banner|icon|scene|landscape|portrait|wallpaper|poster|painting|sketch|visual|render)/i.test(lower) ||
+    // Noun form: "image/picture/photo of ..."
+    /(image|picture|photo|illustration|artwork|painting|sketch|portrait|landscape|render) of\b/i.test(lower)
+  ) {
     return "image";
   }
+
   if (/(write|fix|debug|explain|refactor|implement|code|function|class|component|api|sql|regex|algorithm|script|program|html|css|javascript|typescript|python|java|c\+\+|rust|golang)/i.test(lower)) {
     return "code";
   }
