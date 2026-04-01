@@ -7,6 +7,7 @@ import {
   aiMessagesTable,
   aiUsageLogsTable,
   aiUserLimitsTable,
+  aiMemoriesTable,
   toolUsersTable,
   integrationsTable,
 } from "@workspace/db/schema";
@@ -85,9 +86,11 @@ function getProvider(intent: IntentType): ProviderInfo {
   }
 }
 
-function buildSystemPrompt(projectInstructions: string, base: string): string {
-  if (!projectInstructions) return base;
-  return `${projectInstructions}\n\n---\n\n${base}`;
+function buildSystemPrompt(projectInstructions: string, base: string, memoriesContext = ""): string {
+  let prompt = base;
+  if (memoriesContext) prompt += memoriesContext;
+  if (projectInstructions) prompt = `${projectInstructions}\n\n---\n\n${prompt}`;
+  return prompt;
 }
 
 function estimateCostUsd(provider: string, model: string, promptTokens: number, completionTokens: number): number {
@@ -163,6 +166,50 @@ router.delete("/projects/:id", requireToolUser, async (req: Request, res: Respon
   res.json({ success: true });
 });
 
+// ─── Memories CRUD ───────────────────────────────────────────────────────────
+
+router.get("/memories", requireToolUser, async (req: Request, res: Response) => {
+  const userId = req.session!.toolUserId as number;
+  const memories = await db
+    .select()
+    .from(aiMemoriesTable)
+    .where(eq(aiMemoriesTable.userId, userId))
+    .orderBy(desc(aiMemoriesTable.createdAt));
+  res.json(memories);
+});
+
+router.post("/memories", requireToolUser, async (req: Request, res: Response) => {
+  const userId = req.session!.toolUserId as number;
+  const { content } = req.body as { content: string };
+  if (!content?.trim()) { res.status(400).json({ error: "Content required" }); return; }
+  const [memory] = await db
+    .insert(aiMemoriesTable)
+    .values({ userId, content: content.trim(), source: "manual" })
+    .returning();
+  res.json(memory);
+});
+
+router.put("/memories/:id", requireToolUser, async (req: Request, res: Response) => {
+  const userId = req.session!.toolUserId as number;
+  const id = parseInt(req.params.id);
+  const { content } = req.body as { content: string };
+  if (!content?.trim()) { res.status(400).json({ error: "Content required" }); return; }
+  const [updated] = await db
+    .update(aiMemoriesTable)
+    .set({ content: content.trim(), updatedAt: new Date() })
+    .where(and(eq(aiMemoriesTable.id, id), eq(aiMemoriesTable.userId, userId)))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "Memory not found" }); return; }
+  res.json(updated);
+});
+
+router.delete("/memories/:id", requireToolUser, async (req: Request, res: Response) => {
+  const userId = req.session!.toolUserId as number;
+  const id = parseInt(req.params.id);
+  await db.delete(aiMemoriesTable).where(and(eq(aiMemoriesTable.id, id), eq(aiMemoriesTable.userId, userId)));
+  res.json({ success: true });
+});
+
 // ─── Sessions ────────────────────────────────────────────────────────────────
 
 router.get("/sessions", requireToolUser, async (req: Request, res: Response) => {
@@ -230,6 +277,17 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
     }
   }
 
+  // Load user memories
+  const userMemories = await db
+    .select()
+    .from(aiMemoriesTable)
+    .where(eq(aiMemoriesTable.userId, userId))
+    .orderBy(desc(aiMemoriesTable.createdAt))
+    .limit(30);
+  const memoriesContext = userMemories.length > 0
+    ? `\n\nAbout this user (remembered from past conversations):\n${userMemories.map(m => `- ${m.content}`).join("\n")}`
+    : "";
+
   // Check monthly token limit
   const [limit] = await db.select().from(aiUserLimitsTable).where(eq(aiUserLimitsTable.userId, userId));
   if (limit?.monthlyTokenLimit) {
@@ -292,7 +350,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
       const stream = anthropic.messages.stream({
         model,
         max_tokens: 8192,
-        system: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks."),
+        system: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.", memoriesContext),
         messages: chatMessages,
       });
 
@@ -318,7 +376,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
       const stream = await geminiAi.models.generateContentStream({
         model: "gemini-2.5-flash",
         contents: chatMessages,
-        config: { maxOutputTokens: 8192, systemInstruction: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.") },
+        config: { maxOutputTokens: 8192, systemInstruction: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.", memoriesContext) },
       });
 
       for await (const chunk of stream) {
@@ -346,7 +404,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
           max_tokens: 8192,
           stream: true,
           messages: [
-            { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI. Note: Real-time search via Grok is not configured — add a GROK_API_KEY in Admin > Integrations to enable live search. Answer based on your training data and clearly state your knowledge cutoff.") },
+            { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI. Note: Real-time search via Grok is not configured — add a GROK_API_KEY in Admin > Integrations to enable live search. Answer based on your training data and clearly state your knowledge cutoff.", memoriesContext) },
             ...chatMessages,
           ],
         });
@@ -369,7 +427,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
             stream: true,
             search_enabled: true,
             messages: [
-              { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI powered by Grok with live internet access. Use real-time search to find the latest news, current events, and live data. Always include today's date context. Cite sources when possible. Be concise and accurate.") },
+              { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI powered by Grok with live internet access. Use real-time search to find the latest news, current events, and live data. Always include today's date context. Cite sources when possible. Be concise and accurate.", memoriesContext) },
               ...chatMessages,
             ],
           }),
@@ -418,7 +476,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
         max_tokens: 8192,
         stream: true,
         messages: [
-          { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.") },
+          { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.", memoriesContext) },
           ...chatMessages,
         ],
       });
@@ -468,7 +526,54 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
   }
 
   res.end();
+
+  // Auto-extract memories from user message (non-blocking, runs after response)
+  extractAndSaveMemories(userId, message).catch(() => {});
 });
+
+async function extractAndSaveMemories(userId: number, userMessage: string): Promise<void> {
+  if (userMessage.length < 10) return;
+
+  const extractionPrompt = `Analyze this user message and extract any personal facts worth remembering for future conversations (e.g. their name, profession, location, preferences, hobbies, goals, family info, languages spoken, skills, or any other personal details they mention).
+
+Return ONLY a valid JSON array of short strings (max 120 chars each). Each string is a concise memory fact starting with "User". Return an empty array [] if there's nothing personal worth remembering. Do not include generic statements.
+
+Examples of good memories:
+- "User's name is Tanvir"
+- "User prefers React with TypeScript"
+- "User is from Bangladesh"
+- "User works as a software engineer"
+
+User message: "${userMessage.replace(/"/g, "'")}"`
+
+  try {
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 300,
+      temperature: 0,
+      messages: [{ role: "user", content: extractionPrompt }],
+    });
+
+    const raw = res.choices[0]?.message?.content?.trim() ?? "[]";
+    const match = raw.match(/\[[\s\S]*\]/);
+    if (!match) return;
+    const facts: string[] = JSON.parse(match[0]);
+    if (!Array.isArray(facts) || facts.length === 0) return;
+
+    // Load existing memories to avoid duplicates
+    const existing = await db.select({ content: aiMemoriesTable.content }).from(aiMemoriesTable).where(eq(aiMemoriesTable.userId, userId));
+    const existingSet = new Set(existing.map(m => m.content.toLowerCase()));
+
+    for (const fact of facts) {
+      const trimmed = fact.trim();
+      if (!trimmed || trimmed.length > 200) continue;
+      if (existingSet.has(trimmed.toLowerCase())) continue;
+      await db.insert(aiMemoriesTable).values({ userId, content: trimmed, source: "auto" });
+    }
+  } catch {
+    // Silently ignore extraction failures
+  }
+}
 
 router.post("/feedback", requireToolUser, async (req: Request, res: Response) => {
   const { messageId, feedback } = req.body as { messageId: number; feedback: "up" | "down" };
