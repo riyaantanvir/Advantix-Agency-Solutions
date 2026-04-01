@@ -13,6 +13,7 @@ import Services from "./pages/Services";
 import Team from "./pages/Team";
 import AssistantRequests from "./pages/AssistantRequests";
 import UserManagement from "./pages/UserManagement";
+import ManageAI from "./pages/ManageAI";
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminLayout } from "./components/layout/AdminLayout";
@@ -73,6 +74,10 @@ function Router() {
 
       <Route path="/user-management">
         <ProtectedLayout><UserManagement /></ProtectedLayout>
+      </Route>
+
+      <Route path="/manage-ai">
+        <ProtectedLayout><ManageAI /></ProtectedLayout>
       </Route>
 
       <Route>

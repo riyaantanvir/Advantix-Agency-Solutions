@@ -1,11 +1,22 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { Link2, Video, ArrowRight, Zap } from "lucide-react";
+import { Link2, Video, ArrowRight, Zap, Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 const expo = [0.22, 1, 0.36, 1] as const;
 
 const tools = [
+  {
+    icon: Sparkles,
+    name: "Advantix AI",
+    description: "Multi-model AI chat that automatically routes your request to GPT-4o, Claude, or Gemini — whichever is best for your task. Write code, generate images, analyze data, and more.",
+    href: "/ai/",
+    available: true,
+    color: "text-violet-400",
+    bg: "bg-violet-500/10",
+    badge: "New",
+    external: true,
+  },
   {
     icon: Link2,
     name: "URL Shortener",

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Full-stack pnpm workspace monorepo for Advantix Agency (advantix.agency). A complete digital agency platform with public website, admin dashboard, and REST API backend.
+Full-stack pnpm workspace monorepo for Advantix Agency (advantix.agency). A complete digital agency platform with public website, admin dashboard, REST API backend, and multi-model AI tool.
 
 ## Stack
 
@@ -14,9 +14,9 @@ Full-stack pnpm workspace monorepo for Advantix Agency (advantix.agency). A comp
 - **Database**: PostgreSQL + Drizzle ORM
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (ESM bundle)
+- **Build**: esbuild (ESM bundle) — `@google/*` is NOT externalized (bundles `@google/genai` directly)
 - **Auth**: express-session + bcryptjs (session-based)
-- **AI**: Replit AI Integrations (OpenAI-compatible, gpt-5.2)
+- **AI Providers**: Replit AI Integrations — OpenAI (`gpt-4o-mini`, `gpt-4o`), Anthropic (`claude-sonnet-4-6`), Gemini (`gemini-2.5-flash`, `gemini-2.5-flash-image`)
 
 ## Admin Credentials
 
@@ -28,11 +28,10 @@ Full-stack pnpm workspace monorepo for Advantix Agency (advantix.agency). A comp
 
 | Artifact | Path | Description |
 |---|---|---|
-| `advantix-website` | `/` | Public-facing marketing website (Home, Portfolio, Team, Contact) |
-| `advantix-admin` | `/admin/` | Protected admin dashboard (login, dashboard, contacts, leads, portfolio, team) |
+| `advantix-website` | `/` | Public-facing marketing website (Home, Portfolio, Team, Contact, Tools) |
+| `advantix-admin` | `/admin/` | Protected admin dashboard (login, dashboard, contacts, leads, portfolio, team, AI management) |
+| `advantix-ai` | `/ai/` | Multi-model AI chat tool (login-gated, streaming, GPT/Claude/Gemini router) |
 | `api-server` | — | Express REST API backend (all `/api/*` routes) |
-
-Admin dashboard credentials: **username=admin / password=2816** (login at `/admin/login`)
 
 ## Structure
 
@@ -41,14 +40,17 @@ artifacts-monorepo/
 ├── artifacts/              # Deployable applications
 │   ├── api-server/         # Express API server
 │   ├── advantix-website/   # Public marketing site (React + Vite)
-│   └── advantix-admin/     # Admin dashboard (React + Vite)
+│   ├── advantix-admin/     # Admin dashboard (React + Vite)
+│   └── advantix-ai/        # Advantix AI chat tool (React + Vite, dark theme)
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
 │   ├── db/                 # Drizzle ORM schema + DB connection
-│   ├── integrations-openai-ai-server/  # OpenAI server-side helpers
-│   └── integrations-openai-ai-react/   # OpenAI React hooks
+│   ├── integrations-openai-ai-server/   # OpenAI server-side helpers
+│   ├── integrations-openai-ai-react/    # OpenAI React hooks
+│   ├── integrations-anthropic-ai/       # Anthropic (Claude) server-side helpers
+│   └── integrations-gemini-ai/          # Gemini server-side helpers + image generation
 ├── scripts/                # Utility scripts
 ├── pnpm-workspace.yaml     # pnpm workspace config
 ├── tsconfig.base.json      # Shared TS options
@@ -69,21 +71,29 @@ All routes are prefixed with `/api`.
 - `GET /api/team` — List team members
 - `POST /api/leads` — Track a lead/interest
 - `POST /api/track` — Track a page view
-- `POST /api/chat` — AI chat assistant (gpt-5.2, Advantix-focused system prompt)
+- `POST /api/chat` — AI chat assistant (gpt-4o-mini, Advantix-focused system prompt)
+
+### Tool User Routes (Tool Session Required)
+- `GET /api/tools/auth/me` — Get current tool user
+- `POST /api/tools/auth/login` — Tool user login
+- `POST /api/tools/auth/register` — Tool user register
+- `POST /api/tools/auth/logout` — Tool user logout
+- `GET /api/ai/sessions` — List AI chat sessions
+- `POST /api/ai/sessions` — Create new AI session
+- `GET /api/ai/sessions/:id/messages` — Get session messages
+- `DELETE /api/ai/sessions/:id` — Delete session
+- `POST /api/ai/chat/:sessionId` — Stream AI chat (SSE) — auto-routes to best model
+- `POST /api/ai/feedback` — Submit message feedback (thumbs up/down)
+- `GET /api/ai/usage/me` — Get current user's token usage
 
 ### Admin-Only Routes (Session Required)
 - `POST /api/auth/logout` — Logout
 - `GET /api/contacts` — List all contacts
-- `PATCH /api/contacts/:id` — Mark contact as replied
-- `DELETE /api/contacts/:id` — Delete contact
-- `POST /api/portfolio` — Create portfolio item
-- `PUT /api/portfolio/:id` — Update portfolio item
-- `DELETE /api/portfolio/:id` — Delete portfolio item
-- `POST /api/team` — Create team member
-- `PUT /api/team/:id` — Update team member
-- `DELETE /api/team/:id` — Delete team member
 - `GET /api/leads` — List all leads
-- `GET /api/stats` — Get visitor stats (active visitors, today's views, top pages)
+- `GET /api/stats` — Get visitor stats
+- `GET /api/ai/admin/stats?period=week|month|all` — AI usage stats by provider
+- `GET /api/ai/admin/users` — Per-user AI usage and costs
+- `PUT /api/ai/admin/users/:id/limit` — Set monthly token limit for a user
 
 ## Database Schema
 
@@ -94,15 +104,36 @@ Tables (all managed by Drizzle ORM):
 - `team_members` — Team member profiles
 - `leads` — Service interest leads
 - `page_views` — Visitor page tracking
-- `conversations` / `messages` — AI conversation history (from OpenAI integration)
+- `conversations` / `messages` — Chat widget conversation history
+- `tool_users` — Registered tool users (for URL shortener, Screen Recorder, AI tool)
+- `short_urls` / `url_clicks` — URL shortener data
+- `ai_sessions` — AI chat sessions (linked to tool_users)
+- `ai_messages` — Individual AI messages with provider/model/token info
+- `ai_usage_logs` — Per-request token + cost tracking by provider
+- `ai_user_limits` — Monthly token limits per user (admin-configurable)
+
+## AI Routing Logic (advantixAi.ts)
+
+The intent classifier routes messages to the best provider:
+- **Image requests** → `gemini-2.5-flash-image` (Gemini image generation)
+- **Code requests** → `claude-sonnet-4-6` (Anthropic Claude)
+- **Reasoning/analysis** → `claude-sonnet-4-6` (Anthropic Claude)
+- **General chat** → `gpt-4o-mini` (OpenAI)
 
 ## Environment Variables
 
 - `DATABASE_URL` — PostgreSQL connection string (auto-provisioned by Replit)
 - `SESSION_SECRET` — Express session secret
-- `AI_INTEGRATIONS_OPENAI_BASE_URL` — Replit AI proxy URL
-- `AI_INTEGRATIONS_OPENAI_API_KEY` — Replit AI proxy API key
+- `AI_INTEGRATIONS_OPENAI_BASE_URL` + `AI_INTEGRATIONS_OPENAI_API_KEY` — Replit AI proxy for OpenAI
+- `AI_INTEGRATIONS_ANTHROPIC_BASE_URL` + `AI_INTEGRATIONS_ANTHROPIC_API_KEY` — Replit AI proxy for Claude
+- `AI_INTEGRATIONS_GEMINI_BASE_URL` + `AI_INTEGRATIONS_GEMINI_API_KEY` — Replit AI proxy for Gemini
 - `PORT` — Server port (auto-assigned per artifact)
+
+## Critical Notes
+
+- **esbuild external list**: `@google/*` was changed to `@google-cloud/*` so that `@google/genai` gets bundled (not externalized). Do NOT add `@google/*` back to the external list in `artifacts/api-server/build.mjs`.
+- **Admin BASE_URL bug pattern**: Admin app has `BASE_URL=/admin/`. Never use `${BASE_URL}/api/...` in admin — always use `/api/...` directly.
+- **DB push**: Use `pnpm --filter @workspace/db run push-force` with `printf "\n\n\n\n" | ...` if there are rename prompts.
 
 ## TypeScript & Composite Projects
 
@@ -111,31 +142,3 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 - **Always typecheck from the root** — `pnpm run typecheck`
 - **Run codegen after OpenAPI changes** — `pnpm --filter @workspace/api-spec run codegen`
 - **Push DB schema changes** — `pnpm --filter @workspace/db run push`
-
-## Packages
-
-### `artifacts/api-server` (`@workspace/api-server`)
-
-Express 5 API server. Routes in `src/routes/`, middleware in `src/middleware/`.
-- Entry: `src/index.ts` — reads PORT, seeds admin, starts Express
-- App: `src/app.ts` — CORS, JSON, session middleware, routes at `/api`
-- Seed: `src/seed.ts` — Seeds admin user (admin/2816) on startup if not exists
-
-### `lib/db` (`@workspace/db`)
-
-Database layer. All schema files in `src/schema/`.
-- Run migrations: `pnpm --filter @workspace/db run push`
-- Force migrate: `pnpm --filter @workspace/db run push-force`
-
-### `lib/api-spec` (`@workspace/api-spec`)
-
-OpenAPI 3.1 spec (`openapi.yaml`) — source of truth for all API contracts.
-- Run codegen: `pnpm --filter @workspace/api-spec run codegen`
-
-### `lib/integrations-openai-ai-server`
-
-Server-side OpenAI helpers. Exports `openai` (SDK client), image, audio, and batch utilities.
-
-### `lib/integrations-openai-ai-react`
-
-React-side OpenAI hooks for voice/audio.

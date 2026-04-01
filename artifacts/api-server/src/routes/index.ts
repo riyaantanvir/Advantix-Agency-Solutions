@@ -14,6 +14,7 @@ import toolsAuthRouter from "./toolsAuth.js";
 import shortUrlsRouter from "./shortUrls.js";
 import adminUsersRouter from "./adminUsers.js";
 import recordingStatsRouter from "./recordingStats.js";
+import advantixAiRouter from "./advantixAi.js";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(adminChatRouter);
 router.use(toolsAuthRouter);
 router.use(shortUrlsRouter);
 router.use(recordingStatsRouter);
+router.use("/ai", advantixAiRouter);
 
 export default router;

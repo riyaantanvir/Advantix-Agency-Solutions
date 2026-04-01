@@ -16,6 +16,7 @@ import {
   Package,
   HeadphonesIcon,
   UserCog,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -24,6 +25,7 @@ const navLinks = [
   { path: "/contacts", label: "Contacts", icon: Mail },
   { path: "/leads", label: "Leads", icon: TrendingUp },
   { path: "/assistant-requests", label: "Assistant Requests", icon: HeadphonesIcon },
+  { path: "/manage-ai", label: "Manage Advantix AI", icon: Sparkles },
   { path: "/portfolio", label: "Portfolio", icon: Briefcase },
   { path: "/services", label: "Services", icon: Package },
   { path: "/team", label: "Team", icon: Users },
