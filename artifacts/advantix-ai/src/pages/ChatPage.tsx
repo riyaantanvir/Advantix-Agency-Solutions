@@ -4,7 +4,7 @@ import { MessageRenderer } from "@/components/MessageRenderer";
 import { toast } from "sonner";
 import {
   Plus, Trash2, LogOut, ChevronLeft, Send, ThumbsUp, ThumbsDown,
-  Sparkles, Code, Image, Brain, MessageSquare, Menu, X
+  Sparkles, Code, Image, Brain, MessageSquare, Menu, X, Zap
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 
@@ -36,6 +36,7 @@ const INTENT_ICONS: Record<string, React.ReactNode> = {
   image: <Image className="w-3 h-3" />,
   code: <Code className="w-3 h-3" />,
   reasoning: <Brain className="w-3 h-3" />,
+  realtime: <Zap className="w-3 h-3" />,
   general: <Sparkles className="w-3 h-3" />,
 };
 
@@ -43,6 +44,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   openai: "text-emerald-400",
   anthropic: "text-orange-400",
   gemini: "text-blue-400",
+  grok: "text-violet-400",
 };
 
 export default function ChatPage() {
@@ -358,6 +360,7 @@ export default function ChatPage() {
                   { icon: <Code className="w-3.5 h-3.5" />, label: "Write code", ex: "Build a React hook for...", color: "text-orange-400" },
                   { icon: <Image className="w-3.5 h-3.5" />, label: "Generate image", ex: "Draw a futuristic city at...", color: "text-blue-400" },
                   { icon: <Brain className="w-3.5 h-3.5" />, label: "Deep analysis", ex: "Analyze the trade-offs of...", color: "text-purple-400" },
+                  { icon: <Zap className="w-3.5 h-3.5" />, label: "Live search", ex: "What's the latest news on...", color: "text-violet-400" },
                   { icon: <Sparkles className="w-3.5 h-3.5" />, label: "General chat", ex: "Explain quantum computing...", color: "text-emerald-400" },
                 ].map(item => (
                   <button
@@ -454,7 +457,7 @@ export default function ChatPage() {
               </button>
             </div>
             <p className="text-center text-[10px] text-muted-foreground/50 mt-2">
-              Routes automatically to GPT-4o, Claude Sonnet, or Gemini based on your request
+              Routes to GPT-4o, Claude Sonnet, Gemini, or Grok (live search) based on your request
             </p>
           </div>
         </div>

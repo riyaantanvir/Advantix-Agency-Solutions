@@ -7,6 +7,7 @@ import {
   aiUsageLogsTable,
   aiUserLimitsTable,
   toolUsersTable,
+  integrationsTable,
 } from "@workspace/db/schema";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { ai as geminiAi } from "@workspace/integrations-gemini-ai";
@@ -15,7 +16,16 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 
 const router = Router();
 
-type IntentType = "image" | "code" | "reasoning" | "general";
+// Fetch the Grok API key from the integrations table
+async function getGrokKey(): Promise<string | null> {
+  const [row] = await db
+    .select()
+    .from(integrationsTable)
+    .where(eq(integrationsTable.name, "GROK_API_KEY"));
+  return row?.value || null;
+}
+
+type IntentType = "image" | "code" | "reasoning" | "realtime" | "general";
 
 interface ProviderInfo {
   provider: string;
@@ -40,6 +50,15 @@ function classifyIntent(message: string): IntentType {
     return "image";
   }
 
+  // Realtime/search intent — news, current events, live data
+  if (
+    /(latest|recent|current|today'?s?|right now|live|breaking|news|what'?s happening|what is happening|trending|update|updates|stock price|weather|sports score|election|who won|who is winning|in \d{4}|this (week|month|year))/i.test(lower) ||
+    /^(what('?s| is) (the )?(latest|current|today|happening|news|price|weather|score|result|status|situation))/i.test(lower) ||
+    /(search (the web|online|internet)|find (the latest|recent|current)|look up|real.?time|real time)/i.test(lower)
+  ) {
+    return "realtime";
+  }
+
   if (/(write|fix|debug|explain|refactor|implement|code|function|class|component|api|sql|regex|algorithm|script|program|html|css|javascript|typescript|python|java|c\+\+|rust|golang)/i.test(lower)) {
     return "code";
   }
@@ -57,6 +76,8 @@ function getProvider(intent: IntentType): ProviderInfo {
       return { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet" };
     case "reasoning":
       return { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet" };
+    case "realtime":
+      return { provider: "grok", model: "grok-3", label: "Grok (Live)" };
     case "general":
     default:
       return { provider: "openai", model: "gpt-4o-mini", label: "GPT-4o mini" };
@@ -72,6 +93,8 @@ function estimateCostUsd(provider: string, model: string, promptTokens: number, 
     "claude-haiku-4-5": { input: 0.00000025, output: 0.00000125 },
     "gemini-2.5-flash": { input: 0.0000003, output: 0.0000025 },
     "gemini-2.5-flash-image": { input: 0.0000003, output: 0.0000025 },
+    "grok-3": { input: 0.000003, output: 0.000015 },
+    "grok-3-mini": { input: 0.0000003, output: 0.0000005 },
   };
   const rate = rates[model] || { input: 0.000001, output: 0.000002 };
   return promptTokens * rate.input + completionTokens * rate.output;
@@ -240,6 +263,80 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
       }
       promptTokens = Math.ceil(message.length / 4);
       completionTokens = Math.ceil(fullResponse.length / 4);
+    } else if (provider === "grok") {
+      const grokKey = await getGrokKey();
+      const chatMessages = history
+        .filter(m => m.role === "user" || m.role === "assistant")
+        .filter(m => !m.content.startsWith("[IMAGE:"))
+        .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
+      chatMessages.push({ role: "user", content: message });
+
+      if (!grokKey) {
+        // Grok key not configured — fall back to GPT-4o-mini with a note
+        res.write(`data: ${JSON.stringify({ routing: { provider: "openai", model: "gpt-4o-mini", label: "GPT-4o mini (Grok not configured)", intent } })}\n\n`);
+        const fallbackStream = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          max_tokens: 8192,
+          stream: true,
+          messages: [
+            { role: "system", content: "You are Advantix AI. Note: Real-time search via Grok is not configured — add a GROK_API_KEY in Admin > Integrations to enable live search. Answer based on your training data and clearly state your knowledge cutoff." },
+            ...chatMessages,
+          ],
+        });
+        for await (const chunk of fallbackStream) {
+          const delta = chunk.choices[0]?.delta?.content;
+          if (delta) { fullResponse += delta; res.write(`data: ${JSON.stringify({ content: delta })}\n\n`); }
+          if (chunk.usage) { promptTokens = chunk.usage.prompt_tokens; completionTokens = chunk.usage.completion_tokens; }
+        }
+      } else {
+        // Stream from xAI Grok using fetch (OpenAI-compatible SSE)
+        const grokRes = await fetch("https://api.x.ai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${grokKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 8192,
+            stream: true,
+            messages: [
+              { role: "system", content: "You are Advantix AI powered by Grok with live internet access. Always search for the latest news, current events, and real-time data. Cite sources when possible. Be concise and accurate." },
+              ...chatMessages,
+            ],
+          }),
+        });
+
+        if (!grokRes.ok) {
+          const errText = await grokRes.text();
+          throw new Error(`Grok API error ${grokRes.status}: ${errText}`);
+        }
+
+        // Read SSE stream from Grok
+        const reader = grokRes.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const data = line.slice(6).trim();
+            if (data === "[DONE]") break;
+            try {
+              const parsed = JSON.parse(data);
+              const delta = parsed.choices?.[0]?.delta?.content;
+              if (delta) { fullResponse += delta; res.write(`data: ${JSON.stringify({ content: delta })}\n\n`); }
+              if (parsed.usage) { promptTokens = parsed.usage.prompt_tokens ?? 0; completionTokens = parsed.usage.completion_tokens ?? 0; }
+            } catch { /* skip malformed chunks */ }
+          }
+        }
+        if (!promptTokens) { promptTokens = Math.ceil(message.length / 4); completionTokens = Math.ceil(fullResponse.length / 4); }
+      }
     } else {
       // OpenAI
       const chatMessages = history
