@@ -9,7 +9,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const TOKEN_KEY = "adv_chat_token";
 const POLL_INTERVAL = 3500;
 
-type ChatPhase = "idle" | "ask_name" | "ask_email" | "chatting" | "pending_human" | "human";
+type ChatPhase = "idle" | "ask_name" | "ask_email" | "chatting" | "pending_human" | "human" | "agent_busy";
 
 type Msg = {
   id?: number;
@@ -87,11 +87,48 @@ export function ChatWidget() {
   const [isLoading, setIsLoading] = useState(false);
   const [lastMsgId, setLastMsgId] = useState(0);
   const [hasNewMsg, setHasNewMsg] = useState(false);
+  const [waitElapsed, setWaitElapsed] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const waitTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingStartRef = useRef<number | null>(null);
+
+  const AGENT_WAIT_TIMEOUT_SECS = 300; // 5 minutes
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   useEffect(() => { if (isOpen) scrollToBottom(); }, [messages, isOpen]);
+
+  /* Wait timer — counts up while pending_human; triggers timeout after AGENT_WAIT_TIMEOUT_SECS */
+  useEffect(() => {
+    if (phase === "pending_human") {
+      pendingStartRef.current = Date.now();
+      setWaitElapsed(0);
+      waitTimerRef.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - (pendingStartRef.current ?? Date.now())) / 1000);
+        setWaitElapsed(elapsed);
+        if (elapsed >= AGENT_WAIT_TIMEOUT_SECS) {
+          clearInterval(waitTimerRef.current!);
+          waitTimerRef.current = null;
+          setPhase("agent_busy");
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: "All agents are currently busy. You can leave a message below and our team will get back to you soon, or continue chatting with our AI assistant.",
+          }]);
+        }
+      }, 1000);
+    } else {
+      if (waitTimerRef.current) {
+        clearInterval(waitTimerRef.current);
+        waitTimerRef.current = null;
+      }
+      pendingStartRef.current = null;
+      setWaitElapsed(0);
+    }
+    return () => {
+      if (waitTimerRef.current) clearInterval(waitTimerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   /* Listen for external open event (e.g. from tools dashboard) */
   useEffect(() => {
@@ -291,7 +328,7 @@ export function ChatWidget() {
       return;
     }
 
-    if ((phase === "pending_human" || phase === "human") && sessionToken) {
+    if ((phase === "pending_human" || phase === "human" || phase === "agent_busy") && sessionToken) {
       setMessages(prev => [...prev, { role: "user", content: val }]);
       try {
         const res = await fetch(`${BASE}/api/chat/session/${sessionToken}/message`, {
@@ -332,7 +369,10 @@ export function ChatWidget() {
     phase === "ask_email" ? "Enter your email..." :
     phase === "pending_human" ? "Leave a message for our team..." :
     phase === "human" ? "Message our agent..." :
+    phase === "agent_busy" ? "Leave a message for our team..." :
     "Ask a question...";
+
+  const waitMinsLeft = Math.max(0, Math.ceil((AGENT_WAIT_TIMEOUT_SECS - waitElapsed) / 60));
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
@@ -347,7 +387,7 @@ export function ChatWidget() {
             className="w-[340px] sm:w-[380px] h-[520px] flex flex-col bg-background border border-border rounded-2xl shadow-2xl shadow-black/20 overflow-hidden"
           >
             {/* Header */}
-            <div className={`px-4 py-3.5 flex items-center gap-3 shrink-0 ${phase === "human" ? "bg-green-600" : "bg-primary"}`}>
+            <div className={`px-4 py-3.5 flex items-center gap-3 shrink-0 ${phase === "human" ? "bg-green-600" : phase === "agent_busy" ? "bg-slate-600" : "bg-primary"}`}>
               <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
                 {phase === "human" || phase === "pending_human"
                   ? <HeadphonesIcon className="w-4 h-4 text-white" />
@@ -355,10 +395,10 @@ export function ChatWidget() {
               </div>
               <div className="flex-1">
                 <p className="text-white font-semibold text-sm leading-none">
-                  {phase === "human" ? "Live Agent" : phase === "pending_human" ? "Connecting..." : "Advantix Assistant"}
+                  {phase === "human" ? "Live Agent" : phase === "pending_human" ? "Connecting..." : phase === "agent_busy" ? "Agents Unavailable" : "Advantix Assistant"}
                 </p>
                 <p className="text-white/70 text-xs mt-0.5">
-                  {phase === "human" ? "You're chatting with our team" : phase === "pending_human" ? "An agent will be with you soon" : "AI-powered support"}
+                  {phase === "human" ? "You're chatting with our team" : phase === "pending_human" ? `An agent will be with you soon` : phase === "agent_busy" ? "All agents are currently busy" : "AI-powered support"}
                 </p>
               </div>
               <button onClick={() => setIsOpen(false)} className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition-colors">
@@ -404,11 +444,32 @@ export function ChatWidget() {
 
             {/* Pending human status */}
             {phase === "pending_human" && (
-              <div className="px-4 pb-2">
+              <div className="px-4 pb-2 space-y-1.5">
                 <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
                   <Loader2 className="w-3.5 h-3.5 text-amber-500 animate-spin shrink-0" />
-                  <p className="text-xs text-amber-600 font-medium">Waiting for an agent...</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-amber-600 font-medium">Waiting for an agent...</p>
+                    <p className="text-[10px] text-amber-500/70 mt-0.5">
+                      Estimated wait: ~{waitMinsLeft} min{waitMinsLeft !== 1 ? "s" : ""}
+                    </p>
+                  </div>
                 </div>
+              </div>
+            )}
+
+            {/* Agent busy — timed out */}
+            {phase === "agent_busy" && (
+              <div className="px-4 pb-2 space-y-2">
+                <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2">
+                  <X className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                  <p className="text-xs text-red-500 font-medium">All agents are busy. Please try later.</p>
+                </div>
+                <button
+                  onClick={() => setPhase("chatting")}
+                  className="w-full text-xs text-primary hover:text-primary/80 bg-primary/5 hover:bg-primary/10 border border-primary/20 rounded-xl px-3 py-2 transition-colors font-medium"
+                >
+                  Continue with AI assistant instead
+                </button>
               </div>
             )}
 
@@ -430,7 +491,7 @@ export function ChatWidget() {
                   onChange={e => setInput(e.target.value)}
                   placeholder={placeholder}
                   className="rounded-full border-border bg-secondary/50 focus-visible:ring-primary/50 text-sm"
-                  disabled={isLoading && phase !== "pending_human" && phase !== "human"}
+                  disabled={isLoading && phase !== "pending_human" && phase !== "human" && phase !== "agent_busy"}
                   autoFocus={isOpen}
                 />
                 <Button
