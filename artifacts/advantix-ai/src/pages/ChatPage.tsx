@@ -651,24 +651,12 @@ export default function ChatPage() {
                 <h2 className="text-base font-medium text-foreground mb-2">
                   {activeProject ? activeProject.name : "Advantix AI"}
                 </h2>
-                {activeProject?.instructions ? (
-                  <div className="text-left bg-card border border-border/40 rounded-xl p-4 mb-6">
-                    <div className="flex items-center gap-1.5 text-[11px] text-primary/70 font-medium mb-2">
-                      <Settings2 className="w-3 h-3" />
-                      Custom instructions active
-                    </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed line-clamp-4">
-                      {activeProject.instructions}
-                    </p>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground mb-6">
-                    {activeProject
-                      ? `Chat with Advantix AI in the context of ${activeProject.name}.`
-                      : "Ask me anything — I'll route your request to the best model automatically."
-                    }
-                  </p>
-                )}
+                <p className="text-sm text-muted-foreground mb-6">
+                  {activeProject
+                    ? `Chat with Advantix AI in the context of ${activeProject.name}.`
+                    : "Ask me anything — I'll route your request to the best model automatically."
+                  }
+                </p>
                 <div className="grid grid-cols-2 gap-2 text-left">
                   {[
                     { icon: <Code className="w-3.5 h-3.5" />, label: "Write code", ex: "Build a React hook for...", color: "text-orange-400" },
