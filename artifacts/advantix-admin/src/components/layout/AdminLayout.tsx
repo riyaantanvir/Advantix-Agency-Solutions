@@ -45,8 +45,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     logoutMutation.mutate(undefined, {
       onSuccess: () => {
         queryClient.clear();
-        toast({ title: "Logged out", description: "You have been signed out." });
-        setLocation("/login");
+        window.location.href = "/";
       },
       onError: () => toast({ variant: "destructive", title: "Error", description: "Could not log out. Please try again." }),
     });
