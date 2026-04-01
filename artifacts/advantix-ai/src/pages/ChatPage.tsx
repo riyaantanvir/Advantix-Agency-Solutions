@@ -62,6 +62,7 @@ const MODEL_BRAND_LABELS: Record<string, string> = {
   "gpt-4o-mini": "Advantix GT",
   "gpt-4o": "Advantix GT",
   "gpt-4o-search-preview": "Advantix GT Search",
+  "openai-vision": "Advantix GT Vision",
   "claude-sonnet-4-6": "Advantix CL",
   "claude-opus-4-6": "Advantix CL",
   "claude-haiku-4-5": "Advantix CL",
@@ -101,6 +102,7 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [usage, setUsage] = useState<{ tokensUsed: number; costUsd: number; monthlyLimit: number | null } | null>(null);
+  const [pastedImage, setPastedImage] = useState<{ base64: string; mimeType: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -301,8 +303,26 @@ export default function ChatPage() {
     setMessages(prev => prev.map(m => m.id === messageId ? { ...m, feedback } : m));
   }
 
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = Array.from(e.clipboardData.items);
+    const imageItem = items.find(item => item.type.startsWith("image/"));
+    if (imageItem) {
+      e.preventDefault();
+      const file = imageItem.getAsFile();
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const [header, base64] = result.split(",");
+        const mimeType = header.replace("data:", "").replace(";base64", "");
+        setPastedImage({ base64, mimeType });
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+
   async function handleSend() {
-    if (!input.trim() || sending) return;
+    if ((!input.trim() && !pastedImage) || sending) return;
 
     let session = activeSession;
     if (!session) {
@@ -319,20 +339,32 @@ export default function ChatPage() {
 
     if (!session) return;
 
-    const userMsg: Message = { role: "user", content: input.trim() };
+    const messageText = input.trim() || (pastedImage ? "What's in this image?" : "");
+    const imageToSend = pastedImage;
+
+    const userMsg: Message = {
+      role: "user",
+      content: imageToSend
+        ? `[IMAGE:${imageToSend.mimeType}:${imageToSend.base64}]\n${messageText}`
+        : messageText,
+    };
     const assistantMsg: Message = { role: "assistant", content: "", isStreaming: true };
 
     setMessages(prev => [...prev, userMsg, assistantMsg]);
     setInput("");
+    setPastedImage(null);
     setSending(true);
 
-    const currentInput = userMsg.content;
+    const currentInput = messageText;
 
     try {
       const res = await fetch(`/api/ai/chat/${session.id}`, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: currentInput }),
+        body: JSON.stringify({
+          message: currentInput,
+          ...(imageToSend ? { imageData: imageToSend } : {}),
+        }),
       });
 
       if (!res.ok) {
@@ -690,7 +722,23 @@ export default function ChatPage() {
                   <div className={`max-w-[85%] ${msg.role === "user" ? "order-first" : ""}`}>
                     {msg.role === "user" ? (
                       <div className="bg-card border border-border/40 rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-sm text-foreground">
-                        {msg.content}
+                        {(() => {
+                          const imgMatch = msg.content.match(/^\[IMAGE:([^:]+):([^\]]+)\]\n?([\s\S]*)/);
+                          if (imgMatch) {
+                            const [, mimeType, b64, text] = imgMatch;
+                            return (
+                              <div className="space-y-2">
+                                <img
+                                  src={`data:${mimeType};base64,${b64}`}
+                                  alt="Attached"
+                                  className="max-h-48 w-auto rounded-lg object-cover border border-border/30"
+                                />
+                                {text?.trim() && <p>{text.trim()}</p>}
+                              </div>
+                            );
+                          }
+                          return msg.content;
+                        })()}
                       </div>
                     ) : (
                       <div>
@@ -744,23 +792,45 @@ export default function ChatPage() {
                   Responding with custom instructions for <span className="font-medium">{activeProject.name}</span>
                 </div>
               )}
-              <div className="flex items-end gap-2 bg-card border border-border/50 rounded-2xl px-3 py-2.5 focus-within:border-primary/40 transition-colors">
-                <textarea
-                  ref={textareaRef}
-                  value={input}
-                  onChange={autoResize}
-                  onKeyDown={handleKeyDown}
-                  placeholder={activeProject ? `Message ${activeProject.name}...` : "Message Advantix AI..."}
-                  rows={1}
-                  className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none leading-relaxed max-h-40 min-h-[1.5rem]"
-                />
-                <button
-                  onClick={handleSend}
-                  disabled={!input.trim() || sending}
-                  className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shrink-0 transition-opacity hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Send className="w-3.5 h-3.5 text-primary-foreground" />
-                </button>
+              <div className="bg-card border border-border/50 rounded-2xl focus-within:border-primary/40 transition-colors overflow-hidden">
+                {/* Pasted image preview */}
+                {pastedImage && (
+                  <div className="px-3 pt-3 pb-1 flex items-start gap-2">
+                    <div className="relative group shrink-0">
+                      <img
+                        src={`data:${pastedImage.mimeType};base64,${pastedImage.base64}`}
+                        alt="Pasted image"
+                        className="h-20 w-auto rounded-lg object-cover border border-border/40 max-w-[200px]"
+                      />
+                      <button
+                        onClick={() => setPastedImage(null)}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-background border border-border/60 flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors shadow-sm"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground/60 pt-1">Image attached</span>
+                  </div>
+                )}
+                <div className="flex items-end gap-2 px-3 py-2.5">
+                  <textarea
+                    ref={textareaRef}
+                    value={input}
+                    onChange={autoResize}
+                    onKeyDown={handleKeyDown}
+                    onPaste={handlePaste}
+                    placeholder={pastedImage ? "Ask about this image..." : (activeProject ? `Message ${activeProject.name}...` : "Message Advantix AI...")}
+                    rows={1}
+                    className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none leading-relaxed max-h-40 min-h-[1.5rem]"
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={(!input.trim() && !pastedImage) || sending}
+                    className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shrink-0 transition-opacity hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Send className="w-3.5 h-3.5 text-primary-foreground" />
+                  </button>
+                </div>
               </div>
               <p className="text-center text-[10px] text-muted-foreground/50 mt-2">
                 Routes to GPT-4o, Claude Sonnet, Gemini, or Grok based on your request

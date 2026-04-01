@@ -260,9 +260,14 @@ router.delete("/sessions/:id", requireToolUser, async (req: Request, res: Respon
 router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Response) => {
   const userId = req.session!.toolUserId as number;
   const sessionId = parseInt(req.params.sessionId);
-  const { message } = req.body as { message: string };
+  const { message, imageData } = req.body as {
+    message: string;
+    imageData?: { base64: string; mimeType: string };
+  };
 
-  if (!message?.trim()) { res.status(400).json({ error: "Message required" }); return; }
+  if (!message?.trim() && !imageData) { res.status(400).json({ error: "Message required" }); return; }
+
+  const messageText = message?.trim() || "What's in this image?";
 
   // Verify session ownership
   const [session] = await db.select().from(aiSessionsTable)
@@ -308,15 +313,21 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
     .where(eq(aiMessagesTable.sessionId, sessionId))
     .orderBy(aiMessagesTable.createdAt);
 
-  // Save user message
-  await db.insert(aiMessagesTable).values({ sessionId, role: "user", content: message });
+  // Save user message (store image inline for history reference)
+  const savedUserContent = imageData
+    ? `[IMAGE:${imageData.mimeType}:${imageData.base64}]\n${messageText}`
+    : messageText;
+  await db.insert(aiMessagesTable).values({ sessionId, role: "user", content: savedUserContent });
 
-  const intent = classifyIntent(message);
-  const { provider, model, label } = getProvider(intent);
+  // If image is attached, route to GPT-4o vision regardless of intent
+  const intent = imageData ? "general" : classifyIntent(messageText);
+  const { provider, model, label } = imageData
+    ? { provider: "openai-vision", model: "gpt-4o", label: "GPT-4o Vision" }
+    : getProvider(intent);
 
   // Update session title if first message
   if (history.length === 0) {
-    const title = message.slice(0, 60) + (message.length > 60 ? "..." : "");
+    const title = messageText.slice(0, 60) + (messageText.length > 60 ? "..." : "");
     await db.update(aiSessionsTable).set({ title, updatedAt: new Date() }).where(eq(aiSessionsTable.id, sessionId));
   } else {
     await db.update(aiSessionsTable).set({ updatedAt: new Date() }).where(eq(aiSessionsTable.id, sessionId));
@@ -335,7 +346,42 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
   let completionTokens = 0;
 
   try {
-    if (intent === "image") {
+    if (imageData) {
+      // GPT-4o Vision — multimodal image + text input
+      const chatMessages = history
+        .filter(m => m.role === "user" || m.role === "assistant")
+        .filter(m => !m.content.startsWith("[IMAGE:"))
+        .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+      const visionContent: any[] = [
+        { type: "image_url", image_url: { url: `data:${imageData.mimeType};base64,${imageData.base64}` } },
+        { type: "text", text: messageText },
+      ];
+      chatMessages.push({ role: "user", content: visionContent as any });
+
+      const stream = await openai.chat.completions.create({
+        model: "gpt-4o",
+        max_tokens: 4096,
+        stream: true,
+        messages: [
+          { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable visual assistant. Analyze images carefully and provide detailed, accurate descriptions and answers. Be concise and helpful.", memoriesContext) },
+          ...chatMessages,
+        ],
+      });
+
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (delta) {
+          fullResponse += delta;
+          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+        }
+        if (chunk.usage) {
+          promptTokens = chunk.usage.prompt_tokens;
+          completionTokens = chunk.usage.completion_tokens;
+        }
+      }
+      if (!promptTokens) { promptTokens = Math.ceil(messageText.length / 4) + 800; completionTokens = Math.ceil(fullResponse.length / 4); }
+    } else if (intent === "image") {
       const { b64_json, mimeType } = await generateImage(message);
       fullResponse = `[IMAGE:${mimeType}:${b64_json}]`;
       promptTokens = Math.ceil(message.length / 4);
@@ -465,39 +511,64 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
         if (!promptTokens) { promptTokens = Math.ceil(message.length / 4); completionTokens = Math.ceil(fullResponse.length / 4); }
       }
     } else if (provider === "openai-search") {
-      // OpenAI Responses API with web_search_preview tool — real-time web search
+      // Real-time search: fetch live news via Google News RSS, inject as context, then stream via GPT-4o
       const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-      const systemPrompt = buildSystemPrompt(
+
+      // Fetch live news headlines from Google News RSS (no API key required)
+      let newsContext = "";
+      try {
+        const encodedQuery = encodeURIComponent(message.slice(0, 100));
+        const rssUrl = `https://news.google.com/rss/search?q=${encodedQuery}&hl=en&gl=US&ceid=US:en`;
+        const rssRes = await fetch(rssUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+        if (rssRes.ok) {
+          const xml = await rssRes.text();
+          const items = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
+          const parsed = items.slice(0, 8).map(item => {
+            const title = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) ?? item.match(/<title>(.*?)<\/title>/))?.[1]?.trim() ?? "";
+            const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1]?.trim() ?? "";
+            const source = (item.match(/<source[^>]*><!\[CDATA\[(.*?)\]\]><\/source>/) ?? item.match(/<source[^>]*>(.*?)<\/source>/))?.[1]?.trim() ?? "";
+            return title ? `• ${title}${source ? ` — ${source}` : ""}${pubDate ? ` (${pubDate})` : ""}` : null;
+          }).filter(Boolean);
+          if (parsed.length > 0) {
+            newsContext = `\n\n[Live web search results as of ${today}]:\n${parsed.join("\n")}\n\nUse the above real-time information to answer the user's question accurately. Always mention the sources and dates.`;
+          }
+        }
+      } catch { /* ignore fetch errors, proceed without news context */ }
+
+      const chatMessages = history
+        .filter(m => m.role === "user" || m.role === "assistant")
+        .filter(m => !m.content.startsWith("[IMAGE:"))
+        .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
+      chatMessages.push({ role: "user", content: message });
+
+      const systemContent = buildSystemPrompt(
         projectInstructions,
-        `You are Advantix AI, a highly capable assistant with real-time internet access. Today's date is ${today}. Always provide up-to-date information with sources when available. Be concise, precise, and helpful.`,
+        `You are Advantix AI, a highly capable assistant. Today's date is ${today}. You have access to real-time news data. Always provide accurate, up-to-date information with source citations. Be concise and helpful.${newsContext}`,
         memoriesContext
       );
 
-      const inputMessages: Array<{ role: string; content: string }> = [
-        { role: "system", content: systemPrompt },
-        ...history
-          .filter(m => m.role === "user" || m.role === "assistant")
-          .filter(m => !m.content.startsWith("[IMAGE:"))
-          .map(m => ({ role: m.role as string, content: m.content })),
-        { role: "user", content: message },
-      ];
-
-      const searchRes = await (openai as any).responses.create({
+      const stream = await openai.chat.completions.create({
         model: "gpt-4o",
-        tools: [{ type: "web_search_preview" }],
-        input: inputMessages,
+        max_tokens: 4096,
+        stream: true,
+        messages: [
+          { role: "system", content: systemContent },
+          ...chatMessages,
+        ],
       });
 
-      fullResponse = searchRes.output_text ?? "";
-      promptTokens = searchRes.usage?.input_tokens ?? Math.ceil(message.length / 4);
-      completionTokens = searchRes.usage?.output_tokens ?? Math.ceil(fullResponse.length / 4);
-
-      // Emit in chunks to maintain consistent SSE format
-      const chunkSize = 20;
-      for (let i = 0; i < fullResponse.length; i += chunkSize) {
-        const chunk = fullResponse.slice(i, i + chunkSize);
-        res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content;
+        if (delta) {
+          fullResponse += delta;
+          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+        }
+        if (chunk.usage) {
+          promptTokens = chunk.usage.prompt_tokens;
+          completionTokens = chunk.usage.completion_tokens;
+        }
       }
+      if (!promptTokens) { promptTokens = Math.ceil(message.length / 4); completionTokens = Math.ceil(fullResponse.length / 4); }
     } else {
       // OpenAI (streaming)
       const chatMessages = history
