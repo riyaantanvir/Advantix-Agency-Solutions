@@ -148,57 +148,75 @@ export default function ChatPage() {
       const decoder = new TextDecoder();
       let fullContent = "";
       let savedMsgId: number | undefined;
+      // Buffer accumulates data across network chunks (critical for large image payloads)
+      let sseBuffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n").filter(l => l.startsWith("data: "));
+        sseBuffer += decoder.decode(value, { stream: true });
+
+        // Process only complete lines — leave incomplete last line in buffer
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() ?? "";
 
         for (const line of lines) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.content) {
-              fullContent += data.content;
-              setMessages(prev => {
-                const copy = [...prev];
-                const last = copy[copy.length - 1];
-                if (last.isStreaming) copy[copy.length - 1] = { ...last, content: fullContent };
-                return copy;
-              });
-            } else if (data.image) {
-              fullContent = `[IMAGE:${data.image.mimeType}:${data.image.b64_json}]`;
-              setMessages(prev => {
-                const copy = [...prev];
-                copy[copy.length - 1] = { ...copy[copy.length - 1], content: fullContent };
-                return copy;
-              });
-            } else if (data.routing) {
-              setMessages(prev => {
-                const copy = [...prev];
-                const last = copy[copy.length - 1];
-                if (last.isStreaming) {
-                  copy[copy.length - 1] = {
-                    ...last,
-                    provider: data.routing.provider,
-                    model: data.routing.model,
-                    intentType: data.routing.intent,
-                  };
-                }
-                return copy;
-              });
-            } else if (data.done) {
-              setMessages(prev => {
-                const copy = [...prev];
-                copy[copy.length - 1] = { ...copy[copy.length - 1], isStreaming: false };
-                return copy;
-              });
-              loadUsage();
-              loadSessions();
-            } else if (data.error) {
-              throw new Error(data.error);
+          processSSELine(line);
+        }
+      }
+      // Flush any remaining buffer after stream ends
+      if (sseBuffer) {
+        for (const line of sseBuffer.split("\n")) {
+          processSSELine(line);
+        }
+      }
+
+      function processSSELine(line: string) {
+        if (!line.startsWith("data: ")) return;
+        const raw = line.slice(6).trim();
+        if (!raw || raw === "[DONE]") return;
+        let data: any;
+        try { data = JSON.parse(raw); } catch { return; }
+
+        if (data.content) {
+          fullContent += data.content;
+          setMessages(prev => {
+            const copy = [...prev];
+            const last = copy[copy.length - 1];
+            if (last.isStreaming) copy[copy.length - 1] = { ...last, content: fullContent };
+            return copy;
+          });
+        } else if (data.image) {
+          fullContent = `[IMAGE:${data.image.mimeType}:${data.image.b64_json}]`;
+          setMessages(prev => {
+            const copy = [...prev];
+            copy[copy.length - 1] = { ...copy[copy.length - 1], content: fullContent };
+            return copy;
+          });
+        } else if (data.routing) {
+          setMessages(prev => {
+            const copy = [...prev];
+            const last = copy[copy.length - 1];
+            if (last.isStreaming) {
+              copy[copy.length - 1] = {
+                ...last,
+                provider: data.routing.provider,
+                model: data.routing.model,
+                intentType: data.routing.intent,
+              };
             }
-          } catch {}
+            return copy;
+          });
+        } else if (data.done) {
+          setMessages(prev => {
+            const copy = [...prev];
+            copy[copy.length - 1] = { ...copy[copy.length - 1], isStreaming: false };
+            return copy;
+          });
+          loadUsage();
+          loadSessions();
+        } else if (data.error) {
+          throw new Error(data.error);
         }
       }
     } catch (err: any) {
