@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { eq, desc, sum, and, gte, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
+  aiProjectsTable,
   aiSessionsTable,
   aiMessagesTable,
   aiUsageLogsTable,
@@ -84,6 +85,11 @@ function getProvider(intent: IntentType): ProviderInfo {
   }
 }
 
+function buildSystemPrompt(projectInstructions: string, base: string): string {
+  if (!projectInstructions) return base;
+  return `${projectInstructions}\n\n---\n\n${base}`;
+}
+
 function estimateCostUsd(provider: string, model: string, promptTokens: number, completionTokens: number): number {
   const rates: Record<string, { input: number; output: number }> = {
     "gpt-4o": { input: 0.0000025, output: 0.00001 },
@@ -108,6 +114,57 @@ function requireToolUser(req: Request, res: Response, next: Function) {
   next();
 }
 
+// ─── Projects CRUD ───────────────────────────────────────────────────────────
+
+router.get("/projects", requireToolUser, async (req: Request, res: Response) => {
+  const userId = req.session!.toolUserId as number;
+  const projects = await db
+    .select()
+    .from(aiProjectsTable)
+    .where(eq(aiProjectsTable.userId, userId))
+    .orderBy(desc(aiProjectsTable.updatedAt));
+  res.json(projects);
+});
+
+router.post("/projects", requireToolUser, async (req: Request, res: Response) => {
+  const userId = req.session!.toolUserId as number;
+  const { name, instructions, emoji } = req.body as { name: string; instructions?: string; emoji?: string };
+  if (!name?.trim()) { res.status(400).json({ error: "Project name required" }); return; }
+  const [project] = await db
+    .insert(aiProjectsTable)
+    .values({ userId, name: name.trim(), instructions: instructions?.trim() ?? "", emoji: emoji ?? "📁" })
+    .returning();
+  res.json(project);
+});
+
+router.put("/projects/:id", requireToolUser, async (req: Request, res: Response) => {
+  const userId = req.session!.toolUserId as number;
+  const id = parseInt(req.params.id);
+  const { name, instructions, emoji } = req.body as { name?: string; instructions?: string; emoji?: string };
+  const [existing] = await db.select().from(aiProjectsTable).where(and(eq(aiProjectsTable.id, id), eq(aiProjectsTable.userId, userId)));
+  if (!existing) { res.status(404).json({ error: "Project not found" }); return; }
+  const [updated] = await db
+    .update(aiProjectsTable)
+    .set({
+      ...(name !== undefined && { name: name.trim() }),
+      ...(instructions !== undefined && { instructions: instructions.trim() }),
+      ...(emoji !== undefined && { emoji }),
+      updatedAt: new Date(),
+    })
+    .where(eq(aiProjectsTable.id, id))
+    .returning();
+  res.json(updated);
+});
+
+router.delete("/projects/:id", requireToolUser, async (req: Request, res: Response) => {
+  const userId = req.session!.toolUserId as number;
+  const id = parseInt(req.params.id);
+  await db.delete(aiProjectsTable).where(and(eq(aiProjectsTable.id, id), eq(aiProjectsTable.userId, userId)));
+  res.json({ success: true });
+});
+
+// ─── Sessions ────────────────────────────────────────────────────────────────
+
 router.get("/sessions", requireToolUser, async (req: Request, res: Response) => {
   const userId = req.session!.toolUserId as number;
   const sessions = await db
@@ -121,9 +178,10 @@ router.get("/sessions", requireToolUser, async (req: Request, res: Response) => 
 
 router.post("/sessions", requireToolUser, async (req: Request, res: Response) => {
   const userId = req.session!.toolUserId as number;
+  const { projectId } = req.body as { projectId?: number };
   const [session] = await db
     .insert(aiSessionsTable)
-    .values({ userId, title: "New Chat" })
+    .values({ userId, title: "New Chat", projectId: projectId ?? null })
     .returning();
   res.json(session);
 });
@@ -162,6 +220,15 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
   const [session] = await db.select().from(aiSessionsTable)
     .where(and(eq(aiSessionsTable.id, sessionId), eq(aiSessionsTable.userId, userId)));
   if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+
+  // Load project instructions (if session belongs to a project)
+  let projectInstructions = "";
+  if (session.projectId) {
+    const [project] = await db.select().from(aiProjectsTable).where(eq(aiProjectsTable.id, session.projectId));
+    if (project?.instructions?.trim()) {
+      projectInstructions = project.instructions.trim();
+    }
+  }
 
   // Check monthly token limit
   const [limit] = await db.select().from(aiUserLimitsTable).where(eq(aiUserLimitsTable.userId, userId));
@@ -225,7 +292,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
       const stream = anthropic.messages.stream({
         model,
         max_tokens: 8192,
-        system: "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.",
+        system: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks."),
         messages: chatMessages,
       });
 
@@ -251,7 +318,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
       const stream = await geminiAi.models.generateContentStream({
         model: "gemini-2.5-flash",
         contents: chatMessages,
-        config: { maxOutputTokens: 8192, systemInstruction: "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks." },
+        config: { maxOutputTokens: 8192, systemInstruction: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.") },
       });
 
       for await (const chunk of stream) {
@@ -279,7 +346,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
           max_tokens: 8192,
           stream: true,
           messages: [
-            { role: "system", content: "You are Advantix AI. Note: Real-time search via Grok is not configured — add a GROK_API_KEY in Admin > Integrations to enable live search. Answer based on your training data and clearly state your knowledge cutoff." },
+            { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI. Note: Real-time search via Grok is not configured — add a GROK_API_KEY in Admin > Integrations to enable live search. Answer based on your training data and clearly state your knowledge cutoff.") },
             ...chatMessages,
           ],
         });
@@ -301,7 +368,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
             max_tokens: 8192,
             stream: true,
             messages: [
-              { role: "system", content: "You are Advantix AI powered by Grok with live internet access. Always search for the latest news, current events, and real-time data. Cite sources when possible. Be concise and accurate." },
+              { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI powered by Grok with live internet access. Always search for the latest news, current events, and real-time data. Cite sources when possible. Be concise and accurate.") },
               ...chatMessages,
             ],
           }),
@@ -350,7 +417,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
         max_tokens: 8192,
         stream: true,
         messages: [
-          { role: "system", content: "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks." },
+          { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.") },
           ...chatMessages,
         ],
       });
