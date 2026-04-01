@@ -6,6 +6,7 @@ import {
   Plus, Trash2, LogOut, ChevronLeft, Send, ThumbsUp, ThumbsDown,
   Sparkles, Code, Image, Brain, MessageSquare, Menu, X
 } from "lucide-react";
+import { Navbar } from "@/components/Navbar";
 
 interface Session {
   id: number;
@@ -235,7 +236,9 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="h-screen flex overflow-hidden bg-background">
+    <div className="flex flex-col bg-background" style={{ height: "100dvh" }}>
+      <Navbar />
+    <div className="flex overflow-hidden flex-1 pt-14">
       {/* Sidebar */}
       <div className={`${sidebarOpen ? "w-60" : "w-0"} shrink-0 transition-all duration-200 overflow-hidden flex flex-col border-r border-border/50 bg-sidebar`}>
         {/* Sidebar header */}
@@ -456,6 +459,7 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }
