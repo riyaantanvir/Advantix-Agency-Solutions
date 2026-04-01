@@ -16,6 +16,7 @@ import adminUsersRouter from "./adminUsers.js";
 import recordingStatsRouter from "./recordingStats.js";
 import advantixAiRouter from "./advantixAi.js";
 import adminIntegrationsRouter from "./adminIntegrations.js";
+import warUpdateRouter from "./warUpdate.js";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use(shortUrlsRouter);
 router.use(recordingStatsRouter);
 router.use("/ai", advantixAiRouter);
 router.use(adminIntegrationsRouter);
+router.use(warUpdateRouter);
 
 export default router;
