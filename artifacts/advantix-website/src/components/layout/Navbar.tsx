@@ -32,11 +32,13 @@ export function Navbar() {
     setToolsOpen(false);
   }, [location]);
 
-  const navLinks = [
-    { href: "/", label: "Home" },
-    { href: "/portfolio", label: "Portfolio" },
-    { href: "/team", label: "Team" },
-  ];
+  const navLinks = user
+    ? [{ href: "/", label: "Home" }]
+    : [
+        { href: "/", label: "Home" },
+        { href: "/portfolio", label: "Portfolio" },
+        { href: "/team", label: "Team" },
+      ];
 
   const isToolsActive = location.startsWith("/tools");
 
@@ -180,17 +182,19 @@ export function Navbar() {
               </Button>
             )}
 
-            <Link href="/contact">
-              <motion.div
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.97 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              >
-                <Button size="sm" className="font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-md shadow-primary/20">
-                  Get Started
-                </Button>
-              </motion.div>
-            </Link>
+            {!user && (
+              <Link href="/contact">
+                <motion.div
+                  whileHover={{ scale: 1.04 }}
+                  whileTap={{ scale: 0.97 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                >
+                  <Button size="sm" className="font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-md shadow-primary/20">
+                    Get Started
+                  </Button>
+                </motion.div>
+              </Link>
+            )}
           </nav>
 
           {/* Mobile hamburger */}
@@ -293,11 +297,13 @@ export function Navbar() {
                     <LogIn className="w-4 h-4" /> Login
                   </Button>
                 )}
-                <Link href="/contact">
-                  <Button className="w-full font-semibold bg-primary hover:bg-primary/90 text-primary-foreground">
-                    Get Started
-                  </Button>
-                </Link>
+                {!user && (
+                  <Link href="/contact">
+                    <Button className="w-full font-semibold bg-primary hover:bg-primary/90 text-primary-foreground">
+                      Get Started
+                    </Button>
+                  </Link>
+                )}
               </motion.div>
             </nav>
           </motion.div>
