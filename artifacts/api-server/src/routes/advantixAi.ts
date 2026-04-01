@@ -308,10 +308,10 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
     }
   }
 
-  // Load history
-  const history = await db.select().from(aiMessagesTable)
+  // Load history — limit to last 10 messages to control token cost
+  const history = (await db.select().from(aiMessagesTable)
     .where(eq(aiMessagesTable.sessionId, sessionId))
-    .orderBy(aiMessagesTable.createdAt);
+    .orderBy(aiMessagesTable.createdAt)).slice(-10);
 
   // Save user message (store image inline for history reference)
   const savedUserContent = imageData
