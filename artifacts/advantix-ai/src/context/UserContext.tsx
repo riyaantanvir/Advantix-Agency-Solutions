@@ -23,7 +23,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     fetch("/api/tools/auth/me", { credentials: "include" })
       .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data?.id) setUser(data); })
+      .then(data => { if (data?.user?.id) setUser(data.user); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -36,7 +36,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     });
     if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Login failed"); }
     const data = await res.json();
-    setUser({ id: data.id, name: data.name, email: data.email });
+    setUser({ id: data.user.id, name: data.user.name, email: data.user.email });
   }
 
   async function register(name: string, email: string, password: string) {
@@ -48,7 +48,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     });
     if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Registration failed"); }
     const data = await res.json();
-    setUser({ id: data.id, name: data.name, email: data.email });
+    setUser({ id: data.user.id, name: data.user.name, email: data.user.email });
   }
 
   async function logout() {
