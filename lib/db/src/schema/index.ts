@@ -14,3 +14,4 @@ export * from "./aiSessions";
 export * from "./aiMessages";
 export * from "./aiUsageLogs";
 export * from "./aiUserLimits";
+export * from "./integrations";
