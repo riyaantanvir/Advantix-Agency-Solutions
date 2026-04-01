@@ -50,6 +50,18 @@ const PROVIDER_COLORS: Record<string, string> = {
   grok: "text-violet-400",
 };
 
+const MODEL_BRAND_LABELS: Record<string, string> = {
+  "gpt-4o-mini": "Advantix GT",
+  "gpt-4o": "Advantix GT",
+  "claude-sonnet-4-6": "Advantix CL",
+  "claude-opus-4-6": "Advantix CL",
+  "claude-haiku-4-5": "Advantix CL",
+  "gemini-2.5-flash": "Advantix GX",
+  "gemini-2.5-flash-image": "Advantix GX",
+  "grok-3": "Advantix Go",
+  "grok-3-mini": "Advantix Go",
+};
+
 const EMOJI_OPTIONS = ["📁", "🚀", "💡", "🎯", "🛠️", "📊", "✍️", "🔬", "🎨", "💼", "🤖", "🌐", "📝", "🔐", "🧠"];
 
 interface ProjectModalState {
@@ -619,7 +631,7 @@ export default function ChatPage() {
                         {msg.provider && (
                           <div className={`flex items-center gap-1 text-[10px] mb-1.5 ${PROVIDER_COLORS[msg.provider] || "text-muted-foreground"}`}>
                             {msg.intentType && INTENT_ICONS[msg.intentType]}
-                            <span>{msg.model}</span>
+                            <span>{MODEL_BRAND_LABELS[msg.model ?? ""] ?? msg.model}</span>
                           </div>
                         )}
                         <div className="text-foreground/90">
