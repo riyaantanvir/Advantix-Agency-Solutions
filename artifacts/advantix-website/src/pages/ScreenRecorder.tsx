@@ -13,7 +13,7 @@ import { toBlobURL, fetchFile } from "@ffmpeg/util";
 import { toolsApi } from "@/lib/toolsApi";
 
 const expo = [0.22, 1, 0.36, 1] as const;
-const MAX_SECONDS = 10 * 60;
+const MAX_SECONDS = 120 * 60; // 2 hours — effectively no limit
 
 function getBestMimeType(): string {
   const candidates = [
@@ -183,7 +183,7 @@ export default function ScreenRecorder() {
 
     const recorder = new MediaRecorder(stream, {
       mimeType: mime || undefined,
-      videoBitsPerSecond: 2_500_000,
+      videoBitsPerSecond: 1_200_000,
     });
 
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
@@ -315,7 +315,7 @@ export default function ScreenRecorder() {
             <motion.div key="idle" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.4, ease: expo }}>
               <div className="grid grid-cols-3 gap-3 mb-6">
                 {[
-                  { icon: Clock, label: "10 min max", color: "text-purple-400", bg: "bg-purple-500/10" },
+                  { icon: Clock, label: "No time limit", color: "text-purple-400", bg: "bg-purple-500/10" },
                   { icon: Monitor, label: "Screen + Audio", color: "text-blue-400", bg: "bg-blue-500/10" },
                   { icon: FileVideo, label: "MP4 output", color: "text-green-400", bg: "bg-green-500/10" },
                 ].map(({ icon: Icon, label, color, bg }) => (
@@ -336,7 +336,7 @@ export default function ScreenRecorder() {
                 </div>
                 <h2 className="text-xl font-display font-bold mb-2">Ready to Record</h2>
                 <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
-                  Click Start and choose which screen, window, or tab to record. Recording stops automatically after 10 minutes.
+                  Click Start and choose which screen, window, or tab to record. Stop whenever you're done — no time limit.
                 </p>
                 <div className="flex items-center justify-center gap-3 mb-6">
                   <button

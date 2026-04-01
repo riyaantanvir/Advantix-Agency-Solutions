@@ -30,7 +30,7 @@ const tools = [
   {
     icon: Video,
     name: "Screen Recorder",
-    description: "Record your screen up to 10 minutes. No software needed — runs in your browser and saves in the best format for your device.",
+    description: "Record your screen with no time limit. No software needed — runs entirely in your browser and saves in the best format for your device.",
     href: "/tools/screen-recorder",
     available: true,
     color: "text-purple-400",
