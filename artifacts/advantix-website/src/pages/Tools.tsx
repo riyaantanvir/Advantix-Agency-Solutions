@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { Link2, Video, ArrowRight, Zap, Sparkles } from "lucide-react";
+import { Link2, Video, ArrowRight, Zap, Sparkles, Shield } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 const expo = [0.22, 1, 0.36, 1] as const;
@@ -36,6 +36,16 @@ const tools = [
     color: "text-purple-400",
     bg: "bg-purple-500/10",
     badge: null,
+  },
+  {
+    icon: Shield,
+    name: "War Update",
+    description: "Real-time conflict and war zone updates — curated, verified, and delivered fast. Stay informed on the latest developments worldwide.",
+    href: "/tools/war-update",
+    available: true,
+    color: "text-red-400",
+    bg: "bg-red-500/10",
+    badge: "New",
   },
 ];
 
