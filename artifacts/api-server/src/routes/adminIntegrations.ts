@@ -59,4 +59,85 @@ router.delete("/admin/integrations/:id", requireAdmin, async (req: Request, res:
   res.json({ success: true });
 });
 
+async function testIntegrationKey(name: string, key: string): Promise<{ ok: boolean; message: string }> {
+  if (!key) return { ok: false, message: "No key stored" };
+  try {
+    if (name.includes("OPENAI") || name.includes("GPT")) {
+      const r = await fetch("https://api.openai.com/v1/models", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      return r.ok
+        ? { ok: true, message: "Connected — OpenAI responded successfully" }
+        : { ok: false, message: `OpenAI returned ${r.status}: ${r.statusText}` };
+    }
+    if (name.includes("ANTHROPIC") || name.includes("CLAUDE")) {
+      const r = await fetch("https://api.anthropic.com/v1/models", {
+        headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+      });
+      return r.ok
+        ? { ok: true, message: "Connected — Anthropic responded successfully" }
+        : { ok: false, message: `Anthropic returned ${r.status}: ${r.statusText}` };
+    }
+    if (name.includes("GEMINI") || name.includes("GOOGLE")) {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+      return r.ok
+        ? { ok: true, message: "Connected — Gemini responded successfully" }
+        : { ok: false, message: `Gemini returned ${r.status}: ${r.statusText}` };
+    }
+    if (name.includes("GROK") || name.includes("XAI")) {
+      const r = await fetch("https://api.x.ai/v1/models", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      return r.ok
+        ? { ok: true, message: "Connected — Grok/xAI responded successfully" }
+        : { ok: false, message: `Grok returned ${r.status}: ${r.statusText}` };
+    }
+    if (name.includes("STRIPE")) {
+      const r = await fetch("https://api.stripe.com/v1/balance", {
+        headers: { Authorization: `Basic ${Buffer.from(key + ":").toString("base64")}` },
+      });
+      return r.ok
+        ? { ok: true, message: "Connected — Stripe key is valid" }
+        : { ok: false, message: `Stripe returned ${r.status}: ${r.statusText}` };
+    }
+    if (name.includes("SENDGRID")) {
+      const r = await fetch("https://api.sendgrid.com/v3/user/profile", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      return r.ok
+        ? { ok: true, message: "Connected — SendGrid key is valid" }
+        : { ok: false, message: `SendGrid returned ${r.status}: ${r.statusText}` };
+    }
+    if (name.includes("RESEND")) {
+      const r = await fetch("https://api.resend.com/emails", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      return r.status === 200 || r.status === 405
+        ? { ok: true, message: "Connected — Resend key is valid" }
+        : { ok: false, message: `Resend returned ${r.status}: ${r.statusText}` };
+    }
+    if (name.includes("SLACK") && key.startsWith("https://")) {
+      const r = await fetch(key, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "🔌 Advantix integration test ping" }),
+      });
+      return r.ok
+        ? { ok: true, message: "Connected — Slack webhook delivered" }
+        : { ok: false, message: `Slack webhook returned ${r.status}` };
+    }
+    return { ok: false, message: "No test available for this integration type" };
+  } catch (err: any) {
+    return { ok: false, message: `Connection error: ${err?.message ?? "Unknown error"}` };
+  }
+}
+
+router.post("/admin/integrations/:id/test", requireAdmin, async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  const [row] = await db.select().from(integrationsTable).where(eq(integrationsTable.id, id));
+  if (!row) { res.status(404).json({ error: "Not found" }); return; }
+  const result = await testIntegrationKey(row.name, row.value);
+  res.json(result);
+});
+
 export default router;

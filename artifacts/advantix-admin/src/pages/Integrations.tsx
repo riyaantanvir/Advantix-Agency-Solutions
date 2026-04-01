@@ -3,6 +3,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Trash2, Edit2, Check, X, Key, Eye, EyeOff,
   ChevronDown, ChevronUp, Plug, Sparkles, Mail, CreditCard, Globe, Shield,
+  Loader2, Wifi, WifiOff,
 } from "lucide-react";
 
 interface Integration {
@@ -63,6 +64,7 @@ export default function Integrations() {
   const [selectedPreset, setSelectedPreset] = useState<typeof PRESETS[0] | null>(null);
   const [form, setForm] = useState({ name: "", label: "", value: "", description: "", category: "Other" });
   const [isCustom, setIsCustom] = useState(false);
+  const [testResults, setTestResults] = useState<Record<number, { loading: boolean; ok?: boolean; message?: string }>>({});
 
   useEffect(() => { loadIntegrations(); }, []);
 
@@ -122,6 +124,20 @@ export default function Integrations() {
       setIntegrations(prev => prev.map(i => i.id === id ? data : i));
       setEditingId(null);
       toast({ title: "Integration updated" });
+    }
+  }
+
+  async function handleTest(id: number) {
+    setTestResults(prev => ({ ...prev, [id]: { loading: true } }));
+    try {
+      const res = await fetch(`/api/admin/integrations/${id}/test`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      setTestResults(prev => ({ ...prev, [id]: { loading: false, ok: data.ok, message: data.message } }));
+    } catch {
+      setTestResults(prev => ({ ...prev, [id]: { loading: false, ok: false, message: "Request failed" } }));
     }
   }
 
@@ -356,12 +372,28 @@ export default function Integrations() {
                     ) : (
                       <div className="flex items-center gap-3">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
+                          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                             <span className="text-sm font-medium">{integration.label}</span>
                             {integration.hasValue ? (
                               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Active</span>
                             ) : (
                               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">No key set</span>
+                            )}
+                            {/* Test result badge */}
+                            {testResults[integration.id] && !testResults[integration.id].loading && (
+                              <span
+                                className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${
+                                  testResults[integration.id].ok
+                                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                    : "bg-red-500/10 text-red-400 border-red-500/20"
+                                }`}
+                                title={testResults[integration.id].message}
+                              >
+                                {testResults[integration.id].ok
+                                  ? <><Wifi className="w-2.5 h-2.5" /> Connected</>
+                                  : <><WifiOff className="w-2.5 h-2.5" /> Failed</>
+                                }
+                              </span>
                             )}
                           </div>
                           <div className="flex items-center gap-3">
@@ -373,8 +405,30 @@ export default function Integrations() {
                           {integration.description && (
                             <p className="text-xs text-muted-foreground/60 mt-1">{integration.description}</p>
                           )}
+                          {/* Test message */}
+                          {testResults[integration.id] && !testResults[integration.id].loading && testResults[integration.id].message && (
+                            <p className={`text-xs mt-1 ${testResults[integration.id].ok ? "text-emerald-400/80" : "text-red-400/80"}`}>
+                              {testResults[integration.id].message}
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
+                          {/* Test button */}
+                          {integration.hasValue && (
+                            <button
+                              onClick={() => handleTest(integration.id)}
+                              disabled={testResults[integration.id]?.loading}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-muted/50 transition-colors disabled:opacity-50"
+                              title="Test connection"
+                            >
+                              {testResults[integration.id]?.loading ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Wifi className="w-3 h-3" />
+                              )}
+                              Test
+                            </button>
+                          )}
                           <button
                             onClick={() => { setEditingId(integration.id); setEditLabel(integration.label); setEditValue(""); }}
                             className="w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
