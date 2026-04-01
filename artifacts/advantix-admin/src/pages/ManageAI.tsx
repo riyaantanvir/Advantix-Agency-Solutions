@@ -15,7 +15,8 @@ interface UserUsage {
   email: string;
   tokensUsed: number;
   costUsd: number;
-  monthlyLimit: number | null;
+  monthlyTokenLimit: number | null;
+  monthlyUsdLimit: number | null;
 }
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -35,7 +36,8 @@ export default function ManageAI() {
   const [users, setUsers] = useState<UserUsage[]>([]);
   const [period, setPeriod] = useState<"week" | "month" | "all">("month");
   const [editingUser, setEditingUser] = useState<number | null>(null);
-  const [editLimit, setEditLimit] = useState<string>("");
+  const [editTokenLimit, setEditTokenLimit] = useState<string>("");
+  const [editUsdLimit, setEditUsdLimit] = useState<string>("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -57,17 +59,20 @@ export default function ManageAI() {
   }
 
   async function saveLimit(userId: number) {
-    const value = editLimit === "" || editLimit === "∞" ? null : parseInt(editLimit);
+    const tokenLimit = editTokenLimit === "" || editTokenLimit === "∞" ? null : parseInt(editTokenLimit);
+    const usdLimit = editUsdLimit === "" || editUsdLimit === "∞" ? null : parseFloat(editUsdLimit);
     const res = await fetch(`/api/ai/admin/users/${userId}/limit`, {
       method: "PUT",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ monthlyTokenLimit: value }),
+      body: JSON.stringify({ monthlyTokenLimit: tokenLimit, monthlyUsdLimit: usdLimit }),
     });
     if (res.ok) {
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, monthlyLimit: value } : u));
+      setUsers(prev => prev.map(u =>
+        u.id === userId ? { ...u, monthlyTokenLimit: tokenLimit, monthlyUsdLimit: usdLimit } : u
+      ));
       setEditingUser(null);
-      toast({ title: "Limit updated" });
+      toast({ title: "Limits updated" });
     }
   }
 
@@ -159,7 +164,7 @@ export default function ManageAI() {
         <div className="flex items-center gap-2 px-5 py-4 border-b border-border">
           <Users className="w-4 h-4 text-muted-foreground" />
           <h2 className="text-sm font-medium">User Usage</h2>
-          <span className="ml-auto text-xs text-muted-foreground">Monthly tokens · Monthly cost · Limit</span>
+          <span className="ml-auto text-xs text-muted-foreground">Click ✏️ to set token & USD limits per user</span>
         </div>
         {users.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">No users have used Advantix AI yet</p>
@@ -168,59 +173,92 @@ export default function ManageAI() {
             <thead className="border-b border-border bg-muted/30">
               <tr>
                 <th className="text-left px-5 py-3 text-xs font-medium text-muted-foreground">User</th>
-                <th className="text-right px-5 py-3 text-xs font-medium text-muted-foreground">Tokens</th>
-                <th className="text-right px-5 py-3 text-xs font-medium text-muted-foreground">Cost</th>
-                <th className="text-right px-5 py-3 text-xs font-medium text-muted-foreground">Monthly Limit</th>
-                <th className="px-5 py-3" />
+                <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground">Tokens Used</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground">Cost</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground">Token Limit / mo</th>
+                <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground">USD Limit / mo</th>
+                <th className="px-4 py-3 w-8" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {users.map(u => {
-                const atRisk = u.monthlyLimit && u.tokensUsed / u.monthlyLimit > 0.8;
+                const tokenAtRisk = u.monthlyTokenLimit && u.tokensUsed / u.monthlyTokenLimit > 0.8;
+                const usdAtRisk = u.monthlyUsdLimit && u.costUsd / u.monthlyUsdLimit > 0.8;
+                const isEditing = editingUser === u.id;
                 return (
-                  <tr key={u.id} className="hover:bg-muted/20 transition-colors">
+                  <tr key={u.id} className={`transition-colors ${isEditing ? "bg-muted/30" : "hover:bg-muted/20"}`}>
                     <td className="px-5 py-3.5">
                       <div className="font-medium">{u.name}</div>
                       <div className="text-xs text-muted-foreground">{u.email}</div>
                     </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <span className={atRisk ? "text-destructive font-medium" : ""}>
+                    <td className="px-4 py-3.5 text-right">
+                      <span className={tokenAtRisk ? "text-amber-500 font-medium" : ""}>
                         {u.tokensUsed.toLocaleString()}
+                        {tokenAtRisk && " ⚠"}
                       </span>
                     </td>
-                    <td className="px-5 py-3.5 text-right text-muted-foreground">
-                      ${u.costUsd.toFixed(4)}
+                    <td className="px-4 py-3.5 text-right">
+                      <span className={usdAtRisk ? "text-amber-500 font-medium" : "text-muted-foreground"}>
+                        ${u.costUsd.toFixed(4)}
+                        {usdAtRisk && " ⚠"}
+                      </span>
                     </td>
-                    <td className="px-5 py-3.5 text-right">
-                      {editingUser === u.id ? (
-                        <div className="flex items-center justify-end gap-1">
-                          <input
-                            type="number"
-                            value={editLimit}
-                            onChange={e => setEditLimit(e.target.value)}
-                            placeholder="∞"
-                            className="w-24 px-2 py-1 text-xs bg-background border border-border rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-right"
-                          />
-                          <button onClick={() => saveLimit(u.id)} className="text-emerald-500 hover:text-emerald-400 p-0.5">
+
+                    {/* Token limit */}
+                    <td className="px-4 py-3.5 text-right">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          value={editTokenLimit}
+                          onChange={e => setEditTokenLimit(e.target.value)}
+                          placeholder="∞ unlimited"
+                          className="w-28 px-2 py-1 text-xs bg-background border border-primary/40 rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-right"
+                        />
+                      ) : (
+                        <span className={`font-mono text-xs ${tokenAtRisk ? "text-amber-500" : "text-muted-foreground"}`}>
+                          {u.monthlyTokenLimit ? u.monthlyTokenLimit.toLocaleString() : "∞"}
+                        </span>
+                      )}
+                    </td>
+
+                    {/* USD limit */}
+                    <td className="px-4 py-3.5 text-right">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editUsdLimit}
+                          onChange={e => setEditUsdLimit(e.target.value)}
+                          placeholder="∞ unlimited"
+                          className="w-28 px-2 py-1 text-xs bg-background border border-primary/40 rounded-md outline-none focus:ring-1 focus:ring-primary/50 text-right"
+                        />
+                      ) : (
+                        <span className={`font-mono text-xs ${usdAtRisk ? "text-amber-500" : "text-muted-foreground"}`}>
+                          {u.monthlyUsdLimit != null ? `$${u.monthlyUsdLimit.toFixed(2)}` : "∞"}
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-4 py-3.5">
+                      {isEditing ? (
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => saveLimit(u.id)} className="text-emerald-500 hover:text-emerald-400 p-0.5" title="Save">
                             <Check className="w-3.5 h-3.5" />
                           </button>
-                          <button onClick={() => setEditingUser(null)} className="text-muted-foreground hover:text-foreground p-0.5">
+                          <button onClick={() => setEditingUser(null)} className="text-muted-foreground hover:text-foreground p-0.5" title="Cancel">
                             <X className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       ) : (
-                        <span className={`font-mono text-xs ${atRisk ? "text-amber-500" : "text-muted-foreground"}`}>
-                          {u.monthlyLimit ? u.monthlyLimit.toLocaleString() : "∞"}
-                          {atRisk && " ⚠"}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      {editingUser !== u.id && (
                         <button
-                          onClick={() => { setEditingUser(u.id); setEditLimit(u.monthlyLimit?.toString() ?? ""); }}
+                          onClick={() => {
+                            setEditingUser(u.id);
+                            setEditTokenLimit(u.monthlyTokenLimit?.toString() ?? "");
+                            setEditUsdLimit(u.monthlyUsdLimit != null ? u.monthlyUsdLimit.toFixed(2) : "");
+                          }}
                           className="text-muted-foreground hover:text-foreground transition-colors"
-                          title="Edit limit"
+                          title="Edit limits"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>

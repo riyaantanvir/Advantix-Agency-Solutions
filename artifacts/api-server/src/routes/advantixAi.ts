@@ -324,6 +324,8 @@ router.get("/usage/me", requireToolUser, async (req: Request, res: Response) => 
   res.json({
     tokensUsed: Number(usage?.totalTokens ?? 0),
     costUsd: Number(usage?.totalCost ?? 0),
+    monthlyTokenLimit: limitRow?.monthlyTokenLimit ?? null,
+    monthlyUsdLimit: limitRow?.monthlyUsdLimit != null ? Number(limitRow.monthlyUsdLimit) : null,
     monthlyLimit: limitRow?.monthlyTokenLimit ?? null,
   });
 });
@@ -381,22 +383,36 @@ router.get("/admin/users", requireAdmin, async (req: Request, res: Response) => 
     .orderBy(desc(sum(aiUsageLogsTable.totalTokens)));
 
   const limits = await db.select().from(aiUserLimitsTable);
-  const limitMap = new Map(limits.map(l => [l.userId, l.monthlyTokenLimit]));
+  const limitMap = new Map(limits.map(l => [l.userId, l]));
 
-  res.json(users.map(u => ({
-    ...u,
-    tokensUsed: Number(u.tokensUsed ?? 0),
-    costUsd: Number(u.costUsd ?? 0),
-    monthlyLimit: limitMap.get(u.id) ?? null,
-  })));
+  res.json(users.map(u => {
+    const lim = limitMap.get(u.id);
+    return {
+      ...u,
+      tokensUsed: Number(u.tokensUsed ?? 0),
+      costUsd: Number(u.costUsd ?? 0),
+      monthlyTokenLimit: lim?.monthlyTokenLimit ?? null,
+      monthlyUsdLimit: lim?.monthlyUsdLimit != null ? Number(lim.monthlyUsdLimit) : null,
+    };
+  }));
 });
 
 router.put("/admin/users/:id/limit", requireAdmin, async (req: Request, res: Response) => {
   const userId = parseInt(req.params.id);
-  const { monthlyTokenLimit } = req.body as { monthlyTokenLimit: number | null };
+  const { monthlyTokenLimit, monthlyUsdLimit } = req.body as {
+    monthlyTokenLimit?: number | null;
+    monthlyUsdLimit?: number | null;
+  };
   await db.insert(aiUserLimitsTable)
-    .values({ userId, monthlyTokenLimit })
-    .onConflictDoUpdate({ target: aiUserLimitsTable.userId, set: { monthlyTokenLimit, updatedAt: new Date() } });
+    .values({ userId, monthlyTokenLimit: monthlyTokenLimit ?? null, monthlyUsdLimit: monthlyUsdLimit?.toString() ?? null })
+    .onConflictDoUpdate({
+      target: aiUserLimitsTable.userId,
+      set: {
+        monthlyTokenLimit: monthlyTokenLimit ?? null,
+        monthlyUsdLimit: monthlyUsdLimit?.toString() ?? null,
+        updatedAt: new Date(),
+      },
+    });
   res.json({ success: true });
 });
 
