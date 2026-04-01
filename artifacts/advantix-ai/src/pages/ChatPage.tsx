@@ -61,6 +61,7 @@ const PROVIDER_COLORS: Record<string, string> = {
 const MODEL_BRAND_LABELS: Record<string, string> = {
   "gpt-4o-mini": "Advantix GT",
   "gpt-4o": "Advantix GT",
+  "gpt-4o-search-preview": "Advantix GT Search",
   "claude-sonnet-4-6": "Advantix CL",
   "claude-opus-4-6": "Advantix CL",
   "claude-haiku-4-5": "Advantix CL",

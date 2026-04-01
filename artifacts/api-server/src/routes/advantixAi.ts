@@ -79,7 +79,7 @@ function getProvider(intent: IntentType): ProviderInfo {
     case "reasoning":
       return { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet" };
     case "realtime":
-      return { provider: "grok", model: "grok-3", label: "Grok (Live)" };
+      return { provider: "openai-search", model: "gpt-4o-search-preview", label: "GPT-4o Search" };
     case "general":
     default:
       return { provider: "openai", model: "gpt-4o-mini", label: "GPT-4o mini" };
@@ -96,6 +96,7 @@ function buildSystemPrompt(projectInstructions: string, base: string, memoriesCo
 function estimateCostUsd(provider: string, model: string, promptTokens: number, completionTokens: number): number {
   const rates: Record<string, { input: number; output: number }> = {
     "gpt-4o": { input: 0.0000025, output: 0.00001 },
+    "gpt-4o-search-preview": { input: 0.0000025, output: 0.00001 },
     "gpt-4o-mini": { input: 0.00000015, output: 0.0000006 },
     "claude-sonnet-4-6": { input: 0.000003, output: 0.000015 },
     "claude-opus-4-6": { input: 0.000015, output: 0.000075 },
@@ -463,8 +464,35 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
         }
         if (!promptTokens) { promptTokens = Math.ceil(message.length / 4); completionTokens = Math.ceil(fullResponse.length / 4); }
       }
+    } else if (provider === "openai-search") {
+      // GPT-4o Search Preview — real-time web search (no streaming support)
+      const chatMessages = history
+        .filter(m => m.role === "user" || m.role === "assistant")
+        .filter(m => !m.content.startsWith("[IMAGE:"))
+        .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
+      chatMessages.push({ role: "user", content: message });
+
+      const searchRes = await (openai as any).chat.completions.create({
+        model: "gpt-4o-search-preview",
+        web_search_options: {},
+        messages: [
+          { role: "system", content: buildSystemPrompt(projectInstructions, `You are Advantix AI, a highly capable assistant with real-time internet access. Today's date is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}. Always provide up-to-date information with sources when available. Be concise, precise, and helpful.`, memoriesContext) },
+          ...chatMessages,
+        ],
+      });
+
+      fullResponse = searchRes.choices?.[0]?.message?.content ?? "";
+      promptTokens = searchRes.usage?.prompt_tokens ?? Math.ceil(message.length / 4);
+      completionTokens = searchRes.usage?.completion_tokens ?? Math.ceil(fullResponse.length / 4);
+
+      // Stream the response in chunks to maintain consistent SSE format
+      const chunkSize = 20;
+      for (let i = 0; i < fullResponse.length; i += chunkSize) {
+        const chunk = fullResponse.slice(i, i + chunkSize);
+        res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+      }
     } else {
-      // OpenAI
+      // OpenAI (streaming)
       const chatMessages = history
         .filter(m => m.role === "user" || m.role === "assistant")
         .filter(m => !m.content.startsWith("[IMAGE:"))
