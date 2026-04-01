@@ -83,7 +83,7 @@ async function fetchWarNews(): Promise<NewsArticle[]> {
   return results;
 }
 
-router.get("/api/war-update", async (req, res) => {
+router.get("/war-update", async (req, res) => {
   try {
     if (cache && Date.now() - cache.fetchedAt < CACHE_MS) {
       return res.json({
@@ -109,7 +109,7 @@ router.get("/api/war-update", async (req, res) => {
   }
 });
 
-router.post("/api/war-update/refresh", async (req, res) => {
+router.post("/war-update/refresh", async (req, res) => {
   try {
     cache = null;
     const articles = await fetchWarNews();

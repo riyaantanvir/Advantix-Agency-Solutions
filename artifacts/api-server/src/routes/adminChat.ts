@@ -84,4 +84,27 @@ router.patch("/admin/chat/sessions/:id", requireAdmin, async (req, res) => {
   res.json(updated);
 });
 
+/* POST /api/admin/chat/sessions/:id/end — end chat + insert system message */
+router.post("/admin/chat/sessions/:id/end", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id));
+
+  const [conv] = await db.select().from(conversations).where(eq(conversations.id, id)).limit(1);
+  if (!conv) { res.status(404).json({ error: "Session not found" }); return; }
+
+  // Insert a system end-message visible to the user
+  await db.insert(messages).values({
+    conversationId: id,
+    role: "system",
+    content: "This conversation has been ended by our agent. You can start a new chat anytime.",
+  });
+
+  const [updated] = await db
+    .update(conversations)
+    .set({ status: "closed", hasUnreadAdmin: true, updatedAt: new Date() })
+    .where(eq(conversations.id, id))
+    .returning();
+
+  res.json(updated);
+});
+
 export default router;

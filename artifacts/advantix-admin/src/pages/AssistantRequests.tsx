@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { format } from "date-fns";
-import { HeadphonesIcon, MessageSquare, Send, User, Bot, CheckCircle, Clock, X, Loader2, RefreshCw } from "lucide-react";
+import { HeadphonesIcon, MessageSquare, Send, User, Bot, CheckCircle, Clock, X, Loader2, RefreshCw, PhoneOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -142,17 +142,15 @@ export default function AssistantRequests() {
 
   const handleClose = async (id: number) => {
     try {
-      await fetch(`/api/admin/chat/sessions/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+      await fetch(`/api/admin/chat/sessions/${id}/end`, {
+        method: "POST",
         credentials: "include",
-        body: JSON.stringify({ status: "closed" }),
       });
       fetchSessions();
-      if (selectedId === id) { setSelectedId(null); setMsgs([]); }
-      toast({ title: "Session closed" });
+      if (selectedId === id) fetchMsgs(id);
+      toast({ title: "Chat ended", description: "The user has been notified." });
     } catch {
-      toast({ variant: "destructive", title: "Failed to close session" });
+      toast({ variant: "destructive", title: "Failed to end chat" });
     }
   };
 
@@ -243,12 +241,12 @@ export default function AssistantRequests() {
                   <StatusBadge status={selected.status} />
                   {selected.status !== "closed" && (
                     <Button
-                      variant="ghost"
+                      variant="destructive"
                       size="sm"
                       onClick={() => handleClose(selected.id)}
-                      className="h-8 text-xs gap-1.5 hover:bg-destructive/10 hover:text-destructive"
+                      className="h-8 text-xs gap-1.5"
                     >
-                      <X className="w-3.5 h-3.5" /> Close
+                      <PhoneOff className="w-3.5 h-3.5" /> End Chat
                     </Button>
                   )}
                 </div>

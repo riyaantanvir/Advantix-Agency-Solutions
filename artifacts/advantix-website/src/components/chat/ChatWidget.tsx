@@ -9,7 +9,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const TOKEN_KEY = "adv_chat_token";
 const POLL_INTERVAL = 3500;
 
-type ChatPhase = "idle" | "ask_name" | "ask_email" | "chatting" | "pending_human" | "human" | "agent_busy";
+type ChatPhase = "idle" | "ask_name" | "ask_email" | "chatting" | "pending_human" | "human" | "agent_busy" | "ended";
 
 type Msg = {
   id?: number;
@@ -212,7 +212,10 @@ export function ChatWidget() {
       setMessages(msgs);
       setSessionToken(token);
       if (msgs.length > 0) setLastMsgId(msgs[msgs.length - 1].id ?? 0);
-      setPhase(data.status === "human" ? "human" : data.status === "pending_human" ? "pending_human" : "chatting");
+      if (data.status === "closed") setPhase("ended");
+      else if (data.status === "human") setPhase("human");
+      else if (data.status === "pending_human") setPhase("pending_human");
+      else setPhase("chatting");
     } catch {
       startFlow();
     }
@@ -231,13 +234,14 @@ export function ChatWidget() {
         setLastMsgId(lastId);
         if (!isOpen) setHasNewMsg(true);
       }
-      if (data.status === "human") setPhase("human");
+      if (data.status === "closed") setPhase("ended");
+      else if (data.status === "human") setPhase("human");
     } catch { /* ignore */ }
   }, [isOpen]);
 
   useEffect(() => {
     if (!sessionToken) return;
-    if (phase === "pending_human" || phase === "human") {
+    if (phase === "pending_human" || phase === "human" || phase === "chatting") {
       pollRef.current = setInterval(() => poll(sessionToken, lastMsgId), POLL_INTERVAL);
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
@@ -349,6 +353,22 @@ export function ChatWidget() {
     }
   };
 
+  const handleStartNewChat = () => {
+    localStorage.removeItem(TOKEN_KEY);
+    setSessionToken(null);
+    setMessages([]);
+    setLastMsgId(0);
+    setInput("");
+    setPhase("idle");
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    // kick off fresh flow
+    if (user) {
+      startLoggedInFlow(user.name, user.email);
+    } else {
+      startFlow();
+    }
+  };
+
   const handleRequestHuman = async () => {
     if (!sessionToken) return;
     setIsLoading(true);
@@ -387,7 +407,7 @@ export function ChatWidget() {
             className="w-[340px] sm:w-[380px] h-[520px] flex flex-col bg-background border border-border rounded-2xl shadow-2xl shadow-black/20 overflow-hidden"
           >
             {/* Header */}
-            <div className={`px-4 py-3.5 flex items-center gap-3 shrink-0 ${phase === "human" ? "bg-green-600" : phase === "agent_busy" ? "bg-slate-600" : "bg-primary"}`}>
+            <div className={`px-4 py-3.5 flex items-center gap-3 shrink-0 ${phase === "human" ? "bg-green-600" : phase === "agent_busy" ? "bg-slate-600" : phase === "ended" ? "bg-slate-700" : "bg-primary"}`}>
               <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
                 {phase === "human" || phase === "pending_human"
                   ? <HeadphonesIcon className="w-4 h-4 text-white" />
@@ -395,10 +415,10 @@ export function ChatWidget() {
               </div>
               <div className="flex-1">
                 <p className="text-white font-semibold text-sm leading-none">
-                  {phase === "human" ? "Live Agent" : phase === "pending_human" ? "Connecting..." : phase === "agent_busy" ? "Agents Unavailable" : "Advantix Assistant"}
+                  {phase === "human" ? "Live Agent" : phase === "pending_human" ? "Connecting..." : phase === "agent_busy" ? "Agents Unavailable" : phase === "ended" ? "Chat Ended" : "Advantix Assistant"}
                 </p>
                 <p className="text-white/70 text-xs mt-0.5">
-                  {phase === "human" ? "You're chatting with our team" : phase === "pending_human" ? `An agent will be with you soon` : phase === "agent_busy" ? "All agents are currently busy" : "AI-powered support"}
+                  {phase === "human" ? "You're chatting with our team" : phase === "pending_human" ? "An agent will be with you soon" : phase === "agent_busy" ? "All agents are currently busy" : phase === "ended" ? "This conversation has been closed" : "AI-powered support"}
                 </p>
               </div>
               <button onClick={() => setIsOpen(false)} className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition-colors">
@@ -483,27 +503,39 @@ export function ChatWidget() {
               </div>
             )}
 
-            {/* Input */}
-            <div className="p-3 border-t border-border bg-background shrink-0">
-              <form onSubmit={handleSubmit} className="flex items-center gap-2">
-                <Input
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  placeholder={placeholder}
-                  className="rounded-full border-border bg-secondary/50 focus-visible:ring-primary/50 text-sm"
-                  disabled={isLoading && phase !== "pending_human" && phase !== "human" && phase !== "agent_busy"}
-                  autoFocus={isOpen}
-                />
-                <Button
-                  type="submit"
-                  size="icon"
-                  className="rounded-full shrink-0 bg-primary hover:bg-primary/90"
-                  disabled={!input.trim() || (isLoading && phase === "chatting")}
+            {/* Ended state footer */}
+            {phase === "ended" ? (
+              <div className="p-3 border-t border-border bg-background shrink-0">
+                <button
+                  onClick={handleStartNewChat}
+                  className="w-full text-sm font-semibold text-primary-foreground bg-primary hover:bg-primary/90 rounded-full py-2.5 transition-colors"
                 >
-                  <Send className="w-4 h-4" />
-                </Button>
-              </form>
-            </div>
+                  Start New Chat
+                </button>
+              </div>
+            ) : (
+              /* Input */
+              <div className="p-3 border-t border-border bg-background shrink-0">
+                <form onSubmit={handleSubmit} className="flex items-center gap-2">
+                  <Input
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    placeholder={placeholder}
+                    className="rounded-full border-border bg-secondary/50 focus-visible:ring-primary/50 text-sm"
+                    disabled={isLoading && phase !== "pending_human" && phase !== "human" && phase !== "agent_busy"}
+                    autoFocus={isOpen}
+                  />
+                  <Button
+                    type="submit"
+                    size="icon"
+                    className="rounded-full shrink-0 bg-primary hover:bg-primary/90"
+                    disabled={!input.trim() || (isLoading && phase === "chatting")}
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </form>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
