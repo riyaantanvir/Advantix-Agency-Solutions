@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
-const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 const POLL_INTERVAL = 3000;
 
 type Session = {
@@ -75,7 +74,7 @@ export default function AssistantRequests() {
 
   const fetchSessions = useCallback(async () => {
     try {
-      const url = showAll ? `${BASE}/api/admin/chat/sessions/all` : `${BASE}/api/admin/chat/sessions`;
+      const url = showAll ? `/api/admin/chat/sessions/all` : `/api/admin/chat/sessions`;
       const res = await fetch(url, { credentials: "include" });
       if (res.ok) setSessions(await res.json() as Session[]);
     } catch { /* ignore */ }
@@ -83,7 +82,7 @@ export default function AssistantRequests() {
 
   const fetchMsgs = useCallback(async (id: number) => {
     try {
-      const res = await fetch(`${BASE}/api/admin/chat/sessions/${id}/messages`, { credentials: "include" });
+      const res = await fetch(`/api/admin/chat/sessions/${id}/messages`, { credentials: "include" });
       if (res.ok) {
         setMsgs(await res.json() as Msg[]);
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -125,7 +124,7 @@ export default function AssistantRequests() {
     setSending(true);
     setReplyInput("");
     try {
-      const res = await fetch(`${BASE}/api/admin/chat/sessions/${selectedId}/reply`, {
+      const res = await fetch(`/api/admin/chat/sessions/${selectedId}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -143,7 +142,7 @@ export default function AssistantRequests() {
 
   const handleClose = async (id: number) => {
     try {
-      await fetch(`${BASE}/api/admin/chat/sessions/${id}`, {
+      await fetch(`/api/admin/chat/sessions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
