@@ -367,8 +367,9 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
             model,
             max_tokens: 8192,
             stream: true,
+            search_enabled: true,
             messages: [
-              { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI powered by Grok with live internet access. Always search for the latest news, current events, and real-time data. Cite sources when possible. Be concise and accurate.") },
+              { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI powered by Grok with live internet access. Use real-time search to find the latest news, current events, and live data. Always include today's date context. Cite sources when possible. Be concise and accurate.") },
               ...chatMessages,
             ],
           }),
