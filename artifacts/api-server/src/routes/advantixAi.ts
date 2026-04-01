@@ -465,27 +465,34 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
         if (!promptTokens) { promptTokens = Math.ceil(message.length / 4); completionTokens = Math.ceil(fullResponse.length / 4); }
       }
     } else if (provider === "openai-search") {
-      // GPT-4o Search Preview — real-time web search (no streaming support)
-      const chatMessages = history
-        .filter(m => m.role === "user" || m.role === "assistant")
-        .filter(m => !m.content.startsWith("[IMAGE:"))
-        .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
-      chatMessages.push({ role: "user", content: message });
+      // OpenAI Responses API with web_search_preview tool — real-time web search
+      const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+      const systemPrompt = buildSystemPrompt(
+        projectInstructions,
+        `You are Advantix AI, a highly capable assistant with real-time internet access. Today's date is ${today}. Always provide up-to-date information with sources when available. Be concise, precise, and helpful.`,
+        memoriesContext
+      );
 
-      const searchRes = await (openai as any).chat.completions.create({
-        model: "gpt-4o-search-preview",
-        web_search_options: {},
-        messages: [
-          { role: "system", content: buildSystemPrompt(projectInstructions, `You are Advantix AI, a highly capable assistant with real-time internet access. Today's date is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}. Always provide up-to-date information with sources when available. Be concise, precise, and helpful.`, memoriesContext) },
-          ...chatMessages,
-        ],
+      const inputMessages: Array<{ role: string; content: string }> = [
+        { role: "system", content: systemPrompt },
+        ...history
+          .filter(m => m.role === "user" || m.role === "assistant")
+          .filter(m => !m.content.startsWith("[IMAGE:"))
+          .map(m => ({ role: m.role as string, content: m.content })),
+        { role: "user", content: message },
+      ];
+
+      const searchRes = await (openai as any).responses.create({
+        model: "gpt-4o",
+        tools: [{ type: "web_search_preview" }],
+        input: inputMessages,
       });
 
-      fullResponse = searchRes.choices?.[0]?.message?.content ?? "";
-      promptTokens = searchRes.usage?.prompt_tokens ?? Math.ceil(message.length / 4);
-      completionTokens = searchRes.usage?.completion_tokens ?? Math.ceil(fullResponse.length / 4);
+      fullResponse = searchRes.output_text ?? "";
+      promptTokens = searchRes.usage?.input_tokens ?? Math.ceil(message.length / 4);
+      completionTokens = searchRes.usage?.output_tokens ?? Math.ceil(fullResponse.length / 4);
 
-      // Stream the response in chunks to maintain consistent SSE format
+      // Emit in chunks to maintain consistent SSE format
       const chunkSize = 20;
       for (let i = 0; i < fullResponse.length; i += chunkSize) {
         const chunk = fullResponse.slice(i, i + chunkSize);
