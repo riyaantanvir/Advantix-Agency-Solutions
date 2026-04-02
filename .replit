@@ -36,7 +36,7 @@ outputType = "webview"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=8080 pnpm --filter @workspace/api-server run dev & PORT=18880 BASE_PATH=/ pnpm --filter @workspace/advantix-website run dev & PORT=23910 BASE_PATH=/admin/ pnpm --filter @workspace/advantix-admin run dev & PORT=26083 BASE_PATH=/ai/ pnpm --filter @workspace/advantix-ai run dev & wait"
-waitForPort = 8080
+waitForPort = 18880
 
 [agent]
 stack = "PNPM_WORKSPACE"
