@@ -1,5 +1,36 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Copy, Check } from "lucide-react";
+
+function useTypewriter(target: string, active: boolean): string {
+  const [displayed, setDisplayed] = useState("");
+  const posRef = useRef(0);
+  const targetRef = useRef(target);
+  targetRef.current = target;
+
+  useEffect(() => {
+    if (!active) {
+      setDisplayed(target);
+      posRef.current = target.length;
+      return;
+    }
+    posRef.current = 0;
+    setDisplayed("");
+  }, [active]);
+
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => {
+      const t = targetRef.current;
+      if (posRef.current < t.length) {
+        posRef.current += 1;
+        setDisplayed(t.slice(0, posRef.current));
+      }
+    }, 12);
+    return () => clearInterval(timer);
+  }, [active]);
+
+  return active ? displayed : target;
+}
 
 interface Props {
   content: string;
@@ -64,6 +95,8 @@ function ImageResult({ b64_json, mimeType }: { b64_json: string; mimeType: strin
 }
 
 export function MessageRenderer({ content, isStreaming }: Props) {
+  const displayed = useTypewriter(content, !!isStreaming);
+
   // Handle image result
   if (content.startsWith("[IMAGE:")) {
     const match = content.match(/\[IMAGE:([^:]+):(.+)\]/s);
@@ -74,15 +107,16 @@ export function MessageRenderer({ content, isStreaming }: Props) {
 
   // Parse markdown-like content with code blocks
   const parts: React.ReactNode[] = [];
+  const renderContent = isStreaming ? displayed : content;
   const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
   let lastIndex = 0;
   let match;
 
-  while ((match = codeBlockRegex.exec(content)) !== null) {
+  while ((match = codeBlockRegex.exec(renderContent)) !== null) {
     // Text before code block
     if (match.index > lastIndex) {
       parts.push(
-        <TextContent key={`text-${lastIndex}`} text={content.slice(lastIndex, match.index)} />
+        <TextContent key={`text-${lastIndex}`} text={renderContent.slice(lastIndex, match.index)} />
       );
     }
     parts.push(
@@ -92,18 +126,18 @@ export function MessageRenderer({ content, isStreaming }: Props) {
   }
 
   // Remaining text
-  if (lastIndex < content.length) {
+  if (lastIndex < renderContent.length) {
     parts.push(
       <TextContent
         key={`text-${lastIndex}`}
-        text={content.slice(lastIndex)}
+        text={renderContent.slice(lastIndex)}
         isStreaming={isStreaming}
       />
     );
   }
 
   if (parts.length === 0) {
-    return <TextContent text={content} isStreaming={isStreaming} />;
+    return <TextContent text={renderContent} isStreaming={isStreaming} />;
   }
 
   return <div>{parts}</div>;
