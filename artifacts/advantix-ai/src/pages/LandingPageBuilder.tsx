@@ -3,15 +3,23 @@ import { useUser } from "@/context/UserContext";
 import { Navbar } from "@/components/Navbar";
 import { toast } from "sonner";
 import {
-  Send, Copy, Download, RefreshCw, Monitor, Smartphone,
+  Send, Copy, Download, Monitor, Smartphone,
   Sparkles, Code2, Eye, EyeOff, RotateCcw, Loader2, Check, Wand2,
-  ChevronRight, Globe, Layers, Zap,
+  ChevronRight, Globe, Layers, Zap, Terminal, FileCode,
+  Paintbrush, Layout, Type, Link2, CheckCircle2, Circle,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+}
+
+interface ActivityStep {
+  id: string;
+  label: string;
+  status: "pending" | "active" | "done";
+  detail?: string;
 }
 
 const STARTER_PROMPTS = [
@@ -33,6 +41,153 @@ function extractHtml(text: string): string {
   return text;
 }
 
+function detectPhase(content: string): { phase: string; detail: string } {
+  if (content.length < 20) return { phase: "thinking", detail: "Planning your landing page..." };
+  if (/<\/head>/i.test(content)) {
+    if (/<\/body>/i.test(content)) return { phase: "finalizing", detail: "Adding finishing touches..." };
+    if (/<section|<div class="hero|<div id="hero/i.test(content)) return { phase: "sections", detail: "Building page sections..." };
+    if (/<style/i.test(content)) return { phase: "styling", detail: "Writing CSS styles..." };
+    return { phase: "head", detail: "Setting up meta & fonts..." };
+  }
+  if (/<!DOCTYPE|<html|<head/i.test(content)) return { phase: "structure", detail: "Writing HTML structure..." };
+  return { phase: "thinking", detail: "Analyzing your request..." };
+}
+
+function buildSteps(content: string, done: boolean): ActivityStep[] {
+  const hasDoctype = /<!DOCTYPE/i.test(content);
+  const hasHead = /<head/i.test(content);
+  const hasStyle = /<style/i.test(content);
+  const hasBody = /<body/i.test(content);
+  const hasSection = /<section|<div class="hero|<main/i.test(content);
+  const hasFooter = /<footer/i.test(content);
+  const hasHtmlClose = /<\/html>/i.test(content);
+
+  function stepStatus(reached: boolean, next: boolean): "pending" | "active" | "done" {
+    if (done && reached) return "done";
+    if (reached && !next) return "active";
+    if (reached) return "done";
+    return "pending";
+  }
+
+  return [
+    { id: "plan", label: "Analyzing request", status: done ? "done" : content.length > 0 ? "done" : "active", detail: "Understanding what you need" },
+    { id: "structure", label: "Writing HTML structure", status: stepStatus(hasDoctype || hasHead, hasStyle), detail: "<!DOCTYPE html>, <head>, metadata" },
+    { id: "styles", label: "Designing CSS styles", status: stepStatus(hasStyle, hasBody), detail: "Colors, fonts, layout, animations" },
+    { id: "hero", label: "Building hero section", status: stepStatus(hasBody, hasSection), detail: "Main banner and call-to-action" },
+    { id: "sections", label: "Adding page sections", status: stepStatus(hasSection, hasFooter), detail: "Features, about, services, testimonials" },
+    { id: "footer", label: "Adding footer & links", status: stepStatus(hasFooter, hasHtmlClose), detail: "Navigation, social links, contact" },
+    { id: "done", label: "Page ready", status: done ? "done" : hasHtmlClose ? "active" : "pending", detail: "Your landing page is complete!" },
+  ];
+}
+
+function StepIcon({ status }: { status: ActivityStep["status"] }) {
+  if (status === "done") return <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+  if (status === "active") return <Loader2 className="w-3.5 h-3.5 text-primary shrink-0 animate-spin" />;
+  return <Circle className="w-3.5 h-3.5 text-muted-foreground/30 shrink-0" />;
+}
+
+function GenerationActivity({ streamedContent, done }: { streamedContent: string; done: boolean }) {
+  const steps = buildSteps(streamedContent, done);
+  const { detail } = detectPhase(streamedContent);
+  const codeScrollRef = useRef<HTMLDivElement>(null);
+
+  // Show last few lines of streamed code
+  const lines = streamedContent.split("\n");
+  const visibleLines = lines.slice(Math.max(0, lines.length - 12));
+
+  useEffect(() => {
+    if (codeScrollRef.current) {
+      codeScrollRef.current.scrollTop = codeScrollRef.current.scrollHeight;
+    }
+  }, [streamedContent]);
+
+  return (
+    <div className="rounded-xl border border-border/50 bg-muted/20 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/30 bg-muted/30">
+        <Terminal className="w-3.5 h-3.5 text-primary" />
+        <span className="text-xs font-medium text-foreground">Generation Activity</span>
+        {!done && (
+          <div className="ml-auto flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+            <span className="text-[10px] text-muted-foreground">{streamedContent.length} chars</span>
+          </div>
+        )}
+        {done && (
+          <span className="ml-auto text-[10px] text-emerald-400 font-medium">Complete</span>
+        )}
+      </div>
+
+      {/* Steps */}
+      <div className="px-3 py-2.5 space-y-1.5">
+        {steps.map((step) => (
+          <div key={step.id} className={`flex items-start gap-2 ${step.status === "pending" ? "opacity-35" : ""}`}>
+            <div className="mt-0.5">
+              <StepIcon status={step.status} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-medium ${
+                  step.status === "done" ? "text-foreground" :
+                  step.status === "active" ? "text-primary" : "text-muted-foreground"
+                }`}>{step.label}</span>
+                {step.status === "active" && !done && (
+                  <span className="text-[10px] text-muted-foreground italic">{detail}</span>
+                )}
+              </div>
+              {step.status !== "pending" && (
+                <p className="text-[10px] text-muted-foreground/70 mt-0.5">{step.detail}</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Live code stream */}
+      {streamedContent.length > 0 && (
+        <div className="border-t border-border/30">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-black/20">
+            <FileCode className="w-3 h-3 text-muted-foreground/60" />
+            <span className="text-[10px] text-muted-foreground/60 font-mono">landing-page.html</span>
+            <div className="flex gap-1 ml-auto">
+              <div className="w-2 h-2 rounded-full bg-red-500/40" />
+              <div className="w-2 h-2 rounded-full bg-yellow-500/40" />
+              <div className="w-2 h-2 rounded-full bg-green-500/40" />
+            </div>
+          </div>
+          <div
+            ref={codeScrollRef}
+            className="bg-black/30 px-3 py-2 font-mono text-[10px] leading-relaxed overflow-y-auto max-h-[130px] scrollbar-none"
+          >
+            {visibleLines.map((line, i) => (
+              <div key={i} className="flex gap-2">
+                <span className="text-muted-foreground/30 select-none w-5 text-right shrink-0">
+                  {lines.length - visibleLines.length + i + 1}
+                </span>
+                <span className={`break-all ${
+                  line.trim().startsWith("//") || line.trim().startsWith("/*") ? "text-muted-foreground/50" :
+                  /<[a-z]/i.test(line) ? "text-blue-300/80" :
+                  /^\s*([\w-]+)\s*\{/.test(line) ? "text-yellow-300/80" :
+                  /^\s*[\w-]+\s*:/.test(line) ? "text-emerald-300/70" :
+                  "text-foreground/70"
+                }`}>
+                  {line || " "}
+                </span>
+              </div>
+            ))}
+            {!done && (
+              <div className="flex gap-2">
+                <span className="text-muted-foreground/30 select-none w-5 text-right shrink-0">▶</span>
+                <span className="text-primary animate-pulse">█</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LandingPageBuilder() {
   const { user } = useUser();
   const [, navigate] = useLocation();
@@ -40,6 +195,7 @@ export default function LandingPageBuilder() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [generationDone, setGenerationDone] = useState(false);
   const [html, setHtml] = useState("");
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
   const [showPreview, setShowPreview] = useState(true);
@@ -56,7 +212,7 @@ export default function LandingPageBuilder() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, streamedHtml]);
 
   function autoResize(el: HTMLTextAreaElement) {
     el.style.height = "auto";
@@ -67,17 +223,12 @@ export default function LandingPageBuilder() {
     if (!prompt.trim() || generating) return;
 
     const newUserMsg: ChatMessage = { role: "user", content: prompt };
-    const updatedMessages = [...messages, newUserMsg];
-    setMessages(updatedMessages);
+    setMessages(prev => [...prev, newUserMsg]);
     setInput("");
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
     setGenerating(true);
+    setGenerationDone(false);
     setStreamedHtml("");
-
-    const assistantPlaceholder: ChatMessage = { role: "assistant", content: "" };
-    setMessages(prev => [...prev, assistantPlaceholder]);
 
     try {
       const res = await fetch("/api/landing-page/generate", {
@@ -91,9 +242,7 @@ export default function LandingPageBuilder() {
         }),
       });
 
-      if (!res.ok || !res.body) {
-        throw new Error("Generation failed");
-      }
+      if (!res.ok || !res.body) throw new Error("Generation failed");
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -113,19 +262,11 @@ export default function LandingPageBuilder() {
           const raw = line.slice(6);
           try {
             const data = JSON.parse(raw);
-            if (data.error) {
-              toast.error(data.error);
-              break;
-            }
+            if (data.error) { toast.error(data.error); break; }
             if (data.done) break;
             if (data.content) {
               fullContent += data.content;
               setStreamedHtml(fullContent);
-              setMessages(prev => {
-                const copy = [...prev];
-                copy[copy.length - 1] = { role: "assistant", content: fullContent };
-                return copy;
-              });
             }
           } catch {}
         }
@@ -133,10 +274,14 @@ export default function LandingPageBuilder() {
 
       const extracted = extractHtml(fullContent);
       setHtml(extracted);
-      setStreamedHtml("");
+      setGenerationDone(true);
+      setMessages(prev => [...prev, { role: "assistant", content: fullContent }]);
+      setTimeout(() => {
+        setStreamedHtml("");
+        setGenerationDone(false);
+      }, 3000);
     } catch (err: any) {
       toast.error(err.message || "Something went wrong");
-      setMessages(prev => prev.slice(0, -1));
     } finally {
       setGenerating(false);
     }
@@ -178,16 +323,16 @@ export default function LandingPageBuilder() {
   }
 
   const hasContent = html.length > 0;
-  const isStreaming = generating && streamedHtml.length > 0;
-  const previewHtml = isStreaming ? extractHtml(streamedHtml) : html;
+  const isStreaming = (generating || generationDone) && streamedHtml.length > 0;
+  const previewHtml = streamedHtml ? extractHtml(streamedHtml) : html;
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
       <Navbar />
 
       <div className="flex flex-1 overflow-hidden" style={{ paddingTop: "56px" }}>
-        {/* ─── Left: Chat Panel ─────────────────────────────── */}
-        <div className="w-[420px] shrink-0 flex flex-col border-r border-border/50 bg-background">
+        {/* ─── Left: Chat + Activity Panel ──────────────────── */}
+        <div className="w-[440px] shrink-0 flex flex-col border-r border-border/50 bg-background">
           {/* Header */}
           <div className="px-4 py-3 border-b border-border/50 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2">
@@ -219,16 +364,16 @@ export default function LandingPageBuilder() {
             </div>
           </div>
 
-          {/* Messages */}
+          {/* Messages + Activity */}
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-            {messages.length === 0 ? (
+            {messages.length === 0 && !isStreaming ? (
               <div className="space-y-4">
                 <div className="text-center pt-4">
                   <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
                     <Globe className="w-6 h-6 text-primary" />
                   </div>
                   <p className="text-sm font-semibold">Describe your landing page</p>
-                  <p className="text-xs text-muted-foreground mt-1">Tell the AI what kind of page you need, and it'll generate the HTML instantly</p>
+                  <p className="text-xs text-muted-foreground mt-1">The AI will generate a complete, styled HTML page instantly</p>
                 </div>
 
                 <div className="space-y-2">
@@ -238,11 +383,9 @@ export default function LandingPageBuilder() {
                       key={i}
                       onClick={() => generate(s.prompt)}
                       disabled={generating}
-                      className="w-full text-left px-3 py-2.5 rounded-lg border border-border/50 hover:border-primary/40 hover:bg-primary/5 transition-all group flex items-center gap-2.5"
+                      className="w-full text-left px-3 py-2.5 rounded-lg border border-border/50 hover:border-primary/40 hover:bg-primary/5 transition-all group flex items-center gap-2.5 disabled:opacity-50"
                     >
-                      <span className="text-primary/70 group-hover:text-primary transition-colors shrink-0">
-                        {s.icon}
-                      </span>
+                      <span className="text-primary/70 group-hover:text-primary transition-colors shrink-0">{s.icon}</span>
                       <span className="text-xs font-medium text-foreground/80 group-hover:text-foreground transition-colors">{s.label}</span>
                       <ChevronRight className="w-3 h-3 text-muted-foreground ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>
@@ -250,47 +393,68 @@ export default function LandingPageBuilder() {
                 </div>
               </div>
             ) : (
-              messages.map((m, i) => (
-                <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                  {m.role === "user" ? (
-                    <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-tr-sm bg-primary text-primary-foreground text-sm leading-relaxed">
-                      {m.content}
-                    </div>
-                  ) : (
-                    <div className="max-w-[85%] space-y-1">
-                      <div className="flex items-center gap-1.5 px-1">
-                        <Sparkles className="w-3 h-3 text-primary" />
-                        <span className="text-[10px] text-muted-foreground font-medium">Advantix AI</span>
+              <div className="space-y-4">
+                {/* Conversation history */}
+                {messages.map((m, i) => (
+                  <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                    {m.role === "user" ? (
+                      <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-tr-sm bg-primary text-primary-foreground text-sm leading-relaxed">
+                        {m.content}
                       </div>
-                      <div className="px-3 py-2 rounded-2xl rounded-tl-sm bg-muted/40 border border-border/40 text-sm leading-relaxed">
-                        {m.content ? (
-                          m.content.includes("<!DOCTYPE") || m.content.includes("<html") ? (
-                            <div className="flex items-center gap-2 text-emerald-400">
-                              <Code2 className="w-3.5 h-3.5" />
-                              <span className="text-xs font-medium">HTML generated — check the preview →</span>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">{m.content}</span>
-                          )
-                        ) : (
-                          <div className="flex items-center gap-2 text-muted-foreground">
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            <span className="text-xs">Generating your landing page...</span>
+                    ) : (
+                      <div className="max-w-[90%] space-y-1 w-full">
+                        <div className="flex items-center gap-1.5 px-1">
+                          <Sparkles className="w-3 h-3 text-primary" />
+                          <span className="text-[10px] text-muted-foreground font-medium">Advantix AI</span>
+                        </div>
+                        <div className="px-3 py-2 rounded-2xl rounded-tl-sm bg-muted/40 border border-border/40 text-sm">
+                          <div className="flex items-center gap-2 text-emerald-400">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span className="text-xs font-medium">
+                              Landing page generated ({m.content.length.toLocaleString()} chars) — see preview →
+                            </span>
                           </div>
-                        )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* Live generation activity */}
+                {isStreaming && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-1.5 px-1">
+                      <Sparkles className="w-3 h-3 text-primary" />
+                      <span className="text-[10px] text-muted-foreground font-medium">Advantix AI</span>
+                    </div>
+                    <GenerationActivity streamedContent={streamedHtml} done={generationDone} />
+                  </div>
+                )}
+
+                {/* Thinking state (before content starts streaming) */}
+                {generating && !isStreaming && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 px-1">
+                      <Sparkles className="w-3 h-3 text-primary" />
+                      <span className="text-[10px] text-muted-foreground font-medium">Advantix AI</span>
+                    </div>
+                    <div className="px-3 py-2.5 rounded-2xl rounded-tl-sm bg-muted/40 border border-border/40">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                        <span className="text-xs">Thinking about your landing page...</span>
                       </div>
                     </div>
-                  )}
-                </div>
-              ))
+                  </div>
+                )}
+              </div>
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
-          <div className="px-4 py-3 border-t border-border/50 shrink-0">
+          {/* Bottom toolbar + input */}
+          <div className="px-4 py-3 border-t border-border/50 shrink-0 space-y-2">
             {hasContent && (
-              <div className="flex gap-1.5 mb-2">
+              <div className="flex gap-1.5">
                 <button
                   onClick={copyHtml}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-muted-foreground hover:text-foreground bg-white/[0.04] hover:bg-white/[0.08] border border-border/40 transition-all"
@@ -305,6 +469,10 @@ export default function LandingPageBuilder() {
                   <Download className="w-3 h-3" />
                   Download
                 </button>
+                <div className="ml-auto flex items-center gap-1 text-[10px] text-muted-foreground/50">
+                  <Code2 className="w-3 h-3" />
+                  {html.length.toLocaleString()} chars
+                </div>
               </div>
             )}
             <div className="flex items-end gap-2 bg-muted/30 rounded-xl border border-border/50 px-3 py-2 focus-within:border-primary/50 transition-colors">
@@ -313,7 +481,7 @@ export default function LandingPageBuilder() {
                 value={input}
                 onChange={e => { setInput(e.target.value); autoResize(e.target); }}
                 onKeyDown={handleKeyDown}
-                placeholder={hasContent ? "Describe changes (e.g. 'change the color to green', 'add a FAQ section')…" : "Describe your landing page…"}
+                placeholder={hasContent ? "Describe changes (e.g. 'change to dark theme', 'add FAQ section')…" : "Describe your landing page…"}
                 disabled={generating}
                 rows={1}
                 className="flex-1 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/50 min-h-[24px] max-h-[120px]"
@@ -323,14 +491,12 @@ export default function LandingPageBuilder() {
                 disabled={!input.trim() || generating}
                 className="shrink-0 w-7 h-7 rounded-lg bg-primary flex items-center justify-center disabled:opacity-40 hover:opacity-90 transition-opacity"
               >
-                {generating ? (
-                  <Loader2 className="w-3.5 h-3.5 text-primary-foreground animate-spin" />
-                ) : (
-                  <Send className="w-3.5 h-3.5 text-primary-foreground" />
-                )}
+                {generating
+                  ? <Loader2 className="w-3.5 h-3.5 text-primary-foreground animate-spin" />
+                  : <Send className="w-3.5 h-3.5 text-primary-foreground" />}
               </button>
             </div>
-            <p className="text-[10px] text-muted-foreground/50 text-center mt-1.5">
+            <p className="text-[10px] text-muted-foreground/40 text-center">
               Enter to send · Shift+Enter for new line
             </p>
           </div>
@@ -339,15 +505,20 @@ export default function LandingPageBuilder() {
         {/* ─── Right: Preview Panel ──────────────────────────── */}
         {showPreview && (
           <div className="flex-1 flex flex-col bg-muted/10 overflow-hidden">
-            {/* Preview toolbar */}
             <div className="px-4 py-2.5 border-b border-border/50 flex items-center justify-between shrink-0 bg-background">
               <div className="flex items-center gap-2">
                 <Eye className="w-3.5 h-3.5 text-muted-foreground" />
                 <span className="text-xs font-medium text-muted-foreground">Live Preview</span>
                 {generating && (
                   <div className="flex items-center gap-1 text-primary">
-                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
                     <span className="text-[10px]">Generating…</span>
+                  </div>
+                )}
+                {!generating && hasContent && (
+                  <div className="flex items-center gap-1 text-emerald-400">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span className="text-[10px]">Ready</span>
                   </div>
                 )}
               </div>
@@ -356,9 +527,7 @@ export default function LandingPageBuilder() {
                   <button
                     onClick={() => setPreviewDevice("desktop")}
                     className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-all ${
-                      previewDevice === "desktop"
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
+                      previewDevice === "desktop" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     <Monitor className="w-3 h-3" />
@@ -367,9 +536,7 @@ export default function LandingPageBuilder() {
                   <button
                     onClick={() => setPreviewDevice("mobile")}
                     className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-all ${
-                      previewDevice === "mobile"
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
+                      previewDevice === "mobile" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     <Smartphone className="w-3 h-3" />
@@ -379,7 +546,6 @@ export default function LandingPageBuilder() {
               </div>
             </div>
 
-            {/* Preview area */}
             <div className="flex-1 flex items-start justify-center overflow-auto p-6 bg-[#1a1a2e]">
               {!previewHtml ? (
                 <div className="flex flex-col items-center justify-center h-full text-center gap-4">
@@ -388,7 +554,7 @@ export default function LandingPageBuilder() {
                   </div>
                   <div>
                     <p className="text-white/40 text-sm font-medium">No page generated yet</p>
-                    <p className="text-white/20 text-xs mt-1">Describe your landing page in the chat to get started</p>
+                    <p className="text-white/20 text-xs mt-1">Describe your landing page to get started</p>
                   </div>
                 </div>
               ) : (
