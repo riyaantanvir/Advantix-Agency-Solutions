@@ -17,3 +17,4 @@ export * from "./aiMessages";
 export * from "./aiUsageLogs";
 export * from "./aiUserLimits";
 export * from "./integrations";
+export * from "./landingPageProjects";

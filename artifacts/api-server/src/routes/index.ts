@@ -18,6 +18,7 @@ import advantixAiRouter from "./advantixAi.js";
 import adminIntegrationsRouter from "./adminIntegrations.js";
 import warUpdateRouter from "./warUpdate.js";
 import landingPageRouter from "./landingPage.js";
+import landingPageProjectsRouter from "./landingPageProjects.js";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use("/ai", advantixAiRouter);
 router.use(adminIntegrationsRouter);
 router.use(warUpdateRouter);
 router.use(landingPageRouter);
+router.use(landingPageProjectsRouter);
 
 export default router;
