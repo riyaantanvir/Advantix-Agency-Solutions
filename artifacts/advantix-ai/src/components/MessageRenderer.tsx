@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Copy, Check } from "lucide-react";
+import { Copy, Check, Download } from "lucide-react";
 
 function useTypewriter(target: string, active: boolean): string {
   const [displayed, setDisplayed] = useState("");
@@ -94,10 +94,117 @@ function ImageResult({ b64_json, mimeType }: { b64_json: string; mimeType: strin
   );
 }
 
+function parseTableRows(lines: string[]): string[][] {
+  return lines
+    .filter(l => l.trim().startsWith("|"))
+    .map(l =>
+      l
+        .trim()
+        .replace(/^\|/, "")
+        .replace(/\|$/, "")
+        .split("|")
+        .map(cell => cell.trim())
+    );
+}
+
+function isSeparatorRow(row: string[]): boolean {
+  return row.every(cell => /^[-: ]+$/.test(cell));
+}
+
+function MarkdownTable({ lines }: { lines: string[] }) {
+  const [copied, setCopied] = useState(false);
+  const rows = parseTableRows(lines);
+  if (rows.length < 2) return null;
+
+  const headerRow = rows[0];
+  const dataRows = rows.slice(1).filter(r => !isSeparatorRow(r));
+
+  function copyCSV() {
+    const csv = [headerRow, ...dataRows]
+      .map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    navigator.clipboard.writeText(csv);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function downloadCSV() {
+    const csv = [headerRow, ...dataRows]
+      .map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `table-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="my-3 rounded-lg border border-border/60 overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-muted/50 border-b border-border/40">
+        <span className="text-[11px] text-muted-foreground font-medium">
+          Table · {dataRows.length} row{dataRows.length !== 1 ? "s" : ""}
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={copyCSV}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+            {copied ? "Copied" : "Copy CSV"}
+          </button>
+          <button
+            onClick={downloadCSV}
+            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Download className="w-3 h-3" />
+            .csv
+          </button>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border-collapse min-w-max">
+          <thead>
+            <tr className="bg-muted/40">
+              {headerRow.map((cell, ci) => (
+                <th
+                  key={ci}
+                  className="px-3 py-2 text-left font-semibold text-foreground border-b border-border/50 whitespace-nowrap"
+                >
+                  {cell}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {dataRows.map((row, ri) => (
+              <tr key={ri} className={ri % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                {row.map((cell, ci) => (
+                  <td
+                    key={ci}
+                    className="px-3 py-2 text-foreground/85 border-b border-border/30 whitespace-nowrap last:border-b-0"
+                  >
+                    {inlineFormat(cell)}
+                  </td>
+                ))}
+                {row.length < headerRow.length &&
+                  Array.from({ length: headerRow.length - row.length }).map((_, ci) => (
+                    <td key={`empty-${ci}`} className="px-3 py-2 border-b border-border/30" />
+                  ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function MessageRenderer({ content, isStreaming }: Props) {
   const displayed = useTypewriter(content, !!isStreaming);
 
-  // Handle image result
   if (content.startsWith("[IMAGE:")) {
     const match = content.match(/\[IMAGE:([^:]+):(.+)\]/s);
     if (match) {
@@ -105,36 +212,60 @@ export function MessageRenderer({ content, isStreaming }: Props) {
     }
   }
 
-  // Parse markdown-like content with code blocks
-  const parts: React.ReactNode[] = [];
   const renderContent = isStreaming ? displayed : content;
-  const codeBlockRegex = /```(\w*)\n?([\s\S]*?)```/g;
-  let lastIndex = 0;
-  let match;
+  const parts: React.ReactNode[] = [];
 
-  while ((match = codeBlockRegex.exec(renderContent)) !== null) {
-    // Text before code block
-    if (match.index > lastIndex) {
-      parts.push(
-        <TextContent key={`text-${lastIndex}`} text={renderContent.slice(lastIndex, match.index)} />
-      );
+  const lines = renderContent.split("\n");
+  let i = 0;
+  let textAccum: string[] = [];
+  let partKey = 0;
+
+  function flushText(streaming?: boolean) {
+    if (textAccum.length === 0) return;
+    const block = textAccum.join("\n");
+    if (block.trim()) {
+      parts.push(<TextContent key={`text-${partKey++}`} text={block} isStreaming={streaming} />);
     }
-    parts.push(
-      <CodeBlock key={`code-${match.index}`} language={match[1]} code={match[2].trimEnd()} />
-    );
-    lastIndex = match.index + match[0].length;
+    textAccum = [];
   }
 
-  // Remaining text
-  if (lastIndex < renderContent.length) {
-    parts.push(
-      <TextContent
-        key={`text-${lastIndex}`}
-        text={renderContent.slice(lastIndex)}
-        isStreaming={isStreaming}
-      />
-    );
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Code block
+    if (line.trimStart().startsWith("```")) {
+      flushText();
+      const lang = line.trimStart().slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].trimStart().startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      parts.push(
+        <CodeBlock key={`code-${partKey++}`} language={lang} code={codeLines.join("\n").trimEnd()} />
+      );
+      i++;
+      continue;
+    }
+
+    // Table block — collect all consecutive `|` lines
+    if (line.trim().startsWith("|")) {
+      flushText();
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith("|")) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      parts.push(<MarkdownTable key={`table-${partKey++}`} lines={tableLines} />);
+      continue;
+    }
+
+    textAccum.push(line);
+    i++;
   }
+
+  flushText(isStreaming);
 
   if (parts.length === 0) {
     return <TextContent text={renderContent} isStreaming={isStreaming} />;
@@ -152,12 +283,17 @@ function TextContent({ text, isStreaming }: { text: string; isStreaming?: boolea
     if (line.match(/^#{1,3}\s/)) {
       const level = line.match(/^(#{1,3})\s/)![1].length;
       const headingText = line.replace(/^#{1,3}\s/, "");
-      const cls = level === 1
-        ? "text-base font-semibold mt-3 mb-1"
-        : level === 2
-        ? "text-sm font-semibold mt-2 mb-1"
-        : "text-sm font-medium mt-1.5 mb-0.5";
-      elements.push(<p key={i} className={cls}>{headingText}</p>);
+      const cls =
+        level === 1
+          ? "text-base font-semibold mt-3 mb-1"
+          : level === 2
+          ? "text-sm font-semibold mt-2 mb-1"
+          : "text-sm font-medium mt-1.5 mb-0.5";
+      elements.push(
+        <p key={i} className={cls}>
+          {headingText}
+        </p>
+      );
     } else if (line.match(/^[-*•]\s/)) {
       elements.push(
         <div key={i} className="flex gap-2 text-sm leading-relaxed">
@@ -177,7 +313,12 @@ function TextContent({ text, isStreaming }: { text: string; isStreaming?: boolea
       if (i > 0 && i < lines.length - 1) elements.push(<div key={i} className="h-1.5" />);
     } else {
       elements.push(
-        <p key={i} className={`text-sm leading-relaxed ${i === lines.length - 1 && isStreaming ? "cursor-blink" : ""}`}>
+        <p
+          key={i}
+          className={`text-sm leading-relaxed ${
+            i === lines.length - 1 && isStreaming ? "cursor-blink" : ""
+          }`}
+        >
           {inlineFormat(line)}
         </p>
       );
@@ -196,9 +337,20 @@ function inlineFormat(text: string): React.ReactNode {
     if (m.index > last) parts.push(text.slice(last, m.index));
     const token = m[0];
     if (token.startsWith("`")) {
-      parts.push(<code key={m.index} className="font-mono text-xs bg-muted/80 px-1 py-0.5 rounded text-primary/90">{token.slice(1, -1)}</code>);
+      parts.push(
+        <code
+          key={m.index}
+          className="font-mono text-xs bg-muted/80 px-1 py-0.5 rounded text-primary/90"
+        >
+          {token.slice(1, -1)}
+        </code>
+      );
     } else if (token.startsWith("**")) {
-      parts.push(<strong key={m.index} className="font-semibold">{token.slice(2, -2)}</strong>);
+      parts.push(
+        <strong key={m.index} className="font-semibold">
+          {token.slice(2, -2)}
+        </strong>
+      );
     } else {
       parts.push(<em key={m.index}>{token.slice(1, -1)}</em>);
     }
