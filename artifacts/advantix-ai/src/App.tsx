@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 import ChatPage from "@/pages/ChatPage";
 import AuthPage from "@/pages/AuthPage";
 import { UserProvider, useUser } from "@/context/UserContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 
 const queryClient = new QueryClient();
 
@@ -30,12 +31,14 @@ function AppRouter() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <UserProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <AppRouter />
-        </WouterRouter>
-        <Toaster />
-      </UserProvider>
+      <ThemeProvider>
+        <UserProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <AppRouter />
+          </WouterRouter>
+          <Toaster />
+        </UserProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

@@ -6,9 +6,10 @@ import {
   Plus, Trash2, LogOut, ChevronLeft, Send, ThumbsUp, ThumbsDown,
   Sparkles, Code, Image, Brain, MessageSquare, Menu, Zap,
   FolderOpen, FolderPlus, Pencil, X, ChevronRight, Settings2,
-  Settings, BrainCircuit, Check,
+  Settings, BrainCircuit, Check, Sun, Moon,
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
+import { useTheme } from "@/context/ThemeContext";
 
 interface Project {
   id: number;
@@ -85,6 +86,7 @@ interface ProjectModalState {
 
 export default function ChatPage() {
   const { user, logout } = useUser();
+  const { theme, toggleTheme } = useTheme();
 
   // Projects
   const [projects, setProjects] = useState<Project[]>([]);
@@ -631,6 +633,13 @@ export default function ChatPage() {
               </div>
               <span className="text-xs text-sidebar-foreground/80 truncate flex-1">{user?.name}</span>
               <button
+                onClick={toggleTheme}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              </button>
+              <button
                 onClick={() => setSettingsOpen(true)}
                 className="text-muted-foreground hover:text-foreground transition-colors"
                 title="Settings"
@@ -711,17 +720,12 @@ export default function ChatPage() {
               </div>
             )}
 
-            <div className="max-w-2xl mx-auto space-y-6">
+            <div className="max-w-2xl mx-auto space-y-8">
               {messages.map((msg, i) => (
                 <div key={i} className={`message-in flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  {msg.role === "assistant" && (
-                    <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
-                      <span className="text-primary text-xs">✦</span>
-                    </div>
-                  )}
-                  <div className={`max-w-[85%] ${msg.role === "user" ? "order-first" : ""}`}>
+                  <div className={`${msg.role === "user" ? "max-w-[80%]" : "w-full"}`}>
                     {msg.role === "user" ? (
-                      <div className="bg-card border border-border/40 rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-sm text-foreground">
+                      <div className="bg-secondary rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm text-foreground leading-relaxed">
                         {(() => {
                           const imgMatch = msg.content.match(/^\[IMAGE:([^:]+):([^\]]+)\]\n?([\s\S]*)/);
                           if (imgMatch) {
@@ -731,7 +735,7 @@ export default function ChatPage() {
                                 <img
                                   src={`data:${mimeType};base64,${b64}`}
                                   alt="Attached"
-                                  className="max-h-48 w-auto rounded-lg object-cover border border-border/30"
+                                  className="max-h-48 w-auto rounded-lg object-cover"
                                 />
                                 {text?.trim() && <p>{text.trim()}</p>}
                               </div>
@@ -743,32 +747,32 @@ export default function ChatPage() {
                     ) : (
                       <div>
                         {msg.provider && (
-                          <div className={`flex items-center gap-1 text-[10px] mb-1.5 ${PROVIDER_COLORS[msg.provider] || "text-muted-foreground"}`}>
+                          <div className={`flex items-center gap-1.5 text-[10px] mb-2 font-medium ${PROVIDER_COLORS[msg.provider] || "text-muted-foreground"}`}>
                             {msg.intentType && INTENT_ICONS[msg.intentType]}
                             <span>{MODEL_BRAND_LABELS[msg.model ?? ""] ?? msg.model}</span>
                           </div>
                         )}
-                        <div className="text-foreground/90">
+                        <div className="text-foreground text-sm leading-relaxed">
                           <MessageRenderer content={msg.content} isStreaming={msg.isStreaming} />
                           {msg.isStreaming && !msg.content && (
-                            <div className="flex gap-1 py-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:-0.3s]" />
-                              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:-0.15s]" />
-                              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-bounce" />
+                            <div className="flex gap-1 py-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-0.3s]" />
+                              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:-0.15s]" />
+                              <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce" />
                             </div>
                           )}
                         </div>
                         {!msg.isStreaming && msg.id && (
-                          <div className="flex items-center gap-2 mt-2">
+                          <div className="flex items-center gap-2 mt-2.5">
                             <button
                               onClick={() => sendFeedback(msg.id!, "up")}
-                              className={`transition-colors ${msg.feedback === "up" ? "text-emerald-400" : "text-muted-foreground/40 hover:text-muted-foreground"}`}
+                              className={`transition-colors ${msg.feedback === "up" ? "text-emerald-400" : "text-muted-foreground/30 hover:text-muted-foreground"}`}
                             >
                               <ThumbsUp className="w-3 h-3" />
                             </button>
                             <button
                               onClick={() => sendFeedback(msg.id!, "down")}
-                              className={`transition-colors ${msg.feedback === "down" ? "text-destructive" : "text-muted-foreground/40 hover:text-muted-foreground"}`}
+                              className={`transition-colors ${msg.feedback === "down" ? "text-destructive" : "text-muted-foreground/30 hover:text-muted-foreground"}`}
                             >
                               <ThumbsDown className="w-3 h-3" />
                             </button>
