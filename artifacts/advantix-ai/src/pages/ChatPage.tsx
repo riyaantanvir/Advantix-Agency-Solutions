@@ -573,10 +573,13 @@ export default function ChatPage() {
               ) : (
                 <div className="space-y-0.5">
                   {visibleSessions.map(s => (
-                    <button
+                    <div
                       key={s.id}
                       onClick={() => selectSession(s)}
-                      className={`w-full text-left px-2.5 py-2 rounded-md flex items-center gap-2 group transition-colors ${
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={e => e.key === "Enter" && selectSession(s)}
+                      className={`w-full text-left px-2.5 py-2 rounded-md flex items-center gap-2 group transition-colors cursor-pointer ${
                         activeSession?.id === s.id
                           ? "bg-sidebar-accent text-sidebar-foreground"
                           : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
@@ -590,7 +593,7 @@ export default function ChatPage() {
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}

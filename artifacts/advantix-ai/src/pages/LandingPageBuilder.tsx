@@ -324,7 +324,8 @@ export default function LandingPageBuilder() {
 
   const hasContent = html.length > 0;
   const isStreaming = (generating || generationDone) && streamedHtml.length > 0;
-  const previewHtml = streamedHtml ? extractHtml(streamedHtml) : html;
+  // Only show the full html in the preview — never partial streaming chunks
+  const previewHtml = html;
 
   return (
     <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
@@ -547,7 +548,39 @@ export default function LandingPageBuilder() {
             </div>
 
             <div className="flex-1 flex items-start justify-center overflow-auto p-6 bg-[#1a1a2e]">
-              {!previewHtml ? (
+              {generating && !previewHtml ? (
+                /* Skeleton while first page is being generated */
+                <div
+                  className="w-full rounded-xl overflow-hidden border border-white/10 shadow-2xl"
+                  style={{ maxWidth: previewDevice === "mobile" ? "390px" : "1280px" }}
+                >
+                  <div className="h-2 bg-primary/30 relative overflow-hidden">
+                    <div className="absolute inset-y-0 left-0 bg-primary/70 w-1/2 animate-[shimmer_1.5s_ease-in-out_infinite]" style={{ animation: "progress 2s ease-in-out infinite" }} />
+                  </div>
+                  <div className="bg-zinc-900 p-8 space-y-6" style={{ minHeight: "500px" }}>
+                    <div className="space-y-3">
+                      <div className="h-8 bg-white/5 rounded-lg w-2/3 animate-pulse" />
+                      <div className="h-4 bg-white/5 rounded w-1/2 animate-pulse" />
+                      <div className="h-10 bg-primary/20 rounded-lg w-40 animate-pulse mt-4" />
+                    </div>
+                    <div className="grid grid-cols-3 gap-4 pt-8">
+                      {[0,1,2].map(i => (
+                        <div key={i} className="bg-white/5 rounded-xl p-4 space-y-2 animate-pulse" style={{ animationDelay: `${i * 0.15}s` }}>
+                          <div className="w-8 h-8 bg-white/10 rounded-lg" />
+                          <div className="h-3 bg-white/10 rounded w-3/4" />
+                          <div className="h-3 bg-white/10 rounded w-full" />
+                          <div className="h-3 bg-white/10 rounded w-2/3" />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="pt-4 space-y-2">
+                      <div className="h-3 bg-white/5 rounded w-full animate-pulse" />
+                      <div className="h-3 bg-white/5 rounded w-5/6 animate-pulse" />
+                      <div className="h-3 bg-white/5 rounded w-4/6 animate-pulse" />
+                    </div>
+                  </div>
+                </div>
+              ) : !previewHtml ? (
                 <div className="flex flex-col items-center justify-center h-full text-center gap-4">
                   <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center">
                     <Globe className="w-8 h-8 text-white/20" />
@@ -559,20 +592,30 @@ export default function LandingPageBuilder() {
                 </div>
               ) : (
                 <div
-                  className="transition-all duration-300 shadow-2xl rounded-lg overflow-hidden bg-white"
+                  className="transition-all duration-300 shadow-2xl rounded-xl overflow-hidden ring-1 ring-white/20"
                   style={{
                     width: previewDevice === "mobile" ? "390px" : "100%",
                     maxWidth: previewDevice === "desktop" ? "1280px" : "390px",
                     minHeight: "600px",
+                    position: "relative",
                   }}
                 >
+                  {/* Thin top bar so users can see the iframe frame */}
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800/90 border-b border-white/10">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
+                    <div className="flex-1 mx-2 bg-white/10 rounded text-[10px] text-white/30 px-2 py-0.5 font-mono">
+                      landing-page.html
+                    </div>
+                  </div>
                   <iframe
                     ref={iframeRef}
                     srcDoc={previewHtml}
                     title="Landing Page Preview"
-                    sandbox="allow-scripts allow-same-origin allow-forms"
-                    className="w-full border-0"
-                    style={{ height: "calc(100vh - 170px)", minHeight: "600px" }}
+                    sandbox="allow-scripts allow-forms"
+                    className="w-full border-0 bg-white"
+                    style={{ height: "calc(100vh - 200px)", minHeight: "560px", display: "block" }}
                   />
                 </div>
               )}
