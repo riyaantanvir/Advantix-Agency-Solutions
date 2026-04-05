@@ -36,6 +36,7 @@ export function Navbar() {
     ? [{ href: "/", label: "Home" }]
     : [
         { href: "/", label: "Home" },
+        { href: "/services", label: "Services" },
         { href: "/portfolio", label: "Portfolio" },
         { href: "/team", label: "Team" },
       ];
