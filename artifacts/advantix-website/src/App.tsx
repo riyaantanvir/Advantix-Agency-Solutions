@@ -7,6 +7,7 @@ import { ToolsUserProvider } from "@/context/ToolsUserContext";
 import NotFound from "@/pages/not-found";
 
 import Home from "@/pages/Home";
+import Services from "@/pages/Services";
 import Portfolio from "@/pages/Portfolio";
 import Team from "@/pages/Team";
 import Contact from "@/pages/Contact";
@@ -39,6 +40,7 @@ function Router() {
         <AppLayout>
           <Switch>
             <Route path="/" component={Home} />
+            <Route path="/services" component={Services} />
             <Route path="/portfolio" component={Portfolio} />
             <Route path="/team" component={Team} />
             <Route path="/contact" component={Contact} />
