@@ -11,7 +11,8 @@ import {
   Bot, Users, UserPlus, Palette, Facebook,
   Share2, ClipboardList, TrendingUp, ArrowRight,
   Globe, Code2, Briefcase, Mail, Megaphone, BarChart3,
-  Headphones, FileText, Zap, Search, Settings, Star, CheckCircle, X
+  Headphones, FileText, Zap, Search, Settings, Star, CheckCircle, X,
+  BrainCircuit,
 } from "lucide-react";
 
 /* ── icon map ─────────────────────────────────────────────── */
@@ -19,7 +20,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Monitor, Database, LayoutTemplate, ShoppingCart, Bot, Users, UserPlus,
   Palette, Facebook, Share2, ClipboardList, TrendingUp, Globe, Code2,
   Briefcase, Mail, Megaphone, BarChart3, Headphones, FileText, Zap,
-  Search, Settings, Star, CheckCircle,
+  Search, Settings, Star, CheckCircle, BrainCircuit,
 };
 function getIcon(name: string): React.ComponentType<{ className?: string }> {
   return iconMap[name] ?? Briefcase;
@@ -138,6 +139,7 @@ const fallbackServices: Service[] = [
   { id: 10, name: "Social Media Management", icon: "Share2", description: "Grow your audience with consistent, engaging content.", details: null, order: 10, isActive: true, createdAt: "" },
   { id: 11, name: "Data Entry & Ops", icon: "ClipboardList", description: "Accurate, efficient data processing and management.", details: null, order: 11, isActive: true, createdAt: "" },
   { id: 12, name: "Lead Generation", icon: "TrendingUp", description: "Qualified inbound leads ready to convert.", details: null, order: 12, isActive: true, createdAt: "" },
+  { id: 13, name: "AI Solutions", icon: "BrainCircuit", description: "Smart AI-powered tools that think, learn, and grow your business on autopilot.", details: null, order: 13, isActive: true, createdAt: "" },
 ];
 
 /* ── section reveal wrapper ───────────────────────────────── */
@@ -309,6 +311,7 @@ export default function Home() {
           >
             {services.map((service) => {
               const Icon = getIcon(service.icon);
+              const isAI = service.icon === "BrainCircuit";
               return (
                 <motion.div key={service.id} variants={gridItem}>
                   <motion.button
@@ -318,20 +321,43 @@ export default function Home() {
                     whileTap={{ scale: 0.99 }}
                     transition={{ type: "spring", stiffness: 300, damping: 20 }}
                   >
-                    <Card className="p-6 h-full bg-card hover:bg-secondary/50 border-border/50 hover:border-primary/40 transition-colors duration-300 group cursor-pointer hover:shadow-lg hover:shadow-primary/5">
-                      <motion.div
-                        className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4"
-                        whileHover={{ backgroundColor: "rgb(var(--primary) / 0.2)" }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <Icon className="w-6 h-6 text-primary" />
-                      </motion.div>
-                      <h3 className="font-display font-bold text-lg mb-2 group-hover:text-primary transition-colors duration-200">{service.name}</h3>
-                      <p className="text-sm text-muted-foreground leading-relaxed">{service.description}</p>
-                      <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                        Learn more <ArrowRight className="w-3 h-3" />
-                      </div>
-                    </Card>
+                    {isAI ? (
+                      <Card className="p-6 h-full relative overflow-hidden border-primary/60 bg-gradient-to-br from-primary/10 via-primary/5 to-card group cursor-pointer shadow-lg shadow-primary/10 transition-all duration-300 hover:shadow-primary/25 hover:border-primary">
+                        {/* Glow orb */}
+                        <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-primary/20 blur-2xl pointer-events-none" />
+                        <div className="absolute -bottom-6 -left-6 w-24 h-24 rounded-full bg-primary/10 blur-2xl pointer-events-none" />
+                        {/* Badge */}
+                        <span className="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-widest text-primary bg-primary/15 border border-primary/30 px-2 py-0.5 rounded-full">New</span>
+                        {/* Human silhouette + brain icon */}
+                        <div className="relative w-14 h-14 mb-4">
+                          <div className="w-14 h-14 rounded-2xl bg-primary/20 flex items-center justify-center ring-2 ring-primary/30">
+                            <Icon className="w-7 h-7 text-primary drop-shadow-[0_0_8px_rgba(99,102,241,0.8)]" />
+                          </div>
+                          {/* Pulse ring */}
+                          <span className="absolute inset-0 rounded-2xl ring-2 ring-primary/40 animate-ping opacity-30 pointer-events-none" />
+                        </div>
+                        <h3 className="font-display font-bold text-lg mb-2 text-primary">{service.name}</h3>
+                        <p className="text-sm text-muted-foreground leading-relaxed">{service.description}</p>
+                        <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-primary">
+                          Explore AI tools <ArrowRight className="w-3 h-3" />
+                        </div>
+                      </Card>
+                    ) : (
+                      <Card className="p-6 h-full bg-card hover:bg-secondary/50 border-border/50 hover:border-primary/40 transition-colors duration-300 group cursor-pointer hover:shadow-lg hover:shadow-primary/5">
+                        <motion.div
+                          className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4"
+                          whileHover={{ backgroundColor: "rgb(var(--primary) / 0.2)" }}
+                          transition={{ duration: 0.2 }}
+                        >
+                          <Icon className="w-6 h-6 text-primary" />
+                        </motion.div>
+                        <h3 className="font-display font-bold text-lg mb-2 group-hover:text-primary transition-colors duration-200">{service.name}</h3>
+                        <p className="text-sm text-muted-foreground leading-relaxed">{service.description}</p>
+                        <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                          Learn more <ArrowRight className="w-3 h-3" />
+                        </div>
+                      </Card>
+                    )}
                   </motion.button>
                 </motion.div>
               );
