@@ -6,6 +6,8 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Edit3, Trash2, Image as ImageIcon, Briefcase } from "lucide-react";
+import { ImportExport } from "@/components/ImportExport";
+import type { ColumnDef } from "@/components/ImportExport";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +18,15 @@ import { useToast } from "@/hooks/use-toast";
 
 const categories = [
   "Website", "Python Bot", "Facebook Marketing", "CRM Development", "E-commerce", "Graphics & Branding", "Other"
+];
+
+const portfolioColumns: ColumnDef<Record<string, unknown>>[] = [
+  { key: "title", label: "Title" },
+  { key: "category", label: "Category" },
+  { key: "clientName", label: "Client Name" },
+  { key: "description", label: "Description" },
+  { key: "imageUrl", label: "Image URL" },
+  { key: "videoUrl", label: "Video URL" },
 ];
 
 const formSchema = z.object({
@@ -51,6 +62,28 @@ export default function Portfolio() {
     setEditingId(null);
     setIsModalOpen(true);
   };
+
+  async function handlePortfolioImport(rows: Partial<Record<string, unknown>>[]) {
+    for (const row of rows) {
+      await new Promise<void>((resolve, reject) => {
+        createMutation.mutate(
+          {
+            data: {
+              title: String(row.title ?? ""),
+              category: String(row.category ?? "Other"),
+              description: row.description ? String(row.description) : undefined,
+              imageUrl: row.imageUrl ? String(row.imageUrl) : undefined,
+              videoUrl: row.videoUrl ? String(row.videoUrl) : undefined,
+              clientName: row.clientName ? String(row.clientName) : undefined,
+            },
+          },
+          { onSuccess: () => resolve(), onError: reject }
+        );
+      });
+    }
+    queryClient.invalidateQueries({ queryKey: ["/api/portfolio"] });
+    toast({ title: "Import complete", description: `${rows.length} portfolio items imported.` });
+  }
 
   const openEdit = (item: PortfolioItem) => {
     form.reset({
@@ -105,9 +138,17 @@ export default function Portfolio() {
           <h1 className="text-3xl font-display font-bold text-foreground">Portfolio Manager</h1>
           <p className="text-muted-foreground mt-1">Manage cases, projects, and work examples.</p>
         </div>
-        <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl px-6">
-          <Plus className="w-5 h-5 mr-2" /> Add Project
-        </Button>
+        <div className="flex items-center gap-2">
+          <ImportExport
+            data={(items ?? []) as unknown as Record<string, unknown>[]}
+            columns={portfolioColumns}
+            entityName="Portfolio Items"
+            onImport={handlePortfolioImport}
+          />
+          <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl px-6">
+            <Plus className="w-5 h-5 mr-2" /> Add Project
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">

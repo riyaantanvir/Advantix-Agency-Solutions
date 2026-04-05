@@ -6,6 +6,8 @@ import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Edit3, Trash2, Users, Mail, Linkedin, Upload, X, Tag } from "lucide-react";
+import { ImportExport } from "@/components/ImportExport";
+import type { ColumnDef } from "@/components/ImportExport";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -190,6 +192,48 @@ export default function Team() {
     }
   };
 
+  const teamColumns: ColumnDef<Record<string, unknown>>[] = [
+    { key: "name", label: "Name" },
+    { key: "role", label: "Role" },
+    { key: "bio", label: "Bio" },
+    { key: "email", label: "Email" },
+    { key: "linkedinUrl", label: "LinkedIn URL" },
+    { key: "photoUrl", label: "Photo URL" },
+    { key: "badge", label: "Badge" },
+    { key: "tagline", label: "Tagline" },
+    {
+      key: "skills",
+      label: "Skills",
+      format: (v) => (Array.isArray(v) ? v.join(", ") : String(v ?? "")),
+      parse: (v) => v ? v.split(",").map((s: string) => s.trim()).filter(Boolean) : [],
+    },
+  ];
+
+  async function handleTeamImport(rows: Partial<Record<string, unknown>>[]) {
+    for (const row of rows) {
+      await new Promise<void>((resolve, reject) => {
+        createMutation.mutate(
+          {
+            data: {
+              name: String(row.name ?? ""),
+              role: String(row.role ?? ""),
+              bio: row.bio ? String(row.bio) : undefined,
+              email: row.email ? String(row.email) : undefined,
+              linkedinUrl: row.linkedinUrl ? String(row.linkedinUrl) : undefined,
+              photoUrl: row.photoUrl ? String(row.photoUrl) : undefined,
+              badge: row.badge ? String(row.badge) : undefined,
+              tagline: row.tagline ? String(row.tagline) : undefined,
+              skills: Array.isArray(row.skills) ? row.skills : [],
+            },
+          },
+          { onSuccess: () => resolve(), onError: reject }
+        );
+      });
+    }
+    queryClient.invalidateQueries({ queryKey: ["/api/team"] });
+    toast({ title: "Import complete", description: `${rows.length} team members imported.` });
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -197,9 +241,17 @@ export default function Team() {
           <h1 className="text-3xl font-display font-bold text-foreground">Team Management</h1>
           <p className="text-muted-foreground mt-1">Manage agency staff and their profiles.</p>
         </div>
-        <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl px-6">
-          <Plus className="w-5 h-5 mr-2" /> Add Member
-        </Button>
+        <div className="flex items-center gap-2">
+          <ImportExport
+            data={(members ?? []) as unknown as Record<string, unknown>[]}
+            columns={teamColumns}
+            entityName="Team Members"
+            onImport={handleTeamImport}
+          />
+          <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl px-6">
+            <Plus className="w-5 h-5 mr-2" /> Add Member
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

@@ -8,6 +8,8 @@ import {
 } from "@workspace/api-client-react";
 import type { Service } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { ImportExport } from "@/components/ImportExport";
+import type { ColumnDef } from "@/components/ImportExport";
 import {
   Monitor, Database, LayoutTemplate, ShoppingCart,
   Bot, Users, UserPlus, Palette, Facebook, Share2,
@@ -98,6 +100,15 @@ const emptyForm: ServiceForm = {
   order: 0,
   isActive: true,
 };
+
+const serviceColumns: ColumnDef<Record<string, unknown>>[] = [
+  { key: "name", label: "Name" },
+  { key: "icon", label: "Icon" },
+  { key: "description", label: "Description" },
+  { key: "details", label: "Details" },
+  { key: "order", label: "Order", parse: (v) => parseInt(v) || 0, format: (v) => String(v ?? 0) },
+  { key: "isActive", label: "Active", parse: (v) => v.toLowerCase() !== "false" && v !== "0", format: (v) => String(v) },
+];
 
 export default function Services() {
   const { toast } = useToast();
@@ -197,6 +208,29 @@ export default function Services() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const PreviewIcon = getIcon(form.icon);
 
+  async function handleServiceImport(rows: Partial<Record<string, unknown>>[]) {
+    for (const row of rows) {
+      await new Promise<void>((resolve, reject) => {
+        createMutation.mutate(
+          {
+            data: {
+              name: String(row.name ?? ""),
+              icon: String(row.icon ?? "Briefcase"),
+              description: String(row.description ?? ""),
+              details: row.details ? String(row.details) : undefined,
+              order: typeof row.order === "number" ? row.order : parseInt(String(row.order ?? "0")) || 0,
+              isActive: row.isActive !== false && row.isActive !== "false" && row.isActive !== "0",
+            },
+          },
+          { onSuccess: () => resolve(), onError: reject }
+        );
+      });
+    }
+    queryClient.invalidateQueries({ queryKey: ["/api/services"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/services/all"] });
+    toast({ title: "Import complete", description: `${rows.length} services imported.` });
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-8">
@@ -204,9 +238,17 @@ export default function Services() {
           <h1 className="text-3xl font-display font-bold">Services</h1>
           <p className="text-muted-foreground mt-1">Manage the services displayed on the public website.</p>
         </div>
-        <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20">
-          <Plus className="w-4 h-4 mr-2" /> Add Service
-        </Button>
+        <div className="flex items-center gap-2">
+          <ImportExport
+            data={services as unknown as Record<string, unknown>[]}
+            columns={serviceColumns}
+            entityName="Services"
+            onImport={handleServiceImport}
+          />
+          <Button onClick={openCreate} className="bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20">
+            <Plus className="w-4 h-4 mr-2" /> Add Service
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
