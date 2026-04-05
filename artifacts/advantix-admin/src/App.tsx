@@ -15,6 +15,7 @@ import AssistantRequests from "./pages/AssistantRequests";
 import UserManagement from "./pages/UserManagement";
 import ManageAI from "./pages/ManageAI";
 import Integrations from "./pages/Integrations";
+import Tools from "./pages/Tools";
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminLayout } from "./components/layout/AdminLayout";
@@ -83,6 +84,10 @@ function Router() {
 
       <Route path="/integrations">
         <ProtectedLayout><Integrations /></ProtectedLayout>
+      </Route>
+
+      <Route path="/tools">
+        <ProtectedLayout><Tools /></ProtectedLayout>
       </Route>
 
       <Route>
