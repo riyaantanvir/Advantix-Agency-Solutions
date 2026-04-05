@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Edit3, Trash2, Users, Mail, Linkedin, Upload, X } from "lucide-react";
+import { Plus, Edit3, Trash2, Users, Mail, Linkedin, Upload, X, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,6 +20,9 @@ const formSchema = z.object({
   photoUrl: z.string().optional(),
   email: z.string().optional(),
   linkedinUrl: z.string().optional(),
+  badge: z.string().optional(),
+  tagline: z.string().optional(),
+  skillsRaw: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -111,13 +114,13 @@ export default function Team() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: "", role: "", bio: "", photoUrl: "", email: "", linkedinUrl: "" }
+    defaultValues: { name: "", role: "", bio: "", photoUrl: "", email: "", linkedinUrl: "", badge: "", tagline: "", skillsRaw: "" }
   });
 
   const photoUrl = form.watch("photoUrl") ?? "";
 
   const openCreate = () => {
-    form.reset({ name: "", role: "", bio: "", photoUrl: "", email: "", linkedinUrl: "" });
+    form.reset({ name: "", role: "", bio: "", photoUrl: "", email: "", linkedinUrl: "", badge: "", tagline: "", skillsRaw: "" });
     setEditingId(null);
     setIsModalOpen(true);
   };
@@ -130,6 +133,9 @@ export default function Team() {
       photoUrl: member.photoUrl ?? "",
       email: member.email ?? "",
       linkedinUrl: member.linkedinUrl ?? "",
+      badge: member.badge ?? "",
+      tagline: member.tagline ?? "",
+      skillsRaw: (member.skills ?? []).join(", "),
     });
     setEditingId(member.id);
     setIsModalOpen(true);
@@ -147,8 +153,24 @@ export default function Team() {
   };
 
   const onSubmit = (data: FormValues) => {
+    const skills = data.skillsRaw
+      ? data.skillsRaw.split(",").map(s => s.trim()).filter(Boolean)
+      : [];
+
+    const payload = {
+      name: data.name,
+      role: data.role,
+      bio: data.bio,
+      photoUrl: data.photoUrl,
+      email: data.email,
+      linkedinUrl: data.linkedinUrl,
+      badge: data.badge || undefined,
+      tagline: data.tagline || undefined,
+      skills: skills.length > 0 ? skills : undefined,
+    } as any;
+
     if (editingId) {
-      updateMutation.mutate({ id: editingId, data }, {
+      updateMutation.mutate({ id: editingId, data: payload }, {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["/api/team"] });
           toast({ title: "Member updated successfully" });
@@ -157,7 +179,7 @@ export default function Team() {
         onError: () => toast({ variant: "destructive", title: "Error", description: "Could not update member." }),
       });
     } else {
-      createMutation.mutate({ data }, {
+      createMutation.mutate({ data: payload }, {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: ["/api/team"] });
           toast({ title: "Member added successfully" });
@@ -190,48 +212,75 @@ export default function Team() {
             </div>
           ))
         ) : members && members.length > 0 ? (
-          members.map((member) => (
-            <div key={member.id} className="bg-card rounded-2xl p-6 border border-border/50 flex flex-col items-center text-center group hover:border-primary/50 transition-all shadow-sm hover:shadow-lg relative">
-              <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button variant="secondary" size="icon" className="h-8 w-8 rounded-lg" onClick={() => openEdit(member)}>
-                  <Edit3 className="w-4 h-4" />
-                </Button>
-                <Button variant="destructive" size="icon" className="h-8 w-8 rounded-lg" onClick={() => handleDelete(member.id)}>
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
+          members.map((member) => {
+            const badge = member.badge;
+            const skills = member.skills;
+            return (
+              <div key={member.id} className="bg-card rounded-2xl border border-border/50 flex flex-col group hover:border-primary/50 transition-all shadow-sm hover:shadow-lg relative overflow-hidden">
+                <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                  <Button variant="secondary" size="icon" className="h-8 w-8 rounded-lg" onClick={() => openEdit(member)}>
+                    <Edit3 className="w-4 h-4" />
+                  </Button>
+                  <Button variant="destructive" size="icon" className="h-8 w-8 rounded-lg" onClick={() => handleDelete(member.id)}>
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
 
-              <div className="w-24 h-24 rounded-full border-4 border-secondary overflow-hidden mb-4 bg-secondary/50">
-                {member.photoUrl ? (
-                  <img src={member.photoUrl} alt={member.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-muted-foreground font-display">
-                    {member.name.charAt(0)}
+                {/* Photo */}
+                <div className="relative aspect-square w-full overflow-hidden rounded-t-2xl bg-secondary/50">
+                  {member.photoUrl ? (
+                    <img src={member.photoUrl} alt={member.name} className="w-full h-full object-cover object-top" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-4xl font-bold text-muted-foreground font-display">
+                      {member.name.charAt(0)}
+                    </div>
+                  )}
+                  {badge && (
+                    <span className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary text-primary-foreground">
+                      {badge}
+                    </span>
+                  )}
+                </div>
+
+                <div className="p-5 flex flex-col flex-1">
+                  <h3 className="text-base font-display font-bold text-foreground">{member.name}</h3>
+                  <p className="text-xs font-medium text-primary mt-0.5">{member.role}</p>
+
+                  {skills && skills.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-3">
+                      {skills.slice(0, 3).map(s => (
+                        <span key={s} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-secondary border border-border text-muted-foreground">
+                          {s}
+                        </span>
+                      ))}
+                      {skills.length > 3 && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-primary/10 border border-primary/20 text-primary">
+                          +{skills.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {member.bio && (
+                    <p className="text-xs text-muted-foreground mt-3 line-clamp-2 leading-relaxed">{member.bio}</p>
+                  )}
+
+                  <div className="flex gap-3 mt-auto pt-4 border-t border-border/50 justify-center">
+                    {member.email && (
+                      <a href={`mailto:${member.email}`} className="text-muted-foreground hover:text-primary transition-colors">
+                        <Mail className="w-4 h-4" />
+                      </a>
+                    )}
+                    {member.linkedinUrl && (
+                      <a href={member.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors">
+                        <Linkedin className="w-4 h-4" />
+                      </a>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
-
-              <h3 className="text-lg font-display font-bold text-foreground">{member.name}</h3>
-              <p className="text-sm font-medium text-primary mt-1">{member.role}</p>
-
-              {member.bio && (
-                <p className="text-sm text-muted-foreground mt-3 line-clamp-3">{member.bio}</p>
-              )}
-
-              <div className="flex gap-3 mt-5 pt-5 border-t border-border/50 w-full justify-center">
-                {member.email && (
-                  <a href={`mailto:${member.email}`} className="text-muted-foreground hover:text-primary transition-colors">
-                    <Mail className="w-5 h-5" />
-                  </a>
-                )}
-                {member.linkedinUrl && (
-                  <a href={member.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary transition-colors">
-                    <Linkedin className="w-5 h-5" />
-                  </a>
-                )}
-              </div>
-            </div>
-          ))
+            );
+          })
         ) : (
           <div className="col-span-full py-20 text-center bg-card rounded-2xl border border-border/50">
             <Users className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
@@ -241,7 +290,7 @@ export default function Team() {
       </div>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-xl bg-card border-border/50 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl bg-card border-border/50 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-display">{editingId ? "Edit Member" : "Add Member"}</DialogTitle>
           </DialogHeader>
@@ -262,6 +311,19 @@ export default function Team() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
+                <label className="text-sm font-semibold">Badge Label</label>
+                <Input {...form.register("badge")} placeholder="e.g. Team Leader, Tech Lead" className="bg-secondary/50 border-border" />
+                <p className="text-xs text-muted-foreground">Shown as a pill on the card (optional)</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold">Skills</label>
+                <Input {...form.register("skillsRaw")} placeholder="e.g. Python, AI & ML, React" className="bg-secondary/50 border-border" />
+                <p className="text-xs text-muted-foreground">Comma-separated list of skills</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
                 <label className="text-sm font-semibold">Email Address</label>
                 <Input {...form.register("email")} placeholder="jane@example.com" className="bg-secondary/50 border-border" />
               </div>
@@ -275,6 +337,11 @@ export default function Team() {
               value={photoUrl}
               onChange={(url) => form.setValue("photoUrl", url)}
             />
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold">Tagline</label>
+              <Textarea {...form.register("tagline")} placeholder="Short powerful tagline shown on hover or profile..." className="h-16 bg-secondary/50 border-border resize-none" />
+            </div>
 
             <div className="space-y-2">
               <label className="text-sm font-semibold">Bio</label>

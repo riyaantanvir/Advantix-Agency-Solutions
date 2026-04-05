@@ -109,6 +109,9 @@ export interface TeamMember {
   photoUrl?: string | null;
   email?: string | null;
   linkedinUrl?: string | null;
+  badge?: string | null;
+  tagline?: string | null;
+  skills?: string[] | null;
   createdAt: string;
 }
 
@@ -119,6 +122,9 @@ export interface CreateTeamMemberBody {
   photoUrl?: string;
   email?: string;
   linkedinUrl?: string;
+  badge?: string;
+  tagline?: string;
+  skills?: string[];
 }
 
 export interface Lead {

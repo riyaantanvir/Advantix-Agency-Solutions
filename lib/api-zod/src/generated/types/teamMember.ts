@@ -14,5 +14,8 @@ export interface TeamMember {
   photoUrl?: string | null;
   email?: string | null;
   linkedinUrl?: string | null;
+  badge?: string | null;
+  tagline?: string | null;
+  skills?: string[] | null;
   createdAt: Date;
 }

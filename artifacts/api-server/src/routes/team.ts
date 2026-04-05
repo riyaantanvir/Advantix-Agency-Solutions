@@ -11,13 +11,16 @@ router.get("/team", async (_req, res) => {
 });
 
 router.post("/team", requireAdmin, async (req, res) => {
-  const { name, role, bio, photoUrl, email, linkedinUrl } = req.body as {
+  const { name, role, bio, photoUrl, email, linkedinUrl, badge, tagline, skills } = req.body as {
     name?: string;
     role?: string;
     bio?: string;
     photoUrl?: string;
     email?: string;
     linkedinUrl?: string;
+    badge?: string;
+    tagline?: string;
+    skills?: string[];
   };
 
   if (!name || !role) {
@@ -34,6 +37,9 @@ router.post("/team", requireAdmin, async (req, res) => {
       photoUrl: photoUrl ?? null,
       email: email ?? null,
       linkedinUrl: linkedinUrl ?? null,
+      badge: badge ?? null,
+      tagline: tagline ?? null,
+      skills: skills ?? null,
     })
     .returning();
 
@@ -42,13 +48,16 @@ router.post("/team", requireAdmin, async (req, res) => {
 
 router.put("/team/:id", requireAdmin, async (req, res) => {
   const id = parseInt(String(req.params.id ?? "0"), 10);
-  const { name, role, bio, photoUrl, email, linkedinUrl } = req.body as {
+  const { name, role, bio, photoUrl, email, linkedinUrl, badge, tagline, skills } = req.body as {
     name?: string;
     role?: string;
     bio?: string;
     photoUrl?: string;
     email?: string;
     linkedinUrl?: string;
+    badge?: string;
+    tagline?: string;
+    skills?: string[];
   };
 
   if (!name || !role) {
@@ -65,6 +74,9 @@ router.put("/team/:id", requireAdmin, async (req, res) => {
       photoUrl: photoUrl ?? null,
       email: email ?? null,
       linkedinUrl: linkedinUrl ?? null,
+      badge: badge ?? null,
+      tagline: tagline ?? null,
+      skills: skills ?? null,
     })
     .where(eq(teamMembersTable.id, id))
     .returning();

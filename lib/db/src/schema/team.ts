@@ -10,6 +10,9 @@ export const teamMembersTable = pgTable("team_members", {
   photoUrl: text("photo_url"),
   email: text("email"),
   linkedinUrl: text("linkedin_url"),
+  badge: text("badge"),
+  tagline: text("tagline"),
+  skills: text("skills").array(),
   order: serial("order"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

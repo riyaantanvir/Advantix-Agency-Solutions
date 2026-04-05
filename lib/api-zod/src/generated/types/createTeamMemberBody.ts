@@ -13,4 +13,7 @@ export interface CreateTeamMemberBody {
   photoUrl?: string;
   email?: string;
   linkedinUrl?: string;
+  badge?: string;
+  tagline?: string;
+  skills?: string[];
 }
