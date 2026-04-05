@@ -1,21 +1,20 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { useLocation, Link } from "wouter";
 import { ArrowLeft, Lock } from "lucide-react";
 import { LoginForm, expo } from "@/components/LoginForm";
+import { AdminLoginModal } from "@/components/AdminLoginModal";
 import { useToolsUser } from "@/context/ToolsUserContext";
 import type { ToolUser } from "@/lib/toolsApi";
 
 export default function Login() {
   const [, navigate] = useLocation();
   const { setUser } = useToolsUser();
+  const [adminOpen, setAdminOpen] = useState(false);
 
   const handleUserSuccess = (user: ToolUser) => {
     setUser(user);
     navigate("/tools/dashboard");
-  };
-
-  const handleAdminSuccess = () => {
-    window.location.href = "/admin/";
   };
 
   return (
@@ -47,10 +46,15 @@ export default function Login() {
 
           <LoginForm
             onUserSuccess={handleUserSuccess}
-            onAdminSuccess={handleAdminSuccess}
+            onAdminClick={() => setAdminOpen(true)}
           />
         </div>
       </motion.div>
+
+      <AdminLoginModal
+        open={adminOpen}
+        onClose={() => setAdminOpen(false)}
+      />
     </div>
   );
 }

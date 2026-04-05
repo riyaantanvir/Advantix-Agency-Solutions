@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, Mail, User, Eye, EyeOff, Loader2, Shield, ChevronDown } from "lucide-react";
+import { Lock, Mail, User, Eye, EyeOff, Loader2, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,26 +8,12 @@ import { toolsApi, type ToolUser } from "@/lib/toolsApi";
 
 export const expo = [0.22, 1, 0.36, 1] as const;
 
-const BASE = "/api";
-
-async function adminLogin(username: string, password: string) {
-  const res = await fetch(`${BASE}/auth/login`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Invalid credentials");
-  return data;
-}
-
 export interface LoginFormProps {
   onUserSuccess: (user: ToolUser) => void;
-  onAdminSuccess: () => void;
+  onAdminClick: () => void;
 }
 
-export function LoginForm({ onUserSuccess, onAdminSuccess }: LoginFormProps) {
+export function LoginForm({ onUserSuccess, onAdminClick }: LoginFormProps) {
   const [userMode, setUserMode] = useState<"login" | "signup">("login");
   const [userEmail, setUserEmail] = useState("");
   const [userPass, setUserPass] = useState("");
@@ -35,13 +21,6 @@ export function LoginForm({ onUserSuccess, onAdminSuccess }: LoginFormProps) {
   const [userName, setUserName] = useState("");
   const [userLoading, setUserLoading] = useState(false);
   const [userError, setUserError] = useState("");
-
-  const [showAdmin, setShowAdmin] = useState(false);
-  const [adminUsername, setAdminUsername] = useState("");
-  const [adminPass, setAdminPass] = useState("");
-  const [showAdminPass, setShowAdminPass] = useState(false);
-  const [adminLoading, setAdminLoading] = useState(false);
-  const [adminError, setAdminError] = useState("");
 
   const handleUserLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,20 +47,6 @@ export function LoginForm({ onUserSuccess, onAdminSuccess }: LoginFormProps) {
       setUserError(err instanceof Error ? err.message : "Could not create account");
     } finally {
       setUserLoading(false);
-    }
-  };
-
-  const handleAdminLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAdminError("");
-    setAdminLoading(true);
-    try {
-      await adminLogin(adminUsername.trim(), adminPass);
-      onAdminSuccess();
-    } catch (err: unknown) {
-      setAdminError(err instanceof Error ? err.message : "Invalid username or password");
-    } finally {
-      setAdminLoading(false);
     }
   };
 
@@ -192,66 +157,19 @@ export function LoginForm({ onUserSuccess, onAdminSuccess }: LoginFormProps) {
         )}
       </AnimatePresence>
 
-      {/* Admin Login toggle */}
-      <div className="mt-5 pt-5 border-t border-border/40">
+      {/* Admin Login link */}
+      <div className="mt-5 pt-4 border-t border-border/40 text-center">
         <button
           type="button"
-          onClick={() => { setShowAdmin(!showAdmin); setAdminError(""); }}
-          className="flex items-center justify-center gap-1.5 w-full text-sm text-muted-foreground hover:text-foreground transition-colors"
+          onClick={onAdminClick}
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors group"
         >
-          <Shield className="w-3.5 h-3.5" />
+          <Shield className="w-3.5 h-3.5 group-hover:text-primary transition-colors" />
           Admin Login
-          <motion.span animate={{ rotate: showAdmin ? 180 : 0 }} transition={{ duration: 0.2 }}>
-            <ChevronDown className="w-3.5 h-3.5" />
-          </motion.span>
         </button>
-
-        <AnimatePresence>
-          {showAdmin && (
-            <motion.form
-              key="form-admin"
-              initial={{ opacity: 0, height: 0, marginTop: 0 }}
-              animate={{ opacity: 1, height: "auto", marginTop: 16 }}
-              exit={{ opacity: 0, height: 0, marginTop: 0 }}
-              transition={{ duration: 0.28, ease: expo }}
-              style={{ overflow: "hidden" }}
-              onSubmit={handleAdminLogin}
-              className="space-y-3"
-            >
-              <div>
-                <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">Username</Label>
-                <div className="relative">
-                  <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input type="text" placeholder="admin" value={adminUsername}
-                    onChange={e => setAdminUsername(e.target.value)} className="pl-10 h-10 text-sm" required />
-                </div>
-              </div>
-              <div>
-                <Label className="mb-1.5 block text-xs font-medium text-muted-foreground">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input type={showAdminPass ? "text" : "password"} placeholder="••••••••" value={adminPass}
-                    onChange={e => setAdminPass(e.target.value)} className="pl-10 pr-10 h-10 text-sm" required />
-                  <button type="button" onClick={() => setShowAdminPass(!showAdminPass)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                    {showAdminPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-              {adminError && (
-                <p className="text-xs text-destructive bg-destructive/10 px-3 py-2 rounded-xl">{adminError}</p>
-              )}
-              <Button type="submit" variant="secondary" className="w-full h-10 text-sm font-semibold" disabled={adminLoading}>
-                {adminLoading
-                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Signing in…</>
-                  : "Sign In to Admin Panel"}
-              </Button>
-            </motion.form>
-          )}
-        </AnimatePresence>
       </div>
 
-      <p className="text-center text-xs text-muted-foreground mt-5">
+      <p className="text-center text-xs text-muted-foreground mt-3">
         By signing in, you agree to our terms of service.
       </p>
     </>
