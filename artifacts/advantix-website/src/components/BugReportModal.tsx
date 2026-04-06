@@ -71,14 +71,14 @@ export function BugReportModal({ open, onClose }: BugReportModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !description.trim()) return;
+    if (!description.trim()) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/bugs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: title.trim(),
+          title: title.trim() || undefined,
           description: description.trim(),
           screenshot: screenshot || undefined,
           reporterName: reporterName.trim() || undefined,
@@ -144,14 +144,13 @@ export function BugReportModal({ open, onClose }: BugReportModalProps) {
                 {/* Title */}
                 <div>
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
-                    Bug Title <span className="text-red-400">*</span>
+                    Bug Title <span className="text-muted-foreground font-normal">(optional)</span>
                   </label>
                   <input
                     type="text"
                     value={title}
                     onChange={e => setTitle(e.target.value)}
                     placeholder="e.g. Login button not working"
-                    required
                     className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
                   />
                 </div>
@@ -237,7 +236,7 @@ export function BugReportModal({ open, onClose }: BugReportModalProps) {
                 {/* Submit */}
                 <button
                   type="submit"
-                  disabled={submitting || !title.trim() || !description.trim()}
+                  disabled={submitting || !description.trim()}
                   className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary text-primary-foreground rounded-lg font-semibold text-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

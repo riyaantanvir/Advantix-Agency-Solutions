@@ -17,15 +17,17 @@ router.post("/bugs", async (req, res) => {
       pageUrl?: string;
     };
 
-    if (!title?.trim() || !description?.trim()) {
-      res.status(400).json({ error: "Title and description are required" });
+    if (!description?.trim()) {
+      res.status(400).json({ error: "Description is required" });
       return;
     }
+
+    const autoTitle = title?.trim() || description.trim().slice(0, 60) + (description.trim().length > 60 ? "…" : "");
 
     const [bug] = await db
       .insert(bugReportsTable)
       .values({
-        title: title.trim(),
+        title: autoTitle,
         description: description.trim(),
         screenshot: screenshot || null,
         reporterName: reporterName?.trim() || null,
