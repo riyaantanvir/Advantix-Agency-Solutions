@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, boolean } from "drizzle-orm/pg-core";
 import { shortUrlsTable } from "./shortUrls";
 
 export const urlClicksTable = pgTable("url_clicks", {
@@ -9,6 +9,11 @@ export const urlClicksTable = pgTable("url_clicks", {
   city: text("city"),
   referrer: text("referrer"),
   device: text("device"),
+  browser: text("browser"),
+  os: text("os"),
+  ip: text("ip"),
+  isp: text("isp"),
+  isMobile: boolean("is_mobile"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

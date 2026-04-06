@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Link2, Copy, Trash2, ExternalLink, LogOut, User, Plus, CheckCircle, X, Eye, Link, ArrowLeft, Loader2, BarChart2, Globe, TrendingUp, Smartphone, MousePointer, LayoutDashboard } from "lucide-react";
+import {
+  Link2, Copy, Trash2, ExternalLink, LogOut, User, Plus, CheckCircle, X, Eye,
+  Link, ArrowLeft, Loader2, BarChart2, Globe, TrendingUp, Smartphone, MousePointer,
+  LayoutDashboard, Monitor, Wifi, Signal, Chrome, Shield, Clock, Wrench,
+} from "lucide-react";
 import { Link as RouterLink, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,15 +18,17 @@ import { format } from "date-fns";
 const expo = [0.22, 1, 0.36, 1] as const;
 
 /* ── Copy Button ─────────────────────────────────────────── */
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, size = "sm" }: { text: string; size?: "sm" | "md" }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
       onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800); }}
-      className="p-1 rounded text-muted-foreground hover:text-primary transition-colors"
+      className={`rounded text-muted-foreground hover:text-primary transition-colors ${size === "md" ? "p-1.5" : "p-1"}`}
       title="Copy"
     >
-      {copied ? <CheckCircle className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+      {copied
+        ? <CheckCircle className={size === "md" ? "w-4 h-4 text-green-500" : "w-3.5 h-3.5 text-green-500"} />
+        : <Copy className={size === "md" ? "w-4 h-4" : "w-3.5 h-3.5"} />}
     </button>
   );
 }
@@ -93,20 +99,31 @@ function AuthModal({ open, onClose, onSuccess }: { open: boolean; onClose: () =>
   );
 }
 
-/* ── Analytics Modal ──────────────────────────────────────── */
+/* ── Analytics Types ──────────────────────────────────────── */
 type Analytics = {
   totalClicks: number;
   byDay: Array<{ day: string; clicks: string }>;
   byCountry: Array<{ country: string; country_code: string; clicks: string }>;
   byReferrer: Array<{ referrer: string; clicks: string }>;
   byDevice: Array<{ device: string; clicks: string }>;
+  byBrowser: Array<{ browser: string; clicks: string }>;
+  byOS: Array<{ os: string; clicks: string }>;
+  byISP: Array<{ isp: string; clicks: string; is_mobile: boolean }>;
+  connectionSplit: { cellular: string; wifi_or_broadband: string };
+  recentClicks: Array<{
+    ip: string; country: string | null; city: string | null;
+    browser: string | null; os: string | null; isp: string | null;
+    is_mobile: boolean | null; referrer: string | null; device: string | null;
+    created_at: string;
+  }>;
 };
 
+/* ── Shared bar row ───────────────────────────────────────── */
 function BarRow({ label, value, max, color = "bg-primary" }: { label: string; value: number; max: number; color?: string }) {
   const pct = max > 0 ? Math.round((value / max) * 100) : 0;
   return (
     <div className="flex items-center gap-3">
-      <span className="text-sm text-foreground/80 w-28 shrink-0 truncate">{label}</span>
+      <span className="text-sm text-foreground/80 w-32 shrink-0 truncate">{label}</span>
       <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
         <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
       </div>
@@ -120,14 +137,37 @@ function countryFlag(code: string): string {
   return code.toUpperCase().replace(/./g, c => String.fromCodePoint(127397 + c.charCodeAt(0)));
 }
 
+function browserIcon(browser: string): string {
+  const b = browser.toLowerCase();
+  if (b.includes("chrome")) return "🌐";
+  if (b.includes("firefox")) return "🦊";
+  if (b.includes("safari")) return "🧭";
+  if (b.includes("edge")) return "🔷";
+  if (b.includes("opera")) return "🔴";
+  if (b.includes("samsung")) return "📱";
+  return "🌍";
+}
+
+function osIcon(os: string): string {
+  const o = os.toLowerCase();
+  if (o.includes("windows")) return "🪟";
+  if (o.includes("ios")) return "🍎";
+  if (o.includes("android")) return "🤖";
+  if (o.includes("macos")) return "🍏";
+  if (o.includes("linux")) return "🐧";
+  return "💻";
+}
+
+/* ── Analytics Modal ──────────────────────────────────────── */
 function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onClose: () => void; url: ShortUrl | null; shortBase: string }) {
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [tab, setTab] = useState<"overview" | "recent">("overview");
 
   useEffect(() => {
     if (!open || !url) return;
-    setData(null); setError(""); setLoading(true);
+    setData(null); setError(""); setLoading(true); setTab("overview");
     toolsApi.urls.analytics(url.id)
       .then(setData)
       .catch(() => setError("Could not load analytics"))
@@ -136,10 +176,18 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
 
   if (!url) return null;
   const short = `${shortBase}/s/${url.shortCode}`;
-  const maxCountry = data ? Math.max(...data.byCountry.map(r => parseInt(r.clicks))) : 0;
-  const maxRef = data ? Math.max(...data.byReferrer.map(r => parseInt(r.clicks))) : 0;
-  const maxDevice = data ? Math.max(...data.byDevice.map(r => parseInt(r.clicks))) : 0;
-  const maxDay = data ? Math.max(...data.byDay.map(r => parseInt(r.clicks)), 1) : 1;
+
+  const maxCountry  = data ? Math.max(...data.byCountry.map(r  => parseInt(r.clicks)), 1) : 1;
+  const maxRef      = data ? Math.max(...data.byReferrer.map(r => parseInt(r.clicks)), 1) : 1;
+  const maxDevice   = data ? Math.max(...data.byDevice.map(r   => parseInt(r.clicks)), 1) : 1;
+  const maxBrowser  = data ? Math.max(...data.byBrowser.map(r  => parseInt(r.clicks)), 1) : 1;
+  const maxOS       = data ? Math.max(...data.byOS.map(r        => parseInt(r.clicks)), 1) : 1;
+  const maxISP      = data ? Math.max(...data.byISP.map(r      => parseInt(r.clicks)), 1) : 1;
+  const maxDay      = data ? Math.max(...data.byDay.map(r      => parseInt(r.clicks)), 1) : 1;
+
+  const cellular    = data ? parseInt(String(data.connectionSplit.cellular))          : 0;
+  const wifi        = data ? parseInt(String(data.connectionSplit.wifi_or_broadband)) : 0;
+  const connTotal   = cellular + wifi || 1;
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
@@ -160,87 +208,352 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
         {error && <p className="text-destructive text-sm py-4 text-center">{error}</p>}
 
         {data && !loading && (
-          <div className="space-y-6 mt-2">
-            {/* Stats row */}
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { label: "Total Clicks", value: data.totalClicks, icon: MousePointer, color: "text-primary" },
-                { label: "Countries", value: data.byCountry.length, icon: Globe, color: "text-blue-400" },
-                { label: "Sources", value: data.byReferrer.length, icon: TrendingUp, color: "text-green-400" },
-              ].map(({ label, value, icon: Icon, color }) => (
-                <div key={label} className="bg-secondary/40 rounded-xl p-3 text-center">
-                  <Icon className={`w-5 h-5 ${color} mx-auto mb-1`} />
-                  <p className="text-2xl font-bold tabular-nums">{value}</p>
-                  <p className="text-xs text-muted-foreground">{label}</p>
-                </div>
+          <div className="space-y-5 mt-1">
+
+            {/* Tab toggle */}
+            <div className="flex bg-secondary/40 p-1 rounded-xl gap-1">
+              {(["overview", "recent"] as const).map(t => (
+                <button key={t} onClick={() => setTab(t)}
+                  className={`flex-1 py-1.5 rounded-lg text-sm font-semibold transition-all ${tab === t ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  {t === "overview" ? "📊 Overview" : "🕐 Recent Clicks"}
+                </button>
               ))}
             </div>
 
-            {/* Clicks by day */}
-            {data.byDay.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-primary" /> Clicks Over Time</h3>
-                <div className="flex items-end gap-1 h-20 bg-secondary/20 rounded-xl px-3 py-2">
-                  {data.byDay.map(({ day, clicks }) => {
-                    const pct = Math.max(4, Math.round((parseInt(clicks) / maxDay) * 100));
-                    return (
-                      <div key={day} className="flex-1 flex flex-col items-center gap-0.5 group relative" title={`${day}: ${clicks} clicks`}>
-                        <div className="w-full bg-primary/70 hover:bg-primary rounded-sm transition-all cursor-default" style={{ height: `${pct}%` }} />
+            {tab === "overview" && (
+              <>
+                {/* Stats row */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Total Clicks", value: data.totalClicks, icon: MousePointer, color: "text-primary" },
+                    { label: "Countries", value: data.byCountry.length, icon: Globe, color: "text-blue-400" },
+                    { label: "Sources", value: data.byReferrer.length, icon: TrendingUp, color: "text-green-400" },
+                  ].map(({ label, value, icon: Icon, color }) => (
+                    <div key={label} className="bg-secondary/40 rounded-xl p-3 text-center">
+                      <Icon className={`w-5 h-5 ${color} mx-auto mb-1`} />
+                      <p className="text-2xl font-bold tabular-nums">{value}</p>
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Connection type — WiFi vs SIM */}
+                {(cellular + wifi) > 0 && (
+                  <div className="bg-secondary/30 rounded-xl p-4">
+                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Signal className="w-4 h-4 text-purple-400" /> Connection Type
+                    </h3>
+                    <div className="flex gap-3">
+                      <div className="flex-1 text-center bg-orange-500/10 border border-orange-500/20 rounded-xl p-3">
+                        <Signal className="w-5 h-5 text-orange-400 mx-auto mb-1" />
+                        <p className="text-xl font-bold">{cellular}</p>
+                        <p className="text-xs text-muted-foreground">Mobile / SIM</p>
+                        <p className="text-xs font-semibold text-orange-400">{Math.round((cellular / connTotal) * 100)}%</p>
                       </div>
-                    );
-                  })}
+                      <div className="flex-1 text-center bg-blue-500/10 border border-blue-500/20 rounded-xl p-3">
+                        <Wifi className="w-5 h-5 text-blue-400 mx-auto mb-1" />
+                        <p className="text-xl font-bold">{wifi}</p>
+                        <p className="text-xs text-muted-foreground">WiFi / Broadband</p>
+                        <p className="text-xs font-semibold text-blue-400">{Math.round((wifi / connTotal) * 100)}%</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Clicks over time */}
+                {data.byDay.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4 text-primary" /> Clicks Over Time
+                    </h3>
+                    <div className="flex items-end gap-1 h-20 bg-secondary/20 rounded-xl px-3 py-2">
+                      {data.byDay.map(({ day, clicks }) => {
+                        const pct = Math.max(4, Math.round((parseInt(clicks) / maxDay) * 100));
+                        return (
+                          <div key={day} className="flex-1 flex flex-col items-center gap-0.5 group relative" title={`${day}: ${clicks} clicks`}>
+                            <div className="w-full bg-primary/70 hover:bg-primary rounded-sm transition-all cursor-default" style={{ height: `${pct}%` }} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex justify-between mt-1 px-1">
+                      <span className="text-xs text-muted-foreground">{data.byDay[0]?.day}</span>
+                      <span className="text-xs text-muted-foreground">{data.byDay[data.byDay.length - 1]?.day}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2-column grid: Countries + Referrers */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {data.byCountry.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-blue-400" /> Countries
+                      </h3>
+                      <div className="space-y-2">
+                        {data.byCountry.map(r => (
+                          <BarRow key={r.country_code} label={`${countryFlag(r.country_code)} ${r.country || r.country_code}`} value={parseInt(r.clicks)} max={maxCountry} color="bg-blue-500" />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {data.byReferrer.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-green-400" /> Traffic Sources
+                      </h3>
+                      <div className="space-y-2">
+                        {data.byReferrer.map(r => (
+                          <BarRow key={r.referrer} label={r.referrer} value={parseInt(r.clicks)} max={maxRef} color="bg-green-500" />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="flex justify-between mt-1 px-1">
-                  <span className="text-xs text-muted-foreground">{data.byDay[0]?.day}</span>
-                  <span className="text-xs text-muted-foreground">{data.byDay[data.byDay.length - 1]?.day}</span>
+
+                {/* 2-column grid: Browser + OS */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {data.byBrowser.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <Chrome className="w-4 h-4 text-yellow-400" /> Browsers
+                      </h3>
+                      <div className="space-y-2">
+                        {data.byBrowser.map(r => (
+                          <BarRow key={r.browser} label={`${browserIcon(r.browser)} ${r.browser}`} value={parseInt(r.clicks)} max={maxBrowser} color="bg-yellow-500" />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {data.byOS.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <Monitor className="w-4 h-4 text-violet-400" /> Operating Systems
+                      </h3>
+                      <div className="space-y-2">
+                        {data.byOS.map(r => (
+                          <BarRow key={r.os} label={`${osIcon(r.os)} ${r.os}`} value={parseInt(r.clicks)} max={maxOS} color="bg-violet-500" />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+
+                {/* 2-column grid: Devices + ISP/Carrier */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {data.byDevice.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <Smartphone className="w-4 h-4 text-orange-400" /> Devices
+                      </h3>
+                      <div className="space-y-2">
+                        {data.byDevice.map(r => (
+                          <BarRow key={r.device} label={r.device} value={parseInt(r.clicks)} max={maxDevice} color="bg-orange-400" />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {data.byISP.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <Signal className="w-4 h-4 text-pink-400" /> ISP / Carrier
+                      </h3>
+                      <div className="space-y-2">
+                        {data.byISP.map(r => (
+                          <BarRow
+                            key={r.isp}
+                            label={`${r.is_mobile ? "📡" : "🔗"} ${r.isp}`}
+                            value={parseInt(r.clicks)}
+                            max={maxISP}
+                            color="bg-pink-500"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {data.totalClicks === 0 && (
+                  <div className="text-center py-8">
+                    <Eye className="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
+                    <p className="text-muted-foreground text-sm">No clicks yet — share your link to see analytics here!</p>
+                  </div>
+                )}
+              </>
             )}
 
-            {/* Countries */}
-            {data.byCountry.length > 0 && (
+            {tab === "recent" && (
               <div>
-                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Globe className="w-4 h-4 text-blue-400" /> Top Countries</h3>
-                <div className="space-y-2">
-                  {data.byCountry.map(r => (
-                    <BarRow key={r.country_code} label={`${countryFlag(r.country_code)} ${r.country || r.country_code}`} value={parseInt(r.clicks)} max={maxCountry} color="bg-blue-500" />
-                  ))}
-                </div>
+                {data.recentClicks.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Clock className="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
+                    <p className="text-muted-foreground text-sm">No clicks recorded yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {data.recentClicks.map((click, i) => (
+                      <div key={i} className="bg-secondary/30 rounded-xl p-3 text-sm border border-border/30">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {click.country && (
+                                <span className="text-foreground/80 font-medium">
+                                  {countryFlag("") !== click.country ? countryFlag("XX") : ""} {click.city ? `${click.city}, ` : ""}{click.country}
+                                </span>
+                              )}
+                              {click.isp && (
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${click.is_mobile ? "bg-orange-500/15 text-orange-400" : "bg-blue-500/15 text-blue-400"}`}>
+                                  {click.is_mobile ? "📡 SIM" : "📶 WiFi"} · {click.isp}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                              {click.browser && <span>{browserIcon(click.browser)} {click.browser}</span>}
+                              {click.os && <span>{osIcon(click.os)} {click.os}</span>}
+                              {click.device && <span>📱 {click.device}</span>}
+                              {click.referrer && click.referrer !== "Direct" && <span>↩ {click.referrer}</span>}
+                            </div>
+                            {click.ip && (
+                              <div className="text-xs font-mono text-muted-foreground/60 flex items-center gap-1">
+                                <Shield className="w-3 h-3" /> {click.ip}
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-xs text-muted-foreground shrink-0 whitespace-nowrap">
+                            {format(new Date(click.created_at), "MMM d, HH:mm")}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Referrers */}
-            {data.byReferrer.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-green-400" /> Traffic Sources</h3>
-                <div className="space-y-2">
-                  {data.byReferrer.map(r => (
-                    <BarRow key={r.referrer} label={r.referrer} value={parseInt(r.clicks)} max={maxRef} color="bg-green-500" />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Devices */}
-            {data.byDevice.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Smartphone className="w-4 h-4 text-orange-400" /> Devices</h3>
-                <div className="space-y-2">
-                  {data.byDevice.map(r => (
-                    <BarRow key={r.device} label={r.device} value={parseInt(r.clicks)} max={maxDevice} color="bg-orange-400" />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {data.totalClicks === 0 && (
-              <div className="text-center py-8">
-                <Eye className="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-muted-foreground text-sm">No clicks yet — share your link to see analytics here!</p>
-              </div>
-            )}
           </div>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ── UTM Builder Modal ────────────────────────────────────── */
+function UtmBuilderModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [baseUrl, setBaseUrl]       = useState("");
+  const [source, setSource]         = useState("");
+  const [medium, setMedium]         = useState("");
+  const [campaign, setCampaign]     = useState("");
+  const [term, setTerm]             = useState("");
+  const [content, setContent]       = useState("");
+  const [copied, setCopied]         = useState(false);
+
+  const builtUrl = (() => {
+    if (!baseUrl.trim()) return "";
+    try {
+      let base = baseUrl.trim();
+      if (!base.startsWith("http://") && !base.startsWith("https://")) base = "https://" + base;
+      const u = new URL(base);
+      if (source)   u.searchParams.set("utm_source",   source.trim());
+      if (medium)   u.searchParams.set("utm_medium",   medium.trim());
+      if (campaign) u.searchParams.set("utm_campaign", campaign.trim());
+      if (term)     u.searchParams.set("utm_term",     term.trim());
+      if (content)  u.searchParams.set("utm_content",  content.trim());
+      return u.toString();
+    } catch { return ""; }
+  })();
+
+  const handleCopy = () => {
+    if (!builtUrl) return;
+    navigator.clipboard.writeText(builtUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const presets: Array<{ label: string; source: string; medium: string }> = [
+    { label: "Google Ads",    source: "google",    medium: "cpc" },
+    { label: "Facebook Ads",  source: "facebook",  medium: "paid_social" },
+    { label: "Instagram",     source: "instagram", medium: "social" },
+    { label: "WhatsApp",      source: "whatsapp",  medium: "messaging" },
+    { label: "Email",         source: "email",     medium: "newsletter" },
+    { label: "Telegram",      source: "telegram",  medium: "messaging" },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="font-display text-xl flex items-center gap-2">
+            <Wrench className="w-5 h-5 text-primary" />
+            UTM Link Builder
+          </DialogTitle>
+          <p className="text-xs text-muted-foreground mt-1">Build trackable links for Google Analytics &amp; campaign tracking</p>
+        </DialogHeader>
+
+        <div className="space-y-4 mt-2">
+          {/* Quick presets */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-2 font-medium">Quick presets</p>
+            <div className="flex flex-wrap gap-2">
+              {presets.map(p => (
+                <button key={p.label} onClick={() => { setSource(p.source); setMedium(p.medium); }}
+                  className="text-xs px-3 py-1.5 rounded-full border border-border/50 bg-secondary/40 hover:border-primary/40 hover:bg-primary/5 transition-colors font-medium">
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <Label className="mb-1.5 block text-sm">Website URL <span className="text-destructive">*</span></Label>
+              <Input placeholder="https://advantix.agency/services" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} className="font-mono text-sm" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="mb-1.5 block text-sm">Source <span className="text-xs text-muted-foreground">(utm_source)</span></Label>
+                <Input placeholder="e.g. google, facebook" value={source} onChange={e => setSource(e.target.value)} className="text-sm" />
+              </div>
+              <div>
+                <Label className="mb-1.5 block text-sm">Medium <span className="text-xs text-muted-foreground">(utm_medium)</span></Label>
+                <Input placeholder="e.g. cpc, email, social" value={medium} onChange={e => setMedium(e.target.value)} className="text-sm" />
+              </div>
+            </div>
+            <div>
+              <Label className="mb-1.5 block text-sm">Campaign Name <span className="text-xs text-muted-foreground">(utm_campaign)</span></Label>
+              <Input placeholder="e.g. summer-sale-2026" value={campaign} onChange={e => setCampaign(e.target.value)} className="text-sm" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="mb-1.5 block text-sm">Term <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
+                <Input placeholder="e.g. web+design" value={term} onChange={e => setTerm(e.target.value)} className="text-sm" />
+              </div>
+              <div>
+                <Label className="mb-1.5 block text-sm">Content <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
+                <Input placeholder="e.g. banner-top" value={content} onChange={e => setContent(e.target.value)} className="text-sm" />
+              </div>
+            </div>
+          </div>
+
+          {/* Generated URL */}
+          {builtUrl && (
+            <div className="bg-secondary/40 rounded-xl p-3 border border-border/40">
+              <p className="text-xs text-muted-foreground font-medium mb-2">Generated URL</p>
+              <div className="flex items-start gap-2">
+                <p className="flex-1 text-xs font-mono break-all text-foreground/80">{builtUrl}</p>
+                <button onClick={handleCopy}
+                  className="shrink-0 px-3 py-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-semibold transition-colors flex items-center gap-1.5">
+                  {copied ? <><CheckCircle className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                </button>
+              </div>
+            </div>
+          )}
+          {!builtUrl && baseUrl && (
+            <p className="text-xs text-destructive text-center">Invalid URL — please include a valid web address.</p>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -295,8 +608,6 @@ function UrlRow({ item, shortBase, onDelete, onAnalytics }: { item: ShortUrl; sh
 export default function UrlShortener() {
   const { user, setUser, loading, logout: ctxLogout } = useToolsUser();
   const [, navigate] = useLocation();
-  const [authOpen, setAuthOpen] = useState(false);
-  const goToLogin = () => navigate("/login");
   const [urls, setUrls] = useState<ShortUrl[]>([]);
   const [urlsLoading, setUrlsLoading] = useState(false);
 
@@ -309,17 +620,15 @@ export default function UrlShortener() {
 
   const [analyticsUrl, setAnalyticsUrl] = useState<ShortUrl | null>(null);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [utmOpen, setUtmOpen] = useState(false);
 
   const shortBase = typeof window !== "undefined" ? window.location.origin : "";
 
   const loadUrls = useCallback(async () => {
     if (!user) return;
     setUrlsLoading(true);
-    try {
-      setUrls(await toolsApi.urls.list());
-    } finally {
-      setUrlsLoading(false);
-    }
+    try { setUrls(await toolsApi.urls.list()); }
+    finally { setUrlsLoading(false); }
   }, [user]);
 
   useEffect(() => { loadUrls(); }, [loadUrls]);
@@ -327,15 +636,11 @@ export default function UrlShortener() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputUrl.trim()) return;
-    setCreating(true);
-    setCreateError("");
+    setCreating(true); setCreateError("");
     try {
       const created = await toolsApi.urls.create(inputUrl.trim(), inputTitle.trim() || undefined, customSlug.trim() || undefined);
       setUrls(prev => [created, ...prev]);
-      setInputUrl("");
-      setInputTitle("");
-      setCustomSlug("");
-      setShowCustomSlug(false);
+      setInputUrl(""); setInputTitle(""); setCustomSlug(""); setShowCustomSlug(false);
     } catch (err: any) {
       setCreateError(err.message ?? "Failed to shorten URL");
     } finally {
@@ -348,15 +653,9 @@ export default function UrlShortener() {
     setUrls(prev => prev.filter(u => u.id !== id));
   };
 
-  const handleLogout = async () => {
-    await ctxLogout();
-    setUrls([]);
-  };
+  const handleLogout = async () => { await ctxLogout(); setUrls([]); };
 
-  const handleAnalytics = (url: ShortUrl) => {
-    setAnalyticsUrl(url);
-    setAnalyticsOpen(true);
-  };
+  const handleAnalytics = (url: ShortUrl) => { setAnalyticsUrl(url); setAnalyticsOpen(true); };
 
   if (loading) {
     return (
@@ -387,12 +686,20 @@ export default function UrlShortener() {
             </div>
             <div>
               <h1 className="text-3xl font-display font-extrabold tracking-tight">URL Shortener</h1>
-              <p className="text-muted-foreground mt-0.5">Shorten links, custom aliases & track clicks</p>
+              <p className="text-muted-foreground mt-0.5">Shorten links, custom aliases &amp; track clicks</p>
             </div>
           </div>
 
           {user ? (
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setUtmOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border/50 hover:border-primary/40 hover:bg-primary/5 text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
+                title="UTM Builder"
+              >
+                <Wrench className="w-4 h-4" />
+                <span className="hidden sm:inline">UTM Builder</span>
+              </button>
               <RouterLink href="/tools/dashboard">
                 <button className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-secondary/80 transition-colors text-left">
                   <div className="hidden sm:block text-right">
@@ -407,7 +714,7 @@ export default function UrlShortener() {
               </button>
             </div>
           ) : (
-            <Button onClick={() => goToLogin()} variant="outline" size="sm" className="gap-2">
+            <Button onClick={() => navigate("/login")} variant="outline" size="sm" className="gap-2">
               <User className="w-4 h-4" /> Sign In
             </Button>
           )}
@@ -425,7 +732,7 @@ export default function UrlShortener() {
                   <p className="text-sm font-medium">Sign in to save your links</p>
                   <p className="text-xs text-muted-foreground">Your links will be stored and accessible anytime.</p>
                 </div>
-                <Button size="sm" onClick={() => goToLogin()} className="shrink-0">Sign In</Button>
+                <Button size="sm" onClick={() => navigate("/login")} className="shrink-0">Sign In</Button>
               </div>
             )}
 
@@ -455,7 +762,6 @@ export default function UrlShortener() {
                 />
               </div>
 
-              {/* Custom Alias Toggle */}
               {user && (
                 <div>
                   {!showCustomSlug ? (
@@ -496,7 +802,7 @@ export default function UrlShortener() {
                 type="submit"
                 className="w-full h-12 text-base font-semibold shadow-lg shadow-primary/20"
                 disabled={creating || !user}
-                onClick={!user ? () => goToLogin() : undefined}
+                onClick={!user ? () => navigate("/login") : undefined}
               >
                 {creating ? (
                   <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Shortening…</>
@@ -510,29 +816,26 @@ export default function UrlShortener() {
           </Card>
         </motion.div>
 
-        {/* URL list */}
+        {/* URL List */}
         {user && (
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: expo, delay: 0.2 }}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-display font-bold">Your Links</h2>
-              <span className="text-sm text-muted-foreground">{urls.length} link{urls.length !== 1 ? "s" : ""}</span>
-            </div>
-
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4, delay: 0.2 }}>
             {urlsLoading ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map(i => <div key={i} className="h-20 rounded-xl bg-secondary/40 animate-pulse" />)}
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
             ) : urls.length === 0 ? (
-              <div className="text-center py-16 rounded-2xl border border-dashed border-border/50">
-                <Link2 className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-muted-foreground font-medium">No links yet</p>
-                <p className="text-sm text-muted-foreground/70 mt-1">Shorten your first URL above</p>
+              <div className="text-center py-16">
+                <Link2 className="w-12 h-12 text-muted-foreground/20 mx-auto mb-3" />
+                <p className="text-muted-foreground">No links yet — create your first one above!</p>
               </div>
             ) : (
               <div className="space-y-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm text-muted-foreground">{urls.length} link{urls.length !== 1 ? "s" : ""}</p>
+                </div>
                 <AnimatePresence>
-                  {urls.map(u => (
-                    <UrlRow key={u.id} item={u} shortBase={shortBase} onDelete={handleDelete} onAnalytics={handleAnalytics} />
+                  {urls.map(item => (
+                    <UrlRow key={item.id} item={item} shortBase={shortBase} onDelete={handleDelete} onAnalytics={handleAnalytics} />
                   ))}
                 </AnimatePresence>
               </div>
@@ -542,6 +845,7 @@ export default function UrlShortener() {
       </div>
 
       <AnalyticsModal open={analyticsOpen} onClose={() => setAnalyticsOpen(false)} url={analyticsUrl} shortBase={shortBase} />
+      <UtmBuilderModal open={utmOpen} onClose={() => setUtmOpen(false)} />
     </div>
   );
 }
