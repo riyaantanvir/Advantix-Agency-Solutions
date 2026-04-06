@@ -27,7 +27,7 @@ interface AiUsage {
 }
 
 export default function ToolsDashboard() {
-  const { user, logout } = useToolsUser();
+  const { user, loading, logout } = useToolsUser();
   const [, navigate] = useLocation();
   const [urls, setUrls] = useState<ShortUrl[]>([]);
   const [loadingUrls, setLoadingUrls] = useState(true);
@@ -39,6 +39,7 @@ export default function ToolsDashboard() {
   const shortBase = typeof window !== "undefined" ? window.location.origin : "";
 
   useEffect(() => {
+    if (loading) return;
     if (!user) { navigate("/tools"); return; }
     toolsApi.urls.list()
       .then(setUrls)
@@ -66,6 +67,11 @@ export default function ToolsDashboard() {
     navigate("/tools");
   };
 
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+    </div>
+  );
   if (!user) return null;
 
   const initials = user.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
