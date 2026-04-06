@@ -17,6 +17,7 @@ import ManageAI from "./pages/ManageAI";
 import Integrations from "./pages/Integrations";
 import Tools from "./pages/Tools";
 import Tasks from "./pages/Tasks";
+import Notifications from "./pages/Notifications";
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminLayout } from "./components/layout/AdminLayout";
@@ -89,6 +90,10 @@ function Router() {
 
       <Route path="/tasks">
         <ProtectedLayout><Tasks /></ProtectedLayout>
+      </Route>
+
+      <Route path="/notifications">
+        <ProtectedLayout><Notifications /></ProtectedLayout>
       </Route>
 
       <Route path="/tools">

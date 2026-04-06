@@ -2,6 +2,12 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db, tasksTable } from "@workspace/db";
 import { eq, desc, asc, and, or, ilike } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
+import {
+  sendTelegramMessage,
+  buildTaskCreatedMessage,
+  buildTaskAssignedMessage,
+  buildStatusChangedMessage,
+} from "../services/telegram.js";
 
 const router: IRouter = Router();
 
@@ -70,6 +76,12 @@ router.post("/admin/tasks", requireAdmin, async (req: Request, res: Response) =>
     .returning();
 
   res.status(201).json(task);
+
+  // Fire Telegram notifications (non-blocking)
+  sendTelegramMessage(buildTaskCreatedMessage(task), "TELEGRAM_NOTIFY_TASK_CREATED").catch(() => {});
+  if (task.assignedTo) {
+    sendTelegramMessage(buildTaskAssignedMessage(task), "TELEGRAM_NOTIFY_TASK_ASSIGNED").catch(() => {});
+  }
 });
 
 /* PUT /api/admin/tasks/:id */
@@ -116,6 +128,12 @@ router.put("/admin/tasks/:id", requireAdmin, async (req: Request, res: Response)
   }
 
   res.json(updated);
+
+  // Notify if assignee changed
+  const prevAssignee = (req.body as { _prevAssignedTo?: string })._prevAssignedTo;
+  if (updated.assignedTo && updated.assignedTo !== prevAssignee) {
+    sendTelegramMessage(buildTaskAssignedMessage(updated), "TELEGRAM_NOTIFY_TASK_ASSIGNED").catch(() => {});
+  }
 });
 
 /* PATCH /api/admin/tasks/:id/status */
@@ -140,6 +158,15 @@ router.patch("/admin/tasks/:id/status", requireAdmin, async (req: Request, res: 
   }
 
   res.json(updated);
+
+  // Get old task to compare status
+  const oldStatus = (req.body as { _prevStatus?: string })._prevStatus;
+  if (oldStatus && oldStatus !== status) {
+    sendTelegramMessage(
+      buildStatusChangedMessage({ title: updated.title, oldStatus, newStatus: status, assignedTo: updated.assignedTo }),
+      "TELEGRAM_NOTIFY_TASK_STATUS"
+    ).catch(() => {});
+  }
 });
 
 /* DELETE /api/admin/tasks/:id */
