@@ -125,8 +125,24 @@ async function recordClick(
     .where(eq(shortUrlsTable.id, urlId))
     .catch(() => {});
 
-  // Skip detailed analytics for bots
-  if (bot) return;
+  if (bot) {
+    // Record bot click with basic data (skip expensive IP lookup)
+    db.insert(urlClicksTable).values({
+      urlId,
+      countryCode: geo.countryCode,
+      country: geo.country,
+      city: geo.city,
+      referrer: parseReferrer(req.headers.referer),
+      device: getDevice(ua),
+      browser: getBrowser(ua),
+      os: getOS(ua),
+      language,
+      ip,
+      isBot: true,
+      isMobile: false,
+    }).catch(() => {});
+    return;
+  }
 
   lookupIpData(ip).then((ipData) => {
     db.insert(urlClicksTable).values({

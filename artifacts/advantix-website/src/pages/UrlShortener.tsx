@@ -4,7 +4,7 @@ import {
   Link2, Copy, Trash2, ExternalLink, LogOut, User, Plus, CheckCircle, X, Eye,
   Link, ArrowLeft, Loader2, BarChart2, Globe, TrendingUp, Smartphone, MousePointer,
   LayoutDashboard, Monitor, Wifi, Signal, Chrome, Shield, Clock, Wrench,
-  Lock, Hash, Languages, MapPin, Building2, ChevronDown,
+  Lock, Hash, Languages, MapPin, Building2, ChevronDown, Bot,
 } from "lucide-react";
 import { Link as RouterLink, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -103,6 +103,7 @@ function AuthModal({ open, onClose, onSuccess }: { open: boolean; onClose: () =>
 /* ── Analytics Types ──────────────────────────────────────── */
 type Analytics = {
   totalClicks: number;
+  botClicks: number;
   byDay: Array<{ day: string; clicks: string }>;
   byHour: Array<{ hour: number; clicks: string }>;
   byCountry: Array<{ country: string; country_code: string; clicks: string }>;
@@ -295,9 +296,10 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
             {tab === "overview" && (
               <>
                 {/* Stats row */}
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
                     { label: "Total Clicks", value: data.totalClicks, icon: MousePointer, color: "text-primary" },
+                    { label: "Bot Clicks", value: data.botClicks ?? 0, icon: Bot, color: "text-orange-400" },
                     { label: "Countries", value: data.byCountry.length, icon: Globe, color: "text-blue-400" },
                     { label: "Sources", value: data.byReferrer.length, icon: TrendingUp, color: "text-green-400" },
                   ].map(({ label, value, icon: Icon, color }) => (

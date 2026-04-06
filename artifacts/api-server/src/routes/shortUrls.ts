@@ -47,7 +47,22 @@ router.get("/tools/urls/resolve/:code", async (req, res) => {
   const language = parseLanguage(req.headers["accept-language"]);
   const bot = isBot(ua);
 
-  if (!bot) {
+  if (bot) {
+    db.insert(urlClicksTable).values({
+      urlId: url.id,
+      countryCode: geo.countryCode,
+      country: geo.country,
+      city: geo.city,
+      referrer: parseReferrer(req.headers.referer),
+      device: getDevice(ua),
+      browser: getBrowser(ua),
+      os: getOS(ua),
+      language,
+      ip,
+      isBot: true,
+      isMobile: false,
+    }).catch(() => {});
+  } else {
     lookupIpData(ip).then((ipData) => {
       db.insert(urlClicksTable).values({
         urlId: url.id,
@@ -88,8 +103,11 @@ router.get("/tools/urls/:id/analytics", requireToolUser, async (req, res) => {
   const [url] = await db.select().from(shortUrlsTable).where(and(eq(shortUrlsTable.id, id), eq(shortUrlsTable.userId, session.toolUserId!))).limit(1);
   if (!url) { res.status(404).json({ error: "Not found" }); return; }
 
-  const [byDay, byHour, byCountry, byReferrer, byDevice, byBrowser, byOS, byISP,
+  const [botClicksResult, byDay, byHour, byCountry, byReferrer, byDevice, byBrowser, byOS, byISP,
          byLanguage, byRegion, byOrg, connectionSplit, recentClicks] = await Promise.all([
+    db.execute(sql`
+      SELECT COUNT(*) AS count FROM url_clicks WHERE url_id = ${id} AND is_bot = true
+    `),
     db.execute(sql`
       SELECT to_char(created_at, 'YYYY-MM-DD') AS day, COUNT(*) AS clicks
       FROM url_clicks WHERE url_id = ${id} AND created_at >= NOW() - INTERVAL '30 days'
@@ -165,8 +183,11 @@ router.get("/tools/urls/:id/analytics", requireToolUser, async (req, res) => {
     `),
   ]);
 
+  const botClicks = parseInt((botClicksResult.rows[0] as any)?.count ?? "0");
+
   res.json({
     totalClicks: url.clicks,
+    botClicks,
     byDay: byDay.rows,
     byHour: byHour.rows,
     byCountry: byCountry.rows,
