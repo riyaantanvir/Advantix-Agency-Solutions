@@ -61,14 +61,14 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
   const SidebarContent = () => (
     <>
-      <div className="p-6">
+      <div className="p-6 shrink-0">
         <div className="flex items-center gap-3">
           <img src="/images/logo-icon.svg" alt="Advantix" className="w-8 h-8 object-contain" />
           <span className="font-display font-bold text-xl tracking-tight text-foreground">Advantix</span>
         </div>
       </div>
 
-      <nav className="flex-1 px-4 space-y-2 mt-4">
+      <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
         {navLinks.map((link) => {
           const isActive = location === link.path;
           const Icon = link.icon;
@@ -90,7 +90,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         })}
       </nav>
 
-      <div className="p-4 mt-auto">
+      <div className="p-4 shrink-0 border-t border-border/50">
         <button
           onClick={handleLogout}
           disabled={logoutMutation.isPending}
