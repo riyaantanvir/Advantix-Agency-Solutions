@@ -22,7 +22,8 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { getApiUrl } from "@workspace/api-client";
+
+const API_BASE = "/api";
 
 /* ─── Types ───────────────────────────────────────────────────────────────── */
 interface ContentPlan {
@@ -86,7 +87,7 @@ function monthKey(year: number, month: number) {
 
 /* ─── API helpers ─────────────────────────────────────────────────────────── */
 async function apiFetch(path: string, opts?: RequestInit) {
-  const res = await fetch(`${getApiUrl()}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
     headers: { "Content-Type": "application/json", ...opts?.headers },
     ...opts,

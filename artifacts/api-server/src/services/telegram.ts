@@ -9,6 +9,7 @@ const SETTING_KEYS = [
   "TELEGRAM_NOTIFY_TASK_CREATED",
   "TELEGRAM_NOTIFY_TASK_ASSIGNED",
   "TELEGRAM_NOTIFY_TASK_STATUS",
+  "TELEGRAM_NOTIFY_ASSISTANT_REQUEST",
 ] as const;
 
 async function getSettings(): Promise<Record<string, string>> {
@@ -135,6 +136,28 @@ export function buildStatusChangedMessage(task: {
     ``,
     `<i>— Advantix Admin</i>`,
   ].filter(Boolean).join("\n");
+}
+
+export function buildAssistantRequestMessage(conv: {
+  visitorName: string | null;
+  visitorEmail: string | null;
+  id: number;
+}): string {
+  const name = conv.visitorName ?? "Unknown visitor";
+  const email = conv.visitorEmail ?? "No email";
+  return [
+    `🙋 <b>Human Agent Requested!</b>`,
+    ``,
+    `A visitor wants to speak with a real person.`,
+    ``,
+    `👤 <b>Name:</b> ${escapeHtml(name)}`,
+    `📧 <b>Email:</b> ${escapeHtml(email)}`,
+    `🆔 <b>Session ID:</b> #${conv.id}`,
+    ``,
+    `⚡ Go to <b>Admin → Assistant Requests</b> to respond.`,
+    ``,
+    `<i>— Advantix Admin</i>`,
+  ].join("\n");
 }
 
 function escapeHtml(str: string): string {

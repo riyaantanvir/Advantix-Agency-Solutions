@@ -3,6 +3,7 @@ import { db, conversations, messages, leadsTable } from "@workspace/db";
 import { eq, and, gt } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { sendTelegramMessage, buildAssistantRequestMessage } from "../services/telegram.js";
 
 const router: IRouter = Router();
 
@@ -223,6 +224,16 @@ router.post("/chat/session/:token/request-human", async (req, res) => {
     role: "assistant",
     content: "You've requested to speak with a human agent. We'll connect you shortly! In the meantime, feel free to leave your message here.",
   });
+
+  // Fire Telegram alert (fire-and-forget — don't block the response)
+  sendTelegramMessage(
+    buildAssistantRequestMessage({
+      visitorName: conv.visitorName,
+      visitorEmail: conv.visitorEmail,
+      id: conv.id,
+    }),
+    "TELEGRAM_NOTIFY_ASSISTANT_REQUEST"
+  ).catch(() => { /* silent — don't break chat if Telegram fails */ });
 
   res.json({ ok: true });
 });

@@ -21,12 +21,18 @@ type Settings = Record<string, Setting>;
 
 const TOGGLE_KEYS = [
   "TELEGRAM_NOTIFICATIONS_ENABLED",
+  "TELEGRAM_NOTIFY_ASSISTANT_REQUEST",
   "TELEGRAM_NOTIFY_TASK_CREATED",
   "TELEGRAM_NOTIFY_TASK_ASSIGNED",
   "TELEGRAM_NOTIFY_TASK_STATUS",
 ] as const;
 
-const EVENT_LABELS: Record<string, { label: string; description: string }> = {
+const EVENT_LABELS: Record<string, { label: string; description: string; highlight?: boolean }> = {
+  TELEGRAM_NOTIFY_ASSISTANT_REQUEST: {
+    label: "🙋 Human Agent Requested",
+    description: "Alert when a real visitor clicks 'Talk to a human' — highest priority",
+    highlight: true,
+  },
   TELEGRAM_NOTIFY_TASK_CREATED: {
     label: "Task Created",
     description: "Send a notification when a new task is added",
@@ -293,13 +299,16 @@ export default function Notifications() {
           <p className="text-xs text-muted-foreground mt-0.5">Choose which events trigger a Telegram message</p>
         </div>
         <div className="divide-y divide-border">
-          {Object.entries(EVENT_LABELS).map(([key, { label, description }]) => {
+          {Object.entries(EVENT_LABELS).map(([key, { label, description, highlight }]) => {
             const isOn = settings[key]?.value !== "false";
             const isLoading = saving === key;
             return (
-              <div key={key} className="flex items-center gap-4 px-5 py-4">
+              <div
+                key={key}
+                className={`flex items-center gap-4 px-5 py-4 ${highlight ? "bg-primary/5 border-l-2 border-primary" : ""}`}
+              >
                 <div className="flex-1">
-                  <p className="text-sm font-medium">{label}</p>
+                  <p className={`text-sm font-medium ${highlight ? "text-primary" : ""}`}>{label}</p>
                   <p className="text-xs text-muted-foreground">{description}</p>
                 </div>
                 <button
