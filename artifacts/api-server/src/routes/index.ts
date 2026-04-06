@@ -24,6 +24,7 @@ import landingPageProjectsRouter from "./landingPageProjects.js";
 import blogRouter from "./blog.js";
 import bugReportsRouter from "./bugReports.js";
 import websiteAnalyticsRouter from "./websiteAnalytics.js";
+import marketingReportsRouter from "./marketingReports.js";
 
 const router: IRouter = Router();
 
@@ -52,5 +53,6 @@ router.use(warUpdateRouter);
 router.use(landingPageRouter);
 router.use(landingPageProjectsRouter);
 router.use(websiteAnalyticsRouter);
+router.use(marketingReportsRouter);
 
 export default router;

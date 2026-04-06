@@ -125,13 +125,13 @@ export default function WebsiteAnalytics() {
       .finally(() => setLoading(false));
   }, [days]);
 
-  const maxPage     = data ? Math.max(...data.byPage.map(r => parseInt(r.views)), 1) : 1;
-  const maxCountry  = data ? Math.max(...data.byCountry.map(r => parseInt(r.sessions)), 1) : 1;
-  const maxRef      = data ? Math.max(...data.byReferrer.map(r => parseInt(r.sessions)), 1) : 1;
-  const maxBrowser  = data ? Math.max(...data.byBrowser.map(r => parseInt(r.sessions)), 1) : 1;
-  const maxOS       = data ? Math.max(...data.byOS.map(r => parseInt(r.sessions)), 1) : 1;
-  const maxLang     = data ? Math.max(...data.byLanguage.map(r => parseInt(r.sessions)), 1) : 1;
-  const maxDay      = data ? Math.max(...data.byDay.map(r => parseInt(r.pageviews)), 1) : 1;
+  const maxPage     = data ? Math.max(...(data.byPage ?? []).map(r => parseInt(r.views)), 1) : 1;
+  const maxCountry  = data ? Math.max(...(data.byCountry ?? []).map(r => parseInt(r.sessions)), 1) : 1;
+  const maxRef      = data ? Math.max(...(data.byReferrer ?? []).map(r => parseInt(r.sessions)), 1) : 1;
+  const maxBrowser  = data ? Math.max(...(data.byBrowser ?? []).map(r => parseInt(r.sessions)), 1) : 1;
+  const maxOS       = data ? Math.max(...(data.byOS ?? []).map(r => parseInt(r.sessions)), 1) : 1;
+  const maxLang     = data ? Math.max(...(data.byLanguage ?? []).map(r => parseInt(r.sessions)), 1) : 1;
+  const maxDay      = data ? Math.max(...(data.byDay ?? []).map(r => parseInt(r.pageviews)), 1) : 1;
 
   return (
     <div className="space-y-6">

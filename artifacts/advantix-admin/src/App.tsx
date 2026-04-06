@@ -26,6 +26,7 @@ const Blog = lazy(() => import("./pages/Blog"));
 const BlogEditor = lazy(() => import("./pages/BlogEditor"));
 const BugReports = lazy(() => import("./pages/BugReports"));
 const WebsiteAnalytics = lazy(() => import("./pages/WebsiteAnalytics"));
+const MarketingReports = lazy(() => import("./pages/MarketingReports"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -142,6 +143,10 @@ function Router() {
 
       <Route path="/website-analytics">
         <ProtectedLayout><WebsiteAnalytics /></ProtectedLayout>
+      </Route>
+
+      <Route path="/marketing-reports">
+        <ProtectedLayout><MarketingReports /></ProtectedLayout>
       </Route>
 
       <Route>

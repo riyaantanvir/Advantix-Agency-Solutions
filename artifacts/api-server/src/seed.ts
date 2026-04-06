@@ -211,6 +211,21 @@ export async function runMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS marketing_campaigns (
+      id serial PRIMARY KEY,
+      name text NOT NULL,
+      channel text NOT NULL,
+      spend numeric(12,2) DEFAULT 0 NOT NULL,
+      revenue numeric(12,2) DEFAULT 0 NOT NULL,
+      start_date date NOT NULL,
+      end_date date,
+      status text DEFAULT 'active' NOT NULL,
+      notes text,
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS page_events (
       id serial PRIMARY KEY,
       session_id text NOT NULL,

@@ -43,7 +43,7 @@ Full-stack pnpm monorepo for **Advantix Agency** (advantix.agency). A complete d
 | Artifact | Served At | Description |
 |----------|-----------|-------------|
 | `advantix-website` | `/` | Public marketing website — Home, Portfolio, Team, Contact, Blog, Tools (URL Shortener, Screen Recorder, War Update), user login/dashboard |
-| `advantix-admin` | `/admin/` | Protected admin dashboard — Contacts, Leads, Portfolio, Team, Blog, AI Management, Integrations, Tasks, Notifications, Bug Reports, Website Analytics |
+| `advantix-admin` | `/admin/` | Protected admin dashboard — Contacts, Leads, Portfolio, Team, Blog, AI Management, Integrations, Tasks, Notifications, Bug Reports, Website Analytics, Marketing Reports |
 | `advantix-ai` | `/ai/` | Multi-model AI chat tool — streaming, GPT/Claude/Gemini auto-routing, landing page builder, memory system |
 | `api-server` | — | Express REST API backend (all `/api/*` routes, serves all frontends in production) |
 
