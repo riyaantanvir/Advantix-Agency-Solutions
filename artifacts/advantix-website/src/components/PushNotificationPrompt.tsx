@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bell, BellOff, X } from "lucide-react";
+import { Bell, X } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const DISMISSED_KEY = "push_prompt_dismissed";
@@ -13,6 +13,11 @@ function urlBase64ToUint8Array(base64String: string) {
   return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
 }
 
+function dismissPermanently(setVisible: (v: boolean) => void) {
+  localStorage.setItem(DISMISSED_KEY, "1");
+  setVisible(false);
+}
+
 export function PushNotificationPrompt() {
   const [visible, setVisible] = useState(false);
   const [status, setStatus]   = useState<"idle" | "loading" | "done" | "denied">("idle");
@@ -23,23 +28,23 @@ export function PushNotificationPrompt() {
       !("PushManager" in window) ||
       localStorage.getItem(DISMISSED_KEY) ||
       localStorage.getItem(SUBSCRIBED_KEY) ||
-      Notification.permission === "denied"
+      Notification.permission === "denied" ||
+      Notification.permission === "granted"
     ) return;
 
     const t = setTimeout(() => setVisible(true), 8000);
     return () => clearTimeout(t);
   }, []);
 
-  const dismiss = () => {
-    setVisible(false);
-    localStorage.setItem(DISMISSED_KEY, "1");
-  };
+  const dismiss = () => dismissPermanently(setVisible);
 
   const subscribe = async () => {
     setStatus("loading");
     try {
       const keyRes = await fetch(`${BASE}/api/push/vapid-key`);
+      if (!keyRes.ok) throw new Error("vapid-key unavailable");
       const { publicKey } = await keyRes.json();
+      if (!publicKey) throw new Error("No VAPID key");
 
       const reg = await navigator.serviceWorker.ready;
       const existing = await reg.pushManager.getSubscription();
@@ -63,11 +68,24 @@ export function PushNotificationPrompt() {
 
       localStorage.setItem(SUBSCRIBED_KEY, "1");
       setStatus("done");
-      setTimeout(() => setVisible(false), 2500);
+      setTimeout(() => setVisible(false), 2000);
     } catch {
       const perm = Notification.permission;
-      setStatus(perm === "denied" ? "denied" : "idle");
-      if (perm === "denied") localStorage.setItem(DISMISSED_KEY, "1");
+      if (perm === "denied") {
+        setStatus("denied");
+        localStorage.setItem(DISMISSED_KEY, "1");
+        setTimeout(() => setVisible(false), 2000);
+      } else if (perm === "granted") {
+        // User granted permission — the subscription itself might have failed
+        // (network issue, browser limitation, etc.) but we should still dismiss
+        // and not bother the user again.
+        localStorage.setItem(SUBSCRIBED_KEY, "1");
+        setStatus("done");
+        setTimeout(() => setVisible(false), 2000);
+      } else {
+        // User dismissed the browser dialog without choosing — reset to idle
+        setStatus("idle");
+      }
     }
   };
 
@@ -82,6 +100,7 @@ export function PushNotificationPrompt() {
           className="fixed bottom-24 left-4 right-4 sm:left-auto sm:right-6 sm:w-80 z-[90] bg-card border border-border/60 rounded-2xl shadow-2xl shadow-black/30 p-4"
         >
           <button
+            type="button"
             onClick={dismiss}
             className="absolute top-3 right-3 text-muted-foreground hover:text-foreground transition-colors"
           >
@@ -94,13 +113,13 @@ export function PushNotificationPrompt() {
             </div>
             <div className="flex-1 min-w-0">
               {status === "done" ? (
-                <div className="text-center py-2">
-                  <p className="text-sm font-semibold text-foreground">Subscribed!</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">You'll receive updates from us.</p>
+                <div className="py-2">
+                  <p className="text-sm font-semibold text-foreground">You're subscribed!</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">We'll notify you about new updates.</p>
                 </div>
               ) : status === "denied" ? (
-                <div className="text-center py-1">
-                  <p className="text-xs text-muted-foreground">Notifications blocked. Enable them in browser settings.</p>
+                <div className="py-1">
+                  <p className="text-xs text-muted-foreground">Notifications blocked. You can enable them in your browser settings anytime.</p>
                 </div>
               ) : (
                 <>
@@ -110,6 +129,7 @@ export function PushNotificationPrompt() {
                   </p>
                   <div className="flex gap-2 mt-3">
                     <button
+                      type="button"
                       onClick={subscribe}
                       disabled={status === "loading"}
                       className="flex-1 flex items-center justify-center gap-1.5 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-60"
@@ -122,6 +142,7 @@ export function PushNotificationPrompt() {
                       {status === "loading" ? "Subscribing…" : "Enable Notifications"}
                     </button>
                     <button
+                      type="button"
                       onClick={dismiss}
                       className="px-3 py-1.5 bg-secondary text-muted-foreground text-xs font-medium rounded-lg hover:text-foreground transition-colors"
                     >
