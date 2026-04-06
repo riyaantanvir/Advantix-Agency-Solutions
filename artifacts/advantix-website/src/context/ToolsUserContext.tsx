@@ -18,7 +18,11 @@ export function ToolsUserProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const { user } = await toolsApi.auth.me();
-      setUser(user);
+      if (user.email.endsWith("@advantix.local")) {
+        setUser(null);
+      } else {
+        setUser(user);
+      }
     } catch {
       setUser(null);
     } finally {
