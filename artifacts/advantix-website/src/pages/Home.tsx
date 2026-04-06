@@ -185,24 +185,18 @@ export default function Home() {
           <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/70 to-background" />
         </div>
 
-        {/* Floating orbs */}
-        <motion.div
+        {/* Floating orbs — CSS animations (GPU-friendly, no JS overhead) */}
+        <div
           className="absolute w-[700px] h-[700px] rounded-full bg-primary/15 blur-[140px] pointer-events-none"
-          animate={{ x: [0, 60, -30, 0], y: [0, -50, 30, 0], scale: [1, 1.08, 0.96, 1] }}
-          transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
-          style={{ top: "-15%", left: "-10%", zIndex: 1 }}
+          style={{ top: "-15%", left: "-10%", zIndex: 1, animation: "orbFloat1 22s ease-in-out infinite", willChange: "transform" }}
         />
-        <motion.div
+        <div
           className="absolute w-[500px] h-[500px] rounded-full bg-accent/10 blur-[120px] pointer-events-none"
-          animate={{ x: [0, -50, 40, 0], y: [0, 60, -40, 0], scale: [1, 0.92, 1.06, 1] }}
-          transition={{ duration: 25, repeat: Infinity, ease: "easeInOut", delay: 3 }}
-          style={{ bottom: "5%", right: "-5%", zIndex: 1 }}
+          style={{ bottom: "5%", right: "-5%", zIndex: 1, animation: "orbFloat2 28s ease-in-out infinite", willChange: "transform" }}
         />
-        <motion.div
+        <div
           className="absolute w-[350px] h-[350px] rounded-full bg-primary/8 blur-[100px] pointer-events-none"
-          animate={{ x: [0, 30, -20, 0], y: [0, 30, -30, 0] }}
-          transition={{ duration: 15, repeat: Infinity, ease: "easeInOut", delay: 8 }}
-          style={{ top: "40%", right: "20%", zIndex: 1 }}
+          style={{ top: "40%", right: "20%", zIndex: 1, animation: "orbFloat3 18s ease-in-out infinite 6s", willChange: "transform" }}
         />
 
         {/* Content */}
@@ -213,11 +207,7 @@ export default function Home() {
             transition={{ duration: 0.6, ease: expo, delay: 0.1 }}
             className="inline-flex items-center gap-3 bg-primary/10 border border-primary/25 text-primary rounded-full px-6 py-2.5 text-sm md:text-base font-mono font-bold tracking-[0.18em] uppercase mb-8"
           >
-            <motion.span
-              animate={{ scale: [1, 1.5, 1] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-              className="w-2 h-2 rounded-full bg-primary inline-block shrink-0"
-            />
+            <span className="w-2 h-2 rounded-full bg-primary inline-block shrink-0 animate-pulse" />
             advantix.agency
           </motion.div>
 

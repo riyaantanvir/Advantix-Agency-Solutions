@@ -1,62 +1,77 @@
+import { lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ToolsUserProvider } from "@/context/ToolsUserContext";
-import NotFound from "@/pages/not-found";
 
-import Home from "@/pages/Home";
-import Blog from "@/pages/Blog";
-import BlogPost from "@/pages/BlogPost";
-import Services from "@/pages/Services";
-import Portfolio from "@/pages/Portfolio";
-import Team from "@/pages/Team";
-import Contact from "@/pages/Contact";
-import Tools from "@/pages/Tools";
-import UrlShortener from "@/pages/UrlShortener";
-import ToolsDashboard from "@/pages/ToolsDashboard";
-import ScreenRecorder from "@/pages/ScreenRecorder";
-import WarUpdate from "@/pages/WarUpdate";
-import AccountSettings from "@/pages/AccountSettings";
-import Login from "@/pages/Login";
-import Redirect from "@/pages/Redirect";
+const Home = lazy(() => import("@/pages/Home"));
+const Blog = lazy(() => import("@/pages/Blog"));
+const BlogPost = lazy(() => import("@/pages/BlogPost"));
+const Services = lazy(() => import("@/pages/Services"));
+const Portfolio = lazy(() => import("@/pages/Portfolio"));
+const Team = lazy(() => import("@/pages/Team"));
+const Contact = lazy(() => import("@/pages/Contact"));
+const Tools = lazy(() => import("@/pages/Tools"));
+const UrlShortener = lazy(() => import("@/pages/UrlShortener"));
+const ToolsDashboard = lazy(() => import("@/pages/ToolsDashboard"));
+const ScreenRecorder = lazy(() => import("@/pages/ScreenRecorder"));
+const WarUpdate = lazy(() => import("@/pages/WarUpdate"));
+const AccountSettings = lazy(() => import("@/pages/AccountSettings"));
+const Login = lazy(() => import("@/pages/Login"));
+const Redirect = lazy(() => import("@/pages/Redirect"));
+const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
       retry: 1,
+      refetchOnWindowFocus: false,
     },
   },
 });
 
+function PageLoader() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
+
 function Router() {
   return (
     <Switch>
-      {/* Short URL redirect — outside AppLayout (no navbar/footer) */}
-      <Route path="/s/:code" component={Redirect} />
+      <Route path="/s/:code">
+        <Suspense fallback={null}>
+          <Redirect />
+        </Suspense>
+      </Route>
 
-      {/* Main app with layout */}
       <Route>
         <AppLayout>
-          <Switch>
-            <Route path="/" component={Home} />
-            <Route path="/blog/:slug" component={BlogPost} />
-            <Route path="/blog" component={Blog} />
-            <Route path="/services" component={Services} />
-            <Route path="/portfolio" component={Portfolio} />
-            <Route path="/team" component={Team} />
-            <Route path="/contact" component={Contact} />
-            <Route path="/login" component={Login} />
-            <Route path="/tools" component={Tools} />
-            <Route path="/tools/dashboard" component={ToolsDashboard} />
-            <Route path="/tools/url-shortener" component={UrlShortener} />
-            <Route path="/tools/screen-recorder" component={ScreenRecorder} />
-            <Route path="/tools/war-update" component={WarUpdate} />
-            <Route path="/tools/settings" component={AccountSettings} />
-            <Route component={NotFound} />
-          </Switch>
+          <Suspense fallback={<PageLoader />}>
+            <Switch>
+              <Route path="/" component={Home} />
+              <Route path="/blog/:slug" component={BlogPost} />
+              <Route path="/blog" component={Blog} />
+              <Route path="/services" component={Services} />
+              <Route path="/portfolio" component={Portfolio} />
+              <Route path="/team" component={Team} />
+              <Route path="/contact" component={Contact} />
+              <Route path="/login" component={Login} />
+              <Route path="/tools" component={Tools} />
+              <Route path="/tools/dashboard" component={ToolsDashboard} />
+              <Route path="/tools/url-shortener" component={UrlShortener} />
+              <Route path="/tools/screen-recorder" component={ScreenRecorder} />
+              <Route path="/tools/war-update" component={WarUpdate} />
+              <Route path="/tools/settings" component={AccountSettings} />
+              <Route component={NotFound} />
+            </Switch>
+          </Suspense>
         </AppLayout>
       </Route>
     </Switch>
