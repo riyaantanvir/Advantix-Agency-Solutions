@@ -140,28 +140,26 @@ router.get("/marketing/funnel", requireAdmin, async (req, res) => {
   const funnelKey = `marketing:funnel:${days}`;
   const cachedFunnel = cacheGet(funnelKey);
   if (cachedFunnel) { res.json(cachedFunnel); return; }
-  const interval = `${days} days`;
-
   const [visitors, engaged, leads, contacts, byChannel, dailyFunnel] = await Promise.all([
     db.execute(sql`
       SELECT COUNT(DISTINCT session_id) AS count
       FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - INTERVAL ${interval}
+        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
     `),
     db.execute(sql`
       SELECT COUNT(DISTINCT session_id) AS count
       FROM page_events
-      WHERE created_at >= NOW() - INTERVAL ${interval}
+      WHERE created_at >= NOW() - ${days} * INTERVAL '1 day'
         AND event_type IN ('exit', 'scroll')
         AND (time_on_page > 30 OR scroll_depth > 50)
     `),
     db.execute(sql`
       SELECT COUNT(*) AS count FROM leads
-        WHERE created_at >= NOW() - INTERVAL ${interval}
+        WHERE created_at >= NOW() - ${days} * INTERVAL '1 day'
     `),
     db.execute(sql`
       SELECT COUNT(*) AS count FROM contacts
-        WHERE created_at >= NOW() - INTERVAL ${interval}
+        WHERE created_at >= NOW() - ${days} * INTERVAL '1 day'
     `),
     db.execute(sql`
       SELECT
@@ -169,14 +167,14 @@ router.get("/marketing/funnel", requireAdmin, async (req, res) => {
         COUNT(DISTINCT session_id) AS visitors,
         0 AS leads
       FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - INTERVAL ${interval}
+        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
       GROUP BY channel ORDER BY visitors DESC LIMIT 8
     `),
     db.execute(sql`
       SELECT to_char(created_at, 'YYYY-MM-DD') AS day,
              COUNT(DISTINCT session_id) AS visitors
       FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - INTERVAL ${interval}
+        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
       GROUP BY day ORDER BY day
     `),
   ]);
