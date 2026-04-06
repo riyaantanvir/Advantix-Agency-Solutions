@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   Save, ArrowLeft, Eye, Globe, FileX, Loader2,
   Settings, ChevronDown, ChevronUp, Star, StarOff,
+  Upload, X, ImagePlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +69,33 @@ export default function BlogEditor() {
   const qc = useQueryClient();
   const [showSeo, setShowSeo] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [coverUploading, setCoverUploading] = useState(false);
+  const [coverDragging, setCoverDragging] = useState(false);
+  const coverFileInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadCoverFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Please select an image file", variant: "destructive" });
+      return;
+    }
+    setCoverUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      const res = await fetch("/api/admin/blog/upload-image", {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const { url } = await res.json();
+      update("coverImageUrl", url);
+    } catch {
+      toast({ title: "Image upload failed", variant: "destructive" });
+    } finally {
+      setCoverUploading(false);
+    }
+  }, [toast]);
 
   const [form, setForm] = useState<PostForm>({
     title: "",
@@ -255,11 +283,101 @@ export default function BlogEditor() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Cover image */}
             <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium block mb-1.5">Cover Image URL</label>
-              <Input value={form.coverImageUrl} onChange={(e) => update("coverImageUrl", e.target.value)} placeholder="https://..." />
-              {form.coverImageUrl && (
-                <img src={form.coverImageUrl} alt="Cover preview" className="mt-2 rounded-xl w-full aspect-[2/1] object-cover" loading="lazy" />
+              <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium block mb-1.5">Cover Image</label>
+
+              {/* Hidden file input */}
+              <input
+                ref={coverFileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadCoverFile(file);
+                  e.target.value = "";
+                }}
+              />
+
+              {form.coverImageUrl ? (
+                /* Preview with clear button */
+                <div className="relative rounded-xl overflow-hidden aspect-[2/1] bg-secondary">
+                  <img
+                    src={form.coverImageUrl}
+                    alt="Cover preview"
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity bg-black/50 flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => coverFileInputRef.current?.click()}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors backdrop-blur-sm"
+                    >
+                      <Upload size={13} /> Replace
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => update("coverImageUrl", "")}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/70 hover:bg-red-500/90 text-white text-xs font-medium transition-colors"
+                    >
+                      <X size={13} /> Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Drop / paste zone */
+                <div
+                  tabIndex={0}
+                  className={`relative rounded-xl border-2 border-dashed transition-colors cursor-pointer aspect-[2/1] flex flex-col items-center justify-center gap-2 outline-none
+                    ${coverDragging
+                      ? "border-primary bg-primary/10"
+                      : "border-border hover:border-primary/50 hover:bg-secondary/40 focus:border-primary/60"
+                    }`}
+                  onClick={() => coverFileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setCoverDragging(true); }}
+                  onDragLeave={() => setCoverDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setCoverDragging(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) uploadCoverFile(file);
+                  }}
+                  onPaste={(e) => {
+                    const item = Array.from(e.clipboardData.items).find(
+                      (i) => i.type.startsWith("image/")
+                    );
+                    if (item) {
+                      const file = item.getAsFile();
+                      if (file) uploadCoverFile(file);
+                    }
+                  }}
+                >
+                  {coverUploading ? (
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <Loader2 size={24} className="animate-spin text-primary" />
+                      <span className="text-xs">Uploading…</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground pointer-events-none select-none">
+                      <ImagePlus size={28} className="text-muted-foreground/50" />
+                      <div className="text-center">
+                        <p className="text-sm font-medium text-foreground/70">Paste • Drag & drop • Click to upload</p>
+                        <p className="text-xs mt-0.5">PNG, JPG, WebP, GIF supported</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
+
+              {/* URL input fallback */}
+              <div className="mt-2">
+                <Input
+                  value={form.coverImageUrl}
+                  onChange={(e) => update("coverImageUrl", e.target.value)}
+                  placeholder="Or paste an image URL…"
+                  className="text-xs"
+                />
+              </div>
             </div>
 
             {/* Category + Author */}
