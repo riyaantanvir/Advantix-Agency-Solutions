@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Download, Upload, FileJson, FileSpreadsheet, X, Check, AlertTriangle, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -113,6 +114,8 @@ export function ImportExport<T extends Record<string, unknown>>({
   const [importing, setImporting] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [importDone, setImportDone] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   /* ── Export ── */
   function exportCSV() {
@@ -173,9 +176,14 @@ export function ImportExport<T extends Record<string, unknown>>({
 
   async function confirmImport() {
     setImporting(true);
+    setImportError(null);
     try {
       await onImport(previewRows);
       setImportDone(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Import failed. Please try again.";
+      setImportError(msg);
+      toast({ title: "Import failed", description: msg, variant: "destructive" });
     } finally {
       setImporting(false);
     }
@@ -227,11 +235,11 @@ export function ImportExport<T extends Record<string, unknown>>({
       </div>
 
       {/* Preview / Confirm dialog */}
-      <Dialog open={previewOpen} onOpenChange={(o) => { if (!importing) { setPreviewOpen(o); if (!o) { setParseError(null); setImportDone(false); } } }}>
+      <Dialog open={previewOpen} onOpenChange={(o) => { if (!importing) { setPreviewOpen(o); if (!o) { setParseError(null); setImportDone(false); setImportError(null); } } }}>
         <DialogContent className="sm:max-w-3xl bg-card border-border/50 max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="font-display text-xl flex items-center gap-2">
-              {parseError ? (
+              {parseError || importError ? (
                 <><AlertTriangle className="w-5 h-5 text-destructive" /> Import Error</>
               ) : importDone ? (
                 <><Check className="w-5 h-5 text-green-500" /> Import Complete</>
@@ -247,6 +255,14 @@ export function ImportExport<T extends Record<string, unknown>>({
                 {parseError}
                 <p className="mt-2 text-muted-foreground">
                   Make sure your file is a valid CSV or JSON that matches the export format.
+                </p>
+              </div>
+            ) : importError ? (
+              <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-xl text-sm text-destructive">
+                <p className="font-semibold mb-1">Import failed</p>
+                <p>{importError}</p>
+                <p className="mt-2 text-muted-foreground text-xs">
+                  Check that you are logged in and try again. If the problem persists, contact support.
                 </p>
               </div>
             ) : importDone ? (
@@ -315,10 +331,17 @@ export function ImportExport<T extends Record<string, unknown>>({
               <Button onClick={() => { setPreviewOpen(false); setImportDone(false); }}>
                 Done
               </Button>
-            ) : parseError ? (
-              <Button variant="outline" onClick={() => setPreviewOpen(false)}>
-                <X className="w-4 h-4 mr-2" /> Close
-              </Button>
+            ) : parseError || importError ? (
+              <>
+                <Button variant="outline" onClick={() => setPreviewOpen(false)}>
+                  <X className="w-4 h-4 mr-2" /> Close
+                </Button>
+                {importError && (
+                  <Button onClick={() => setImportError(null)} className="bg-primary text-primary-foreground">
+                    Try Again
+                  </Button>
+                )}
+              </>
             ) : (
               <>
                 <Button variant="outline" onClick={() => setPreviewOpen(false)} disabled={importing}>

@@ -211,23 +211,18 @@ export default function Team() {
 
   async function handleTeamImport(rows: Partial<Record<string, unknown>>[]) {
     for (const row of rows) {
-      await new Promise<void>((resolve, reject) => {
-        createMutation.mutate(
-          {
-            data: {
-              name: String(row.name ?? ""),
-              role: String(row.role ?? ""),
-              bio: row.bio ? String(row.bio) : undefined,
-              email: row.email ? String(row.email) : undefined,
-              linkedinUrl: row.linkedinUrl ? String(row.linkedinUrl) : undefined,
-              photoUrl: row.photoUrl ? String(row.photoUrl) : undefined,
-              badge: row.badge ? String(row.badge) : undefined,
-              tagline: row.tagline ? String(row.tagline) : undefined,
-              skills: Array.isArray(row.skills) ? row.skills : [],
-            },
-          },
-          { onSuccess: () => resolve(), onError: reject }
-        );
+      await createMutation.mutateAsync({
+        data: {
+          name: String(row.name ?? ""),
+          role: String(row.role ?? ""),
+          bio: row.bio ? String(row.bio) : undefined,
+          email: row.email ? String(row.email) : undefined,
+          linkedinUrl: row.linkedinUrl ? String(row.linkedinUrl) : undefined,
+          photoUrl: row.photoUrl ? String(row.photoUrl) : undefined,
+          badge: row.badge ? String(row.badge) : undefined,
+          tagline: row.tagline ? String(row.tagline) : undefined,
+          skills: Array.isArray(row.skills) ? row.skills : [],
+        },
       });
     }
     queryClient.invalidateQueries({ queryKey: ["/api/team"] });
