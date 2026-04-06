@@ -163,8 +163,8 @@ export default function Home() {
   const { data: servicesData } = useListServices();
   const [activeService, setActiveService] = useState<Service | null>(null);
 
-  const services = servicesData ?? fallbackServices;
-  const featuredPortfolio = portfolioItems?.slice(0, 3) ?? [];
+  const services = Array.isArray(servicesData) && servicesData.length > 0 ? servicesData : fallbackServices;
+  const featuredPortfolio = Array.isArray(portfolioItems) ? portfolioItems.slice(0, 3) : [];
 
   const heroWords = ["We", "Build", "Brands"];
 
@@ -178,6 +178,8 @@ export default function Home() {
           <img
             src={`${import.meta.env.BASE_URL}images/hero-bg.png`}
             alt="Hero Background"
+            fetchPriority="high"
+            decoding="async"
             className="w-full h-full object-cover opacity-50 mix-blend-screen"
           />
           <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/70 to-background" />
@@ -428,7 +430,7 @@ export default function Home() {
                 transition={{ type: "spring", stiffness: 300, damping: 22 }}
               >
                 {item.imageUrl ? (
-                  <img src={item.imageUrl} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                  <img src={item.imageUrl} alt={item.title} loading="lazy" decoding="async" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-br from-secondary to-muted flex items-center justify-center">
                     <span className="font-display font-bold text-2xl text-muted-foreground opacity-30">{item.title[0]}</span>
