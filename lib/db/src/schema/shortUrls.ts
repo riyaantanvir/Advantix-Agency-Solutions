@@ -10,5 +10,7 @@ export const shortUrlsTable = pgTable("short_urls", {
     .notNull()
     .references(() => toolUsersTable.id, { onDelete: "cascade" }),
   clicks: integer("clicks").notNull().default(0),
+  passwordHash: text("password_hash"),
+  clickLimit: integer("click_limit"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

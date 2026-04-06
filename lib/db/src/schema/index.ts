@@ -21,3 +21,4 @@ export * from "./landingPageProjects";
 export * from "./tasks";
 export * from "./blogPosts";
 export * from "./bugReports";
+export * from "./pageEvents";

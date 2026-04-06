@@ -22,6 +22,8 @@ export interface ShortUrl {
   title: string | null;
   userId: number;
   clicks: number;
+  clickLimit: number | null;
+  passwordHash: string | null;
   createdAt: string;
 }
 
@@ -73,10 +75,16 @@ export const toolsApi = {
   },
   urls: {
     list: () => request<ShortUrl[]>("/tools/urls"),
-    create: (originalUrl: string, title?: string, customSlug?: string) =>
+    create: (
+      originalUrl: string,
+      title?: string,
+      customSlug?: string,
+      password?: string,
+      clickLimit?: number,
+    ) =>
       request<ShortUrl>("/tools/urls", {
         method: "POST",
-        body: JSON.stringify({ originalUrl, title, customSlug }),
+        body: JSON.stringify({ originalUrl, title, customSlug, password, clickLimit }),
       }),
     delete: (id: number) =>
       request<{ ok: boolean }>(`/tools/urls/${id}`, { method: "DELETE" }),
@@ -86,9 +94,24 @@ export const toolsApi = {
       request<{
         totalClicks: number;
         byDay: Array<{ day: string; clicks: string }>;
+        byHour: Array<{ hour: number; clicks: string }>;
         byCountry: Array<{ country: string; country_code: string; clicks: string }>;
         byReferrer: Array<{ referrer: string; clicks: string }>;
         byDevice: Array<{ device: string; clicks: string }>;
+        byBrowser: Array<{ browser: string; clicks: string }>;
+        byOS: Array<{ os: string; clicks: string }>;
+        byISP: Array<{ isp: string; clicks: string; is_mobile: boolean }>;
+        byLanguage: Array<{ language: string; clicks: string }>;
+        byRegion: Array<{ region: string; clicks: string }>;
+        byOrg: Array<{ org: string; clicks: string }>;
+        connectionSplit: { cellular: string; wifi_or_broadband: string };
+        recentClicks: Array<{
+          ip: string; country: string | null; city: string | null; region: string | null;
+          browser: string | null; os: string | null; isp: string | null; org: string | null;
+          timezone: string | null; language: string | null; is_bot: boolean | null;
+          is_mobile: boolean | null; referrer: string | null; device: string | null;
+          created_at: string;
+        }>;
       }>(`/tools/urls/${id}/analytics`),
   },
 };

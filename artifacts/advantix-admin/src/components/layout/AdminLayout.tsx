@@ -23,6 +23,7 @@ import {
   Bell,
   BookOpen,
   Bug,
+  BarChart2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -31,6 +32,7 @@ const navLinks = [
   { path: "/tasks", label: "Task Management", icon: CheckSquare },
   { path: "/notifications", label: "Notifications", icon: Bell },
   { path: "/bug-reports", label: "Bug Management", icon: Bug },
+  { path: "/website-analytics", label: "Website Analytics", icon: BarChart2 },
   { path: "/tools", label: "Advantix Tools", icon: Zap },
   { path: "/contacts", label: "Contacts", icon: Mail },
   { path: "/leads", label: "Leads", icon: TrendingUp },

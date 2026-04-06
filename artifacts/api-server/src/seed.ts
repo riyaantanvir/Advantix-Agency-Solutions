@@ -196,6 +196,43 @@ export async function runMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
+    ALTER TABLE url_clicks
+      ADD COLUMN IF NOT EXISTS language text,
+      ADD COLUMN IF NOT EXISTS timezone text,
+      ADD COLUMN IF NOT EXISTS region text,
+      ADD COLUMN IF NOT EXISTS org text,
+      ADD COLUMN IF NOT EXISTS is_bot boolean DEFAULT false
+  `);
+
+  await db.execute(sql`
+    ALTER TABLE short_urls
+      ADD COLUMN IF NOT EXISTS password_hash text,
+      ADD COLUMN IF NOT EXISTS click_limit integer
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS page_events (
+      id serial PRIMARY KEY,
+      session_id text NOT NULL,
+      event_type text NOT NULL,
+      page_path text NOT NULL,
+      referrer text,
+      scroll_depth integer,
+      time_on_page integer,
+      click_x real,
+      click_y real,
+      ip text,
+      country text,
+      city text,
+      browser text,
+      os text,
+      device text,
+      language text,
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS recording_sessions (
       id serial PRIMARY KEY,
       user_id integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,

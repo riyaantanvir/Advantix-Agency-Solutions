@@ -4,6 +4,7 @@ import {
   Link2, Copy, Trash2, ExternalLink, LogOut, User, Plus, CheckCircle, X, Eye,
   Link, ArrowLeft, Loader2, BarChart2, Globe, TrendingUp, Smartphone, MousePointer,
   LayoutDashboard, Monitor, Wifi, Signal, Chrome, Shield, Clock, Wrench,
+  Lock, Hash, Languages, MapPin, Building2, ChevronDown,
 } from "lucide-react";
 import { Link as RouterLink, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -103,16 +104,21 @@ function AuthModal({ open, onClose, onSuccess }: { open: boolean; onClose: () =>
 type Analytics = {
   totalClicks: number;
   byDay: Array<{ day: string; clicks: string }>;
+  byHour: Array<{ hour: number; clicks: string }>;
   byCountry: Array<{ country: string; country_code: string; clicks: string }>;
   byReferrer: Array<{ referrer: string; clicks: string }>;
   byDevice: Array<{ device: string; clicks: string }>;
   byBrowser: Array<{ browser: string; clicks: string }>;
   byOS: Array<{ os: string; clicks: string }>;
   byISP: Array<{ isp: string; clicks: string; is_mobile: boolean }>;
+  byLanguage: Array<{ language: string; clicks: string }>;
+  byRegion: Array<{ region: string; clicks: string }>;
+  byOrg: Array<{ org: string; clicks: string }>;
   connectionSplit: { cellular: string; wifi_or_broadband: string };
   recentClicks: Array<{
-    ip: string; country: string | null; city: string | null;
-    browser: string | null; os: string | null; isp: string | null;
+    ip: string; country: string | null; city: string | null; region: string | null;
+    browser: string | null; os: string | null; isp: string | null; org: string | null;
+    timezone: string | null; language: string | null; is_bot: boolean | null;
     is_mobile: boolean | null; referrer: string | null; device: string | null;
     created_at: string;
   }>;
@@ -123,7 +129,7 @@ function BarRow({ label, value, max, color = "bg-primary" }: { label: string; va
   const pct = max > 0 ? Math.round((value / max) * 100) : 0;
   return (
     <div className="flex items-center gap-3">
-      <span className="text-sm text-foreground/80 w-32 shrink-0 truncate">{label}</span>
+      <span className="text-sm text-foreground/80 w-36 shrink-0 truncate">{label}</span>
       <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
         <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
       </div>
@@ -158,12 +164,65 @@ function osIcon(os: string): string {
   return "💻";
 }
 
+function langFlag(lang: string): string {
+  const map: Record<string, string> = {
+    Bengali: "🇧🇩", English: "🇺🇸", Arabic: "🇸🇦", Hindi: "🇮🇳",
+    Chinese: "🇨🇳", Spanish: "🇪🇸", French: "🇫🇷", German: "🇩🇪",
+    Japanese: "🇯🇵", Korean: "🇰🇷", Russian: "🇷🇺", Turkish: "🇹🇷",
+    Urdu: "🇵🇰", Indonesian: "🇮🇩", Malay: "🇲🇾",
+  };
+  return map[lang] ?? "🗣️";
+}
+
+/* ── Hour Heatmap ────────────────────────────────────────── */
+function HourHeatmap({ byHour }: { byHour: Array<{ hour: number; clicks: string }> }) {
+  const hourMap: Record<number, number> = {};
+  byHour.forEach(r => { hourMap[r.hour] = parseInt(r.clicks); });
+  const maxClicks = Math.max(...Object.values(hourMap), 1);
+
+  const timeLabel = (h: number) => {
+    if (h === 0) return "12am";
+    if (h < 12) return `${h}am`;
+    if (h === 12) return "12pm";
+    return `${h - 12}pm`;
+  };
+
+  return (
+    <div>
+      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+        <Clock className="w-4 h-4 text-amber-400" /> Hour-of-Day Activity
+      </h3>
+      <div className="grid grid-cols-12 gap-1">
+        {Array.from({ length: 24 }, (_, h) => {
+          const clicks = hourMap[h] ?? 0;
+          const intensity = maxClicks > 0 ? clicks / maxClicks : 0;
+          const bg = intensity === 0
+            ? "bg-secondary/30"
+            : intensity < 0.25 ? "bg-amber-900/40"
+            : intensity < 0.5 ? "bg-amber-600/60"
+            : intensity < 0.75 ? "bg-amber-400/80"
+            : "bg-amber-400";
+          return (
+            <div key={h} className="flex flex-col items-center gap-1" title={`${timeLabel(h)}: ${clicks} click${clicks !== 1 ? "s" : ""}`}>
+              <div className={`w-full aspect-square rounded-md ${bg} cursor-default transition-all hover:ring-1 hover:ring-amber-400/50`} />
+              {h % 3 === 0 && <span className="text-[9px] text-muted-foreground">{timeLabel(h)}</span>}
+            </div>
+          );
+        })}
+      </div>
+      {byHour.length === 0 && (
+        <p className="text-center text-xs text-muted-foreground mt-2">No click data yet</p>
+      )}
+    </div>
+  );
+}
+
 /* ── Analytics Modal ──────────────────────────────────────── */
 function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onClose: () => void; url: ShortUrl | null; shortBase: string }) {
   const [data, setData] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<"overview" | "recent">("overview");
+  const [tab, setTab] = useState<"overview" | "deep" | "recent">("overview");
 
   useEffect(() => {
     if (!open || !url) return;
@@ -184,6 +243,9 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
   const maxOS       = data ? Math.max(...data.byOS.map(r        => parseInt(r.clicks)), 1) : 1;
   const maxISP      = data ? Math.max(...data.byISP.map(r      => parseInt(r.clicks)), 1) : 1;
   const maxDay      = data ? Math.max(...data.byDay.map(r      => parseInt(r.clicks)), 1) : 1;
+  const maxLang     = data ? Math.max(...data.byLanguage.map(r  => parseInt(r.clicks)), 1) : 1;
+  const maxRegion   = data ? Math.max(...data.byRegion.map(r   => parseInt(r.clicks)), 1) : 1;
+  const maxOrg      = data ? Math.max(...data.byOrg.map(r      => parseInt(r.clicks)), 1) : 1;
 
   const cellular    = data ? parseInt(String(data.connectionSplit.cellular))          : 0;
   const wifi        = data ? parseInt(String(data.connectionSplit.wifi_or_broadband)) : 0;
@@ -198,6 +260,16 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
             Link Analytics
           </DialogTitle>
           <p className="text-sm text-muted-foreground mt-1 font-mono truncate">{short}</p>
+          {url.clickLimit && (
+            <p className="text-xs text-amber-400 flex items-center gap-1 mt-0.5">
+              <Hash className="w-3.5 h-3.5" /> Click limit: {url.clicks}/{url.clickLimit}
+            </p>
+          )}
+          {url.passwordHash && (
+            <p className="text-xs text-purple-400 flex items-center gap-1 mt-0.5">
+              <Lock className="w-3.5 h-3.5" /> Password protected
+            </p>
+          )}
         </DialogHeader>
 
         {loading && (
@@ -212,10 +284,10 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
 
             {/* Tab toggle */}
             <div className="flex bg-secondary/40 p-1 rounded-xl gap-1">
-              {(["overview", "recent"] as const).map(t => (
+              {(["overview", "deep", "recent"] as const).map(t => (
                 <button key={t} onClick={() => setTab(t)}
                   className={`flex-1 py-1.5 rounded-lg text-sm font-semibold transition-all ${tab === t ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-                  {t === "overview" ? "📊 Overview" : "🕐 Recent Clicks"}
+                  {t === "overview" ? "📊 Overview" : t === "deep" ? "🔬 Deep Data" : "🕐 Recent"}
                 </button>
               ))}
             </div>
@@ -237,7 +309,7 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
                   ))}
                 </div>
 
-                {/* Connection type — WiFi vs SIM */}
+                {/* Connection type */}
                 {(cellular + wifi) > 0 && (
                   <div className="bg-secondary/30 rounded-xl p-4">
                     <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
@@ -264,7 +336,7 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
                 {data.byDay.length > 0 && (
                   <div>
                     <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-primary" /> Clicks Over Time
+                      <TrendingUp className="w-4 h-4 text-primary" /> Clicks Over Time (30 days)
                     </h3>
                     <div className="flex items-end gap-1 h-20 bg-secondary/20 rounded-xl px-3 py-2">
                       {data.byDay.map(({ day, clicks }) => {
@@ -385,6 +457,63 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
               </>
             )}
 
+            {tab === "deep" && (
+              <div className="space-y-6">
+                {/* Hour-of-day heatmap */}
+                <HourHeatmap byHour={data.byHour} />
+
+                {/* Language + Region */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {data.byLanguage.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <Languages className="w-4 h-4 text-cyan-400" /> Browser Language
+                      </h3>
+                      <div className="space-y-2">
+                        {data.byLanguage.map(r => (
+                          <BarRow key={r.language} label={`${langFlag(r.language)} ${r.language}`} value={parseInt(r.clicks)} max={maxLang} color="bg-cyan-500" />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {data.byRegion.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-rose-400" /> Region / State
+                      </h3>
+                      <div className="space-y-2">
+                        {data.byRegion.map(r => (
+                          <BarRow key={r.region} label={`📍 ${r.region}`} value={parseInt(r.clicks)} max={maxRegion} color="bg-rose-500" />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Organization / Company */}
+                {data.byOrg.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-teal-400" /> Organization / Company
+                    </h3>
+                    <div className="space-y-2">
+                      {data.byOrg.map(r => (
+                        <BarRow key={r.org} label={`🏢 ${r.org}`} value={parseInt(r.clicks)} max={maxOrg} color="bg-teal-500" />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {data.byLanguage.length === 0 && data.byRegion.length === 0 && data.byOrg.length === 0 && data.byHour.length === 0 && (
+                  <div className="text-center py-8">
+                    <Eye className="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
+                    <p className="text-muted-foreground text-sm">Deep data will appear after new clicks are recorded.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {tab === "recent" && (
               <div>
                 {data.recentClicks.length === 0 ? (
@@ -401,7 +530,8 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
                             <div className="flex items-center gap-2 flex-wrap">
                               {click.country && (
                                 <span className="text-foreground/80 font-medium">
-                                  {countryFlag("") !== click.country ? countryFlag("XX") : ""} {click.city ? `${click.city}, ` : ""}{click.country}
+                                  {click.city ? `${click.city}, ` : ""}{click.country}
+                                  {click.region ? ` · ${click.region}` : ""}
                                 </span>
                               )}
                               {click.isp && (
@@ -409,13 +539,23 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
                                   {click.is_mobile ? "📡 SIM" : "📶 WiFi"} · {click.isp}
                                 </span>
                               )}
+                              {click.is_bot && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 font-medium">🤖 Bot</span>
+                              )}
                             </div>
                             <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                               {click.browser && <span>{browserIcon(click.browser)} {click.browser}</span>}
                               {click.os && <span>{osIcon(click.os)} {click.os}</span>}
                               {click.device && <span>📱 {click.device}</span>}
+                              {click.language && <span>🗣️ {click.language}</span>}
+                              {click.timezone && <span>🕐 {click.timezone}</span>}
                               {click.referrer && click.referrer !== "Direct" && <span>↩ {click.referrer}</span>}
                             </div>
+                            {click.org && (
+                              <div className="text-xs text-muted-foreground/70 flex items-center gap-1">
+                                <Building2 className="w-3 h-3" /> {click.org}
+                              </div>
+                            )}
                             {click.ip && (
                               <div className="text-xs font-mono text-muted-foreground/60 flex items-center gap-1">
                                 <Shield className="w-3 h-3" /> {click.ip}
@@ -493,7 +633,6 @@ function UtmBuilderModal({ open, onClose }: { open: boolean; onClose: () => void
         </DialogHeader>
 
         <div className="space-y-4 mt-2">
-          {/* Quick presets */}
           <div>
             <p className="text-xs text-muted-foreground mb-2 font-medium">Quick presets</p>
             <div className="flex flex-wrap gap-2">
@@ -537,7 +676,6 @@ function UtmBuilderModal({ open, onClose }: { open: boolean; onClose: () => void
             </div>
           </div>
 
-          {/* Generated URL */}
           {builtUrl && (
             <div className="bg-secondary/40 rounded-xl p-3 border border-border/40">
               <p className="text-xs text-muted-foreground font-medium mb-2">Generated URL</p>
@@ -562,6 +700,7 @@ function UtmBuilderModal({ open, onClose }: { open: boolean; onClose: () => void
 /* ── URL Row ──────────────────────────────────────────────── */
 function UrlRow({ item, shortBase, onDelete, onAnalytics }: { item: ShortUrl; shortBase: string; onDelete: (id: number) => void; onAnalytics: (u: ShortUrl) => void }) {
   const short = `${shortBase}/s/${item.shortCode}`;
+  const isExpired = item.clickLimit !== null && item.clicks >= (item.clickLimit ?? Infinity);
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -571,7 +710,15 @@ function UrlRow({ item, shortBase, onDelete, onAnalytics }: { item: ShortUrl; sh
       className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-xl bg-secondary/30 border border-border/40 hover:border-primary/30 transition-colors group"
     >
       <div className="flex-1 min-w-0">
-        {item.title && <p className="text-sm font-semibold text-foreground mb-1 truncate">{item.title}</p>}
+        <div className="flex items-center gap-2 mb-1">
+          {item.title && <p className="text-sm font-semibold text-foreground truncate">{item.title}</p>}
+          {item.passwordHash && <Lock className="w-3 h-3 text-purple-400 shrink-0" title="Password protected" />}
+          {item.clickLimit && (
+            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${isExpired ? "bg-red-500/15 text-red-400" : "bg-amber-500/15 text-amber-400"}`}>
+              {isExpired ? "Expired" : `${item.clicks}/${item.clickLimit}`}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2 mb-1">
           <a href={short} target="_blank" rel="noopener noreferrer" className="text-primary font-mono text-sm font-semibold hover:underline truncate">
             {short}
@@ -615,6 +762,9 @@ export default function UrlShortener() {
   const [inputTitle, setInputTitle] = useState("");
   const [customSlug, setCustomSlug] = useState("");
   const [showCustomSlug, setShowCustomSlug] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [linkPassword, setLinkPassword] = useState("");
+  const [clickLimit, setClickLimit] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
 
@@ -638,9 +788,18 @@ export default function UrlShortener() {
     if (!inputUrl.trim()) return;
     setCreating(true); setCreateError("");
     try {
-      const created = await toolsApi.urls.create(inputUrl.trim(), inputTitle.trim() || undefined, customSlug.trim() || undefined);
+      const limit = clickLimit.trim() ? parseInt(clickLimit.trim()) : undefined;
+      const created = await toolsApi.urls.create(
+        inputUrl.trim(),
+        inputTitle.trim() || undefined,
+        customSlug.trim() || undefined,
+        linkPassword.trim() || undefined,
+        limit && limit > 0 ? limit : undefined,
+      );
       setUrls(prev => [created, ...prev]);
-      setInputUrl(""); setInputTitle(""); setCustomSlug(""); setShowCustomSlug(false);
+      setInputUrl(""); setInputTitle(""); setCustomSlug("");
+      setShowCustomSlug(false); setShowAdvanced(false);
+      setLinkPassword(""); setClickLimit("");
     } catch (err: any) {
       setCreateError(err.message ?? "Failed to shorten URL");
     } finally {
@@ -654,7 +813,6 @@ export default function UrlShortener() {
   };
 
   const handleLogout = async () => { await ctxLogout(); setUrls([]); };
-
   const handleAnalytics = (url: ShortUrl) => { setAnalyticsUrl(url); setAnalyticsOpen(true); };
 
   if (loading) {
@@ -763,33 +921,95 @@ export default function UrlShortener() {
               </div>
 
               {user && (
-                <div>
-                  {!showCustomSlug ? (
-                    <button type="button" onClick={() => setShowCustomSlug(true)} className="text-sm text-primary hover:underline flex items-center gap-1.5">
-                      <Link2 className="w-3.5 h-3.5" /> Add custom alias
+                <>
+                  {/* Custom alias */}
+                  <div>
+                    {!showCustomSlug ? (
+                      <button type="button" onClick={() => setShowCustomSlug(true)} className="text-sm text-primary hover:underline flex items-center gap-1.5">
+                        <Link2 className="w-3.5 h-3.5" /> Add custom alias
+                      </button>
+                    ) : (
+                      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
+                        <div className="flex items-center justify-between mb-1">
+                          <Label className="text-sm font-semibold flex items-center gap-1.5">
+                            <Link2 className="w-3.5 h-3.5 text-primary" /> Custom Alias
+                          </Label>
+                          <button type="button" onClick={() => { setShowCustomSlug(false); setCustomSlug(""); }} className="text-muted-foreground hover:text-foreground text-xs">Remove</button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground font-mono shrink-0">{shortBase}/s/</span>
+                          <Input
+                            placeholder="your-custom-alias"
+                            value={customSlug}
+                            onChange={e => setCustomSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ""))}
+                            className="h-9 font-mono text-sm"
+                            maxLength={50}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground">Letters, numbers, hyphens only.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Advanced options */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvanced(v => !v)}
+                      className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
+                    >
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
+                      Advanced options (password, click limit)
                     </button>
-                  ) : (
-                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-2">
-                      <div className="flex items-center justify-between mb-1">
-                        <Label className="text-sm font-semibold flex items-center gap-1.5">
-                          <Link2 className="w-3.5 h-3.5 text-primary" /> Custom Alias
-                        </Label>
-                        <button type="button" onClick={() => { setShowCustomSlug(false); setCustomSlug(""); }} className="text-muted-foreground hover:text-foreground text-xs">Remove</button>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground font-mono shrink-0">{shortBase}/s/</span>
-                        <Input
-                          placeholder="your-custom-alias"
-                          value={customSlug}
-                          onChange={e => setCustomSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-_]/g, ""))}
-                          className="h-9 font-mono text-sm"
-                          maxLength={50}
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground">Letters, numbers, hyphens only. Leave blank for auto-generated.</p>
-                    </div>
-                  )}
-                </div>
+
+                    <AnimatePresence>
+                      {showAdvanced && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.25 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="mt-3 rounded-xl border border-border/50 bg-secondary/20 p-4 space-y-4">
+                            {/* Password protection */}
+                            <div>
+                              <Label className="mb-1.5 block text-sm flex items-center gap-1.5">
+                                <Lock className="w-3.5 h-3.5 text-purple-400" />
+                                Password Protection <span className="text-muted-foreground font-normal">(optional)</span>
+                              </Label>
+                              <Input
+                                type="password"
+                                placeholder="Set a password — visitors must enter it"
+                                value={linkPassword}
+                                onChange={e => setLinkPassword(e.target.value)}
+                                className="h-10 text-sm"
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">Visitors will see a password prompt before being redirected.</p>
+                            </div>
+
+                            {/* Click limit */}
+                            <div>
+                              <Label className="mb-1.5 block text-sm flex items-center gap-1.5">
+                                <Hash className="w-3.5 h-3.5 text-amber-400" />
+                                Click Limit <span className="text-muted-foreground font-normal">(optional)</span>
+                              </Label>
+                              <Input
+                                type="number"
+                                placeholder="e.g. 100 — link expires after this many clicks"
+                                value={clickLimit}
+                                onChange={e => setClickLimit(e.target.value)}
+                                className="h-10 text-sm"
+                                min={1}
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">After reaching this limit, the link will show an "expired" page.</p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </>
               )}
 
               {createError && (

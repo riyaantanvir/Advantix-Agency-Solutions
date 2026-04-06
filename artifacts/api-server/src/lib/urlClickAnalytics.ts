@@ -15,6 +15,28 @@ export const countryNames: Record<string, string> = {
   KR: "South Korea", RU: "Russia", ZA: "South Africa", TH: "Thailand", VN: "Vietnam",
 };
 
+const languageNames: Record<string, string> = {
+  BN: "Bengali", EN: "English", AR: "Arabic", HI: "Hindi", UR: "Urdu",
+  FR: "French", DE: "German", ZH: "Chinese", ES: "Spanish", PT: "Portuguese",
+  RU: "Russian", JA: "Japanese", KO: "Korean", TR: "Turkish", ID: "Indonesian",
+  MS: "Malay", TH: "Thai", VI: "Vietnamese", FA: "Persian", PL: "Polish",
+  NL: "Dutch", IT: "Italian", SV: "Swedish", NO: "Norwegian", DA: "Danish",
+  FI: "Finnish", CS: "Czech", HU: "Hungarian", RO: "Romanian", UK: "Ukrainian",
+};
+
+const BOT_UA_PATTERN = /bot|crawler|spider|scraper|facebookexternalhit|whatsapp|telegrambot|googlebot|bingbot|slurp|duckduckbot|baiduspider|yandexbot|sogou|exabot|ia_archiver|msnbot|prerender|preview/i;
+
+export function isBot(ua: string): boolean {
+  return BOT_UA_PATTERN.test(ua);
+}
+
+export function parseLanguage(acceptLang: string | undefined): string {
+  if (!acceptLang) return "Unknown";
+  const primary = acceptLang.split(",")[0].trim();
+  const code = primary.split(";")[0].split("-")[0].toUpperCase();
+  return languageNames[code] ?? code;
+}
+
 export function getIp(req: Request): string {
   const forwarded = req.headers["x-forwarded-for"];
   if (forwarded) {
@@ -73,31 +95,50 @@ export function parseReferrer(ref: string | undefined): string {
   }
 }
 
-// Lookup ISP + mobile flag from ip-api.com (free tier: 45 req/min, no key needed)
-// Returns { isp, isMobile } — fire-and-forget safe
-export async function lookupIsp(ip: string): Promise<{ isp: string | null; isMobile: boolean }> {
+export interface IpData {
+  isp: string | null;
+  org: string | null;
+  timezone: string | null;
+  region: string | null;
+  isMobile: boolean;
+}
+
+// Lookup ISP, org, timezone, region from ip-api.com (free tier: 45 req/min)
+export async function lookupIpData(ip: string): Promise<IpData> {
   if (!ip || ip === "127.0.0.1" || ip === "::1") {
-    return { isp: null, isMobile: false };
+    return { isp: null, org: null, timezone: null, region: null, isMobile: false };
   }
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000); // 2s max
+    const timeout = setTimeout(() => controller.abort(), 2500);
     const res = await fetch(
-      `http://ip-api.com/json/${ip}?fields=isp,mobile,status`,
+      `http://ip-api.com/json/${ip}?fields=isp,mobile,org,timezone,regionName,status`,
       { signal: controller.signal }
     );
     clearTimeout(timeout);
-    if (!res.ok) return { isp: null, isMobile: false };
-    const data = await res.json() as { status: string; isp?: string; mobile?: boolean };
-    if (data.status !== "success") return { isp: null, isMobile: false };
+    if (!res.ok) return { isp: null, org: null, timezone: null, region: null, isMobile: false };
+    const data = await res.json() as {
+      status: string; isp?: string; mobile?: boolean;
+      org?: string; timezone?: string; regionName?: string;
+    };
+    if (data.status !== "success") return { isp: null, org: null, timezone: null, region: null, isMobile: false };
     return {
       isp: data.isp ?? null,
+      org: data.org ?? null,
+      timezone: data.timezone ?? null,
+      region: data.regionName ?? null,
       isMobile: data.mobile ?? false,
     };
   } catch {
-    return { isp: null, isMobile: false };
+    return { isp: null, org: null, timezone: null, region: null, isMobile: false };
   }
 }
+
+// Backward compat alias
+export const lookupIsp = async (ip: string) => {
+  const d = await lookupIpData(ip);
+  return { isp: d.isp, isMobile: d.isMobile };
+};
 
 export function getGeoData(ip: string) {
   const geo = ip === "127.0.0.1" || ip === "::1" ? null : geoip.lookup(ip);

@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ToolsUserProvider } from "@/context/ToolsUserContext";
+import { PageTracker } from "@/components/PageTracker";
 
 const Home = lazy(() => import("@/pages/Home"));
 const Blog = lazy(() => import("@/pages/Blog"));
@@ -86,6 +87,7 @@ function App() {
         <TooltipProvider>
           <ToolsUserProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <PageTracker />
               <Router />
             </WouterRouter>
           </ToolsUserProvider>
