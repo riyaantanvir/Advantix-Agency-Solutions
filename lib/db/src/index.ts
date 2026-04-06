@@ -14,8 +14,17 @@ if (!databaseUrl) {
 
 // Strip ?sslmode= from the URL so the explicit ssl option below takes full
 // precedence — mixing both can cause "SSL certificate chain" errors on
-// DigitalOcean managed PostgreSQL.
-const cleanUrl = databaseUrl.replace(/([?&])sslmode=[^&]*/g, "$1").replace(/[?&]$/, "");
+// DigitalOcean managed PostgreSQL. Use URL API for correct handling of
+// multi-param strings (avoids leaving dangling "?&" fragments).
+const cleanUrl = (() => {
+  try {
+    const u = new URL(databaseUrl);
+    u.searchParams.delete("sslmode");
+    return u.toString();
+  } catch {
+    return databaseUrl;
+  }
+})();
 
 // Log the host (without credentials) at startup to help debug connection issues.
 try {
