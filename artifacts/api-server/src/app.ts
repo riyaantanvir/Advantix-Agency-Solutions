@@ -13,7 +13,12 @@ import { logger } from "./lib/logger.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 if (!process.env.SESSION_SECRET) {
-  throw new Error("SESSION_SECRET must be set.");
+  // Auto-generate a random secret so the server starts.
+  // WARNING: Sessions will be invalidated on every restart.
+  // Set SESSION_SECRET env var in production for persistent sessions.
+  const { randomBytes } = await import("node:crypto");
+  process.env.SESSION_SECRET = randomBytes(32).toString("hex");
+  logger.warn("SESSION_SECRET not set — auto-generated a random secret. Sessions will NOT persist across restarts. Set SESSION_SECRET in your environment variables.");
 }
 
 if (!process.env.DATABASE_URL) {
