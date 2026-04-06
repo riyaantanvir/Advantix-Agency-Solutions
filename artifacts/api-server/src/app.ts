@@ -9,7 +9,8 @@ import { fileURLToPath } from "url";
 import router from "./routes/index.js";
 import redirectRouter from "./routes/shortRedirect.js";
 import { logger } from "./lib/logger.js";
-import { pool } from "@workspace/db";
+import { pool, db } from "@workspace/db";
+import { sql } from "drizzle-orm";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -121,6 +122,37 @@ app.use(redirectRouter);
 // ── API routes ────────────────────────────────────────────────────────────────
 app.use("/api", router);
 
+// ── HTML helpers for OG meta tag injection ────────────────────────────────────
+function escHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function injectBlogOg(
+  html: string,
+  { title, description, image, url }: { title: string; description: string; image: string; url: string },
+): string {
+  const t  = escHtml(title);
+  const d  = escHtml(description);
+  const im = escHtml(image);
+  const u  = escHtml(url);
+  return html
+    .replace(/<title>[^<]*<\/title>/, `<title>${t}</title>`)
+    .replace(/(name="description"[^>]*content=")[^"]*(")/i,         `$1${d}$2`)
+    .replace(/(rel="canonical"[^>]*href=")[^"]*(")/i,               `$1${u}$2`)
+    .replace(/(property="og:type"[^>]*content=")[^"]*(")/i,         `$1article$2`)
+    .replace(/(property="og:title"[^>]*content=")[^"]*(")/i,        `$1${t}$2`)
+    .replace(/(property="og:description"[^>]*content=")[^"]*(")/i,  `$1${d}$2`)
+    .replace(/(property="og:image"[^>]*content=")[^"]*(")/i,        `$1${im}$2`)
+    .replace(/(property="og:url"[^>]*content=")[^"]*(")/i,          `$1${u}$2`)
+    .replace(/(name="twitter:title"[^>]*content=")[^"]*(")/i,       `$1${t}$2`)
+    .replace(/(name="twitter:description"[^>]*content=")[^"]*(")/i, `$1${d}$2`)
+    .replace(/(name="twitter:image"[^>]*content=")[^"]*(")/i,       `$1${im}$2`);
+}
+
 // ── Static file serving in production ─────────────────────────────────────────
 if (isProd) {
   const websiteDir = path.resolve(__dirname, "../../advantix-website/dist/public");
@@ -146,6 +178,53 @@ if (isProd) {
   // Public website at /  (catch-all last)
   if (fs.existsSync(websiteDir)) {
     app.use(express.static(websiteDir, { index: false }));
+
+    // ── Blog post OG injection — must come BEFORE the generic catch-all ────────
+    // Facebook / LinkedIn / Telegram crawlers don't run JS, so React Helmet
+    // never fires for them.  We read the post from DB and rewrite the OG meta
+    // tags in the raw index.html before sending it so crawlers see real data.
+    app.get("/blog/:slug", async (req, res, next) => {
+      try {
+        const { slug } = req.params;
+        const result = await db.execute(sql`
+          SELECT title, excerpt, cover_image_url, seo_title, seo_description
+          FROM blog_posts
+          WHERE slug = ${slug} AND status = 'published'
+          LIMIT 1
+        `);
+        const row = result.rows[0] as {
+          title: string;
+          excerpt: string | null;
+          cover_image_url: string | null;
+          seo_title: string | null;
+          seo_description: string | null;
+        } | undefined;
+
+        if (!row) { next(); return; }
+
+        const postTitle   = row.seo_title ?? row.title;
+        const postDesc    = row.seo_description ?? row.excerpt ?? `Read "${row.title}" on the Advantix Agency blog.`;
+        const postImage   = row.cover_image_url ?? "https://advantix.agency/images/og-image.png";
+        const postUrl     = `https://advantix.agency/blog/${slug}`;
+        const fullTitle   = `${postTitle} | Advantix Agency`;
+
+        const template = fs.readFileSync(path.join(websiteDir, "index.html"), "utf-8");
+        const injected  = injectBlogOg(template, {
+          title:       fullTitle,
+          description: postDesc,
+          image:       postImage,
+          url:         postUrl,
+        });
+
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.setHeader("Cache-Control", "public, max-age=300"); // 5-min cache for bots
+        res.send(injected);
+      } catch (err) {
+        logger.error({ err }, "Blog OG injection failed");
+        next();
+      }
+    });
+
     // Express 5 requires named wildcard params — "/*path" instead of "*"
     app.get("/{*path}", (req, res, next) => {
       if (req.path.startsWith("/api") || req.path.startsWith("/s/")) {
