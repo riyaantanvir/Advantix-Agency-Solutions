@@ -49,6 +49,12 @@ services:
         value: admin
       - key: ADMIN_PASSWORD
         type: SECRET
+      - key: OPENAI_API_KEY
+        type: SECRET
+      - key: ANTHROPIC_API_KEY
+        type: SECRET
+      - key: GOOGLE_AI_API_KEY
+        type: SECRET
 
 databases:
   - name: db
