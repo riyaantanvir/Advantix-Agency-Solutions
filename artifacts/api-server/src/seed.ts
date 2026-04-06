@@ -4,11 +4,127 @@ import { eq, sql, count } from "drizzle-orm";
 import { logger } from "./lib/logger.js";
 
 export async function runMigrations(): Promise<void> {
+  // ── Core tables ──────────────────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS admins (
+      id serial PRIMARY KEY,
+      username text NOT NULL UNIQUE,
+      password_hash text NOT NULL,
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS contacts (
+      id serial PRIMARY KEY,
+      name text NOT NULL,
+      email text NOT NULL,
+      phone text,
+      service text,
+      message text NOT NULL,
+      replied boolean DEFAULT false NOT NULL,
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
   await db.execute(sql`
     ALTER TABLE contacts
       ADD COLUMN IF NOT EXISTS whatsapp text,
       ADD COLUMN IF NOT EXISTS budget text,
       ADD COLUMN IF NOT EXISTS details text
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS portfolio_items (
+      id serial PRIMARY KEY,
+      title text NOT NULL,
+      category text NOT NULL,
+      description text,
+      image_url text,
+      video_url text,
+      client_name text,
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS team_members (
+      id serial PRIMARY KEY,
+      name text NOT NULL,
+      role text NOT NULL,
+      bio text,
+      photo_url text,
+      email text,
+      linkedin_url text,
+      "order" serial NOT NULL,
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS leads (
+      id serial PRIMARY KEY,
+      service text NOT NULL,
+      source_page text,
+      visitor_id text,
+      name text,
+      email text,
+      status text DEFAULT 'new' NOT NULL,
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS visitor_sessions (
+      id serial PRIMARY KEY,
+      visitor_id text NOT NULL UNIQUE,
+      first_seen_at timestamp DEFAULT now() NOT NULL,
+      last_seen_at timestamp DEFAULT now() NOT NULL,
+      page_view_count integer DEFAULT 1 NOT NULL,
+      user_agent text,
+      referrer text
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS page_views (
+      id serial PRIMARY KEY,
+      visitor_id text NOT NULL,
+      page text NOT NULL,
+      user_agent text,
+      referrer text,
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS conversations (
+      id serial PRIMARY KEY,
+      title text DEFAULT '' NOT NULL,
+      visitor_name text,
+      visitor_email text,
+      status text DEFAULT 'ai' NOT NULL,
+      session_token text,
+      has_unread_admin boolean DEFAULT false NOT NULL,
+      has_unread_visitor boolean DEFAULT false NOT NULL,
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_session_token
+    ON conversations (session_token) WHERE session_token IS NOT NULL
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS messages (
+      id serial PRIMARY KEY,
+      conversation_id integer NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+      role text NOT NULL,
+      content text NOT NULL,
+      created_at timestamptz DEFAULT now() NOT NULL
+    )
   `);
 
   await db.execute(sql`
@@ -24,14 +140,25 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  // ── Tool users & URL shortener ────────────────────────────────────────────
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS tool_users (
       id serial PRIMARY KEY,
       name text NOT NULL,
       email text NOT NULL UNIQUE,
       password_hash text NOT NULL,
+      company_name text,
+      phone text,
+      website text,
       created_at timestamp DEFAULT now() NOT NULL
     )
+  `);
+
+  await db.execute(sql`
+    ALTER TABLE tool_users
+      ADD COLUMN IF NOT EXISTS company_name text,
+      ADD COLUMN IF NOT EXISTS phone text,
+      ADD COLUMN IF NOT EXISTS website text
   `);
 
   await db.execute(sql`
@@ -44,22 +171,6 @@ export async function runMigrations(): Promise<void> {
       clicks integer NOT NULL DEFAULT 0,
       created_at timestamp DEFAULT now() NOT NULL
     )
-  `);
-
-  await db.execute(sql`
-    ALTER TABLE conversations
-      ADD COLUMN IF NOT EXISTS visitor_name text,
-      ADD COLUMN IF NOT EXISTS visitor_email text,
-      ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'ai',
-      ADD COLUMN IF NOT EXISTS session_token text,
-      ADD COLUMN IF NOT EXISTS has_unread_admin boolean NOT NULL DEFAULT false,
-      ADD COLUMN IF NOT EXISTS has_unread_visitor boolean NOT NULL DEFAULT false,
-      ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now()
-  `);
-
-  await db.execute(sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_session_token
-    ON conversations (session_token) WHERE session_token IS NOT NULL
   `);
 
   await db.execute(sql`
@@ -76,18 +187,174 @@ export async function runMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
-    ALTER TABLE tool_users
-      ADD COLUMN IF NOT EXISTS company_name text,
-      ADD COLUMN IF NOT EXISTS phone text,
-      ADD COLUMN IF NOT EXISTS website text
-  `);
-
-  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS recording_sessions (
       id serial PRIMARY KEY,
       user_id integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
       duration_seconds integer NOT NULL DEFAULT 0,
       created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  // ── AI tables ─────────────────────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS ai_projects (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      name text NOT NULL,
+      instructions text NOT NULL DEFAULT '',
+      emoji text NOT NULL DEFAULT '📁',
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS ai_sessions (
+      id serial PRIMARY KEY,
+      user_id integer REFERENCES tool_users(id) ON DELETE CASCADE,
+      project_id integer REFERENCES ai_projects(id) ON DELETE SET NULL,
+      title text NOT NULL DEFAULT 'New Chat',
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS ai_messages (
+      id serial PRIMARY KEY,
+      session_id integer NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
+      role text NOT NULL,
+      content text NOT NULL,
+      provider text,
+      model text,
+      intent_type text,
+      prompt_tokens integer,
+      completion_tokens integer,
+      feedback text,
+      created_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS ai_usage_logs (
+      id serial PRIMARY KEY,
+      user_id integer REFERENCES tool_users(id) ON DELETE SET NULL,
+      provider text NOT NULL,
+      model text NOT NULL,
+      intent_type text,
+      prompt_tokens integer NOT NULL DEFAULT 0,
+      completion_tokens integer NOT NULL DEFAULT 0,
+      total_tokens integer NOT NULL DEFAULT 0,
+      estimated_cost_usd numeric(10,6) NOT NULL DEFAULT 0,
+      created_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS ai_user_limits (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL UNIQUE REFERENCES tool_users(id) ON DELETE CASCADE,
+      monthly_token_limit integer,
+      monthly_usd_limit numeric(10,4),
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS ai_memories (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      content text NOT NULL,
+      source text NOT NULL DEFAULT 'auto',
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  // ── Integrations & settings ───────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS integrations (
+      id serial PRIMARY KEY,
+      name text NOT NULL UNIQUE,
+      label text NOT NULL,
+      value text NOT NULL DEFAULT '',
+      description text,
+      category text NOT NULL DEFAULT 'Other',
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  // ── Landing page builder ──────────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS landing_page_projects (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      name text NOT NULL DEFAULT 'Untitled Project',
+      html text NOT NULL DEFAULT '',
+      messages jsonb NOT NULL DEFAULT '[]',
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  // ── Admin tools ───────────────────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id serial PRIMARY KEY,
+      title text NOT NULL,
+      description text,
+      status text NOT NULL DEFAULT 'todo',
+      priority text NOT NULL DEFAULT 'medium',
+      type text NOT NULL DEFAULT 'internal',
+      client_name text,
+      assigned_to text,
+      due_date timestamptz,
+      tags text,
+      position integer DEFAULT 0 NOT NULL,
+      created_by text,
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS blog_posts (
+      id serial PRIMARY KEY,
+      title text NOT NULL,
+      slug text NOT NULL UNIQUE,
+      excerpt text,
+      content text NOT NULL DEFAULT '',
+      cover_image_url text,
+      author text NOT NULL DEFAULT 'Advantix Team',
+      category text NOT NULL DEFAULT 'General',
+      tags text,
+      status text NOT NULL DEFAULT 'draft',
+      reading_time text,
+      seo_title text,
+      seo_description text,
+      featured boolean NOT NULL DEFAULT false,
+      published_at timestamptz,
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS bug_reports (
+      id serial PRIMARY KEY,
+      title text NOT NULL,
+      description text NOT NULL,
+      screenshot text,
+      status text NOT NULL DEFAULT 'pending',
+      priority text NOT NULL DEFAULT 'medium',
+      reporter_name text,
+      reporter_email text,
+      page_url text,
+      admin_note text,
+      created_at timestamp DEFAULT now() NOT NULL,
+      updated_at timestamp DEFAULT now() NOT NULL
     )
   `);
 
@@ -119,15 +386,15 @@ export async function ensureSessionTable(): Promise<void> {
 }
 
 export async function seedAdmin(): Promise<void> {
-  const username = "admin";
-  const password = "2816";
+  const username = process.env.ADMIN_USERNAME ?? "admin";
+  const password = process.env.ADMIN_PASSWORD ?? "2816";
 
   const [existing] = await db.select().from(adminsTable).where(eq(adminsTable.username, username)).limit(1);
 
   if (!existing) {
     const passwordHash = await bcrypt.hash(password, 12);
     await db.insert(adminsTable).values({ username, passwordHash });
-    logger.info("Admin user seeded successfully");
+    logger.info({ username }, "Admin user seeded successfully");
   } else {
     logger.info("Admin user already exists, skipping seed");
   }

@@ -116,26 +116,38 @@ app.use(redirectRouter);
 app.use("/api", router);
 
 // ── Static file serving in production ─────────────────────────────────────────
-// The Dockerfile copies built frontends to these paths relative to dist/index.mjs
 if (isProd) {
   const websiteDir = path.resolve(__dirname, "../../advantix-website/dist/public");
   const adminDir   = path.resolve(__dirname, "../../advantix-admin/dist/public");
+  const aiDir      = path.resolve(__dirname, "../../advantix-ai/dist/public");
 
   // Admin dashboard at /admin/
-  app.use("/admin", express.static(adminDir, { index: false }));
-  app.get(/^\/admin(\/.*)?$/, (_req, res) => {
-    res.sendFile(path.join(adminDir, "index.html"));
-  });
+  if (fs.existsSync(adminDir)) {
+    app.use("/admin", express.static(adminDir, { index: false }));
+    app.get(/^\/admin(\/.*)?$/, (_req, res) => {
+      res.sendFile(path.join(adminDir, "index.html"));
+    });
+  }
+
+  // AI tool at /ai/
+  if (fs.existsSync(aiDir)) {
+    app.use("/ai", express.static(aiDir, { index: false }));
+    app.get(/^\/ai(\/.*)?$/, (_req, res) => {
+      res.sendFile(path.join(aiDir, "index.html"));
+    });
+  }
 
   // Public website at /  (catch-all last)
-  app.use(express.static(websiteDir, { index: false }));
-  app.get("*", (req, res, next) => {
-    if (req.path.startsWith("/api") || req.path.startsWith("/s/")) {
-      next();
-      return;
-    }
-    res.sendFile(path.join(websiteDir, "index.html"));
-  });
+  if (fs.existsSync(websiteDir)) {
+    app.use(express.static(websiteDir, { index: false }));
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith("/api") || req.path.startsWith("/s/")) {
+        next();
+        return;
+      }
+      res.sendFile(path.join(websiteDir, "index.html"));
+    });
+  }
 }
 
 export default app;
