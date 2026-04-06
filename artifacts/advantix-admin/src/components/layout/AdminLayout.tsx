@@ -33,7 +33,7 @@ import { Button } from "@/components/ui/button";
 const navLinks = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { path: "/tasks", label: "Task Management", icon: CheckSquare },
-  { path: "/notifications", label: "Notifications", icon: Bell },
+  { path: "/notifications", label: "Alert Management", icon: Bell },
   { path: "/bug-reports", label: "Bug Management", icon: Bug },
   { path: "/website-analytics", label: "Website Analytics", icon: BarChart2 },
   { path: "/content-planner",    label: "Content Planner",     icon: CalendarDays },
