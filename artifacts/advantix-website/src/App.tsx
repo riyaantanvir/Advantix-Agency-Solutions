@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
@@ -7,6 +7,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { ToolsUserProvider } from "@/context/ToolsUserContext";
 import { PageTracker } from "@/components/PageTracker";
+import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
+import { EmailCaptureModal } from "@/components/EmailCaptureModal";
+import { StickyCTABar } from "@/components/StickyCTABar";
 
 const Home = lazy(() => import("@/pages/Home"));
 const Blog = lazy(() => import("@/pages/Blog"));
@@ -81,6 +84,14 @@ function Router() {
 }
 
 function App() {
+  useEffect(() => {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register(
+        import.meta.env.BASE_URL + "sw.js"
+      ).catch(() => {});
+    }
+  }, []);
+
   return (
     <HelmetProvider>
       <QueryClientProvider client={queryClient}>
@@ -89,6 +100,9 @@ function App() {
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <PageTracker />
               <Router />
+              <EmailCaptureModal />
+              <PushNotificationPrompt />
+              <StickyCTABar />
             </WouterRouter>
           </ToolsUserProvider>
           <Toaster />

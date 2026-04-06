@@ -217,6 +217,37 @@ export async function runMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS site_settings (
+      key text PRIMARY KEY,
+      value text NOT NULL,
+      updated_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id serial PRIMARY KEY,
+      endpoint text NOT NULL UNIQUE,
+      p256dh text NOT NULL,
+      auth text NOT NULL,
+      user_agent text,
+      subscribed_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS email_subscribers (
+      id serial PRIMARY KEY,
+      email text NOT NULL UNIQUE,
+      name text,
+      source text DEFAULT 'website' NOT NULL,
+      tags text,
+      active boolean DEFAULT true NOT NULL,
+      subscribed_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS marketing_campaigns (
       id serial PRIMARY KEY,
       name text NOT NULL,

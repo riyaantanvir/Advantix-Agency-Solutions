@@ -27,6 +27,9 @@ const BlogEditor = lazy(() => import("./pages/BlogEditor"));
 const BugReports = lazy(() => import("./pages/BugReports"));
 const WebsiteAnalytics = lazy(() => import("./pages/WebsiteAnalytics"));
 const MarketingReports = lazy(() => import("./pages/MarketingReports"));
+const PushNotifications = lazy(() => import("./pages/PushNotifications"));
+const EmailSubscribers  = lazy(() => import("./pages/EmailSubscribers"));
+const SiteSettings      = lazy(() => import("./pages/SiteSettings"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -147,6 +150,18 @@ function Router() {
 
       <Route path="/marketing-reports">
         <ProtectedLayout><MarketingReports /></ProtectedLayout>
+      </Route>
+
+      <Route path="/push-notifications">
+        <ProtectedLayout><PushNotifications /></ProtectedLayout>
+      </Route>
+
+      <Route path="/email-subscribers">
+        <ProtectedLayout><EmailSubscribers /></ProtectedLayout>
+      </Route>
+
+      <Route path="/site-settings">
+        <ProtectedLayout><SiteSettings /></ProtectedLayout>
       </Route>
 
       <Route>

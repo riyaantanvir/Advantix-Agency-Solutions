@@ -25,6 +25,7 @@ import {
   Bug,
   BarChart2,
   Megaphone,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -34,7 +35,10 @@ const navLinks = [
   { path: "/notifications", label: "Notifications", icon: Bell },
   { path: "/bug-reports", label: "Bug Management", icon: Bug },
   { path: "/website-analytics", label: "Website Analytics", icon: BarChart2 },
-  { path: "/marketing-reports", label: "Marketing Reports", icon: Megaphone },
+  { path: "/marketing-reports",  label: "Marketing Reports",   icon: Megaphone },
+  { path: "/push-notifications", label: "Push Notifications",  icon: Bell },
+  { path: "/email-subscribers",  label: "Email Subscribers",   icon: Mail },
+  { path: "/site-settings",      label: "Site Settings",       icon: Settings },
   { path: "/tools", label: "Advantix Tools", icon: Zap },
   { path: "/contacts", label: "Contacts", icon: Mail },
   { path: "/leads", label: "Leads", icon: TrendingUp },

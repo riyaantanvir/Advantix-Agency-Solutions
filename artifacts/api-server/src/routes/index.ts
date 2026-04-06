@@ -25,6 +25,8 @@ import blogRouter from "./blog.js";
 import bugReportsRouter from "./bugReports.js";
 import websiteAnalyticsRouter from "./websiteAnalytics.js";
 import marketingReportsRouter from "./marketingReports.js";
+import pushNotificationsRouter from "./pushNotifications.js";
+import reengagementRouter from "./reengagement.js";
 
 const router: IRouter = Router();
 
@@ -54,5 +56,7 @@ router.use(landingPageRouter);
 router.use(landingPageProjectsRouter);
 router.use(websiteAnalyticsRouter);
 router.use(marketingReportsRouter);
+router.use(pushNotificationsRouter);
+router.use(reengagementRouter);
 
 export default router;
