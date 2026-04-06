@@ -1,3 +1,4 @@
+import { SEO } from "@/components/SEO";
 import { motion } from "framer-motion";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -194,8 +195,34 @@ export default function Contact() {
     );
   }
 
+  const contactStructuredData = {
+    "@context": "https://schema.org",
+    "@type": "ContactPage",
+    "name": "Contact Advantix Agency",
+    "url": "https://advantix.agency/contact",
+    "description": "Get in touch with Advantix Agency for web development, marketing, and automation services.",
+    "mainEntity": {
+      "@type": "Organization",
+      "name": "Advantix Agency",
+      "url": "https://advantix.agency",
+      "email": "hello@advantix.agency",
+      "address": {
+        "@type": "PostalAddress",
+        "addressCountry": "BD",
+        "addressLocality": "Bangladesh",
+      },
+    },
+  };
+
   return (
     <div className="pt-28 pb-24 min-h-screen bg-background">
+      <SEO
+        title="Contact Us — Get a Free Quote from Advantix Agency"
+        description="Ready to grow your business? Contact Advantix Agency for a free consultation. We offer web development, CRM, automation, and marketing services. Based in Bangladesh, working worldwide."
+        keywords="contact advantix agency, hire digital agency bangladesh, web development quote, free consultation, hire web developer, digital marketing agency contact"
+        canonical="/contact"
+        structuredData={contactStructuredData}
+      />
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
 

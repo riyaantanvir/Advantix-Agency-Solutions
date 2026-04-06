@@ -1,3 +1,4 @@
+import { SEO } from "@/components/SEO";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Link } from "wouter";
@@ -46,8 +47,38 @@ export default function Blog() {
   const featuredPost = posts.find((p) => p.featured) ?? posts[0] ?? null;
   const regularPosts = posts.filter((p) => p.id !== featuredPost?.id);
 
+  const blogStructuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "Blog",
+      "name": "Advantix Agency Blog",
+      "url": "https://advantix.agency/blog",
+      "description": "Tips, insights, and case studies on web development, digital marketing, automation, and business growth from the Advantix Agency team.",
+      "publisher": {
+        "@type": "Organization",
+        "name": "Advantix Agency",
+        "url": "https://advantix.agency",
+      },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://advantix.agency/" },
+        { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://advantix.agency/blog" },
+      ],
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-background">
+      <SEO
+        title="Blog — Web Dev, Marketing & Automation Tips"
+        description="Read the latest articles from Advantix Agency on web development, CRM, digital marketing, automation, and business growth strategies. Expert insights from our team in Bangladesh."
+        keywords="digital agency blog, web development tips, marketing strategies, automation tutorials, CRM setup guide, ecommerce tips, bangladesh tech blog, advantix blog"
+        canonical="/blog"
+        structuredData={blogStructuredData}
+      />
       {/* Hero */}
       <section className="relative py-24 pt-36 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />

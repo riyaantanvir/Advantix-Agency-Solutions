@@ -1,3 +1,4 @@
+import { SEO } from "@/components/SEO";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useListPortfolio } from "@workspace/api-client-react";
@@ -23,8 +24,37 @@ export default function Portfolio() {
     item => activeCategory === "All" || item.category === activeCategory
   ) || [];
 
+  const portfolioStructuredData = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": "Advantix Agency Portfolio",
+    "description": "Selected work and case studies by Advantix Agency",
+    "url": "https://advantix.agency/portfolio",
+    "itemListElement": (filteredItems ?? []).slice(0, 10).map((item, i) => ({
+      "@type": "ListItem",
+      "position": i + 1,
+      "item": {
+        "@type": "CreativeWork",
+        "name": item.title,
+        "description": item.description,
+        "image": item.imageUrl ?? undefined,
+        "creator": {
+          "@type": "Organization",
+          "name": "Advantix Agency",
+        },
+      },
+    })),
+  };
+
   return (
     <div className="pt-32 pb-24 min-h-screen bg-background">
+      <SEO
+        title="Portfolio — Our Work & Case Studies"
+        description="Browse Advantix Agency's portfolio of completed projects — custom websites, marketing campaigns, CRM systems, automation bots, and more. See how we deliver excellence for our clients worldwide."
+        keywords="advantix portfolio, web design portfolio, digital marketing case studies, CRM project examples, ecommerce website, bangladesh agency portfolio"
+        canonical="/portfolio"
+        structuredData={portfolioStructuredData}
+      />
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <motion.div

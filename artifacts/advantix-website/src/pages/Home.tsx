@@ -1,3 +1,4 @@
+import { SEO } from "@/components/SEO";
 import { motion, useInView, useMotionValue, useTransform, animate, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
 import { useState, useRef, useEffect } from "react";
@@ -168,8 +169,41 @@ export default function Home() {
 
   const heroWords = ["We", "Build", "Brands"];
 
+  const homeStructuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "@id": "https://advantix.agency/#webpage",
+      "url": "https://advantix.agency/",
+      "name": "Advantix Agency — Digital Agency in Bangladesh",
+      "description": "Full-service digital agency in Bangladesh: websites, CRM, automation, and marketing.",
+      "isPartOf": { "@id": "https://advantix.agency/#website" },
+      "about": { "@id": "https://advantix.agency/#organization" },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      "name": "Advantix Agency Services",
+      "url": "https://advantix.agency/services",
+      "itemListElement": services.slice(0, 8).map((s, i) => ({
+        "@type": "ListItem",
+        "position": i + 1,
+        "name": s.name,
+        "description": s.description,
+        "url": "https://advantix.agency/services",
+      })),
+    },
+  ];
+
   return (
     <div className="w-full">
+      <SEO
+        title="Digital Agency in Bangladesh | Web Dev, CRM, Automation & Marketing"
+        description="Advantix Agency — full-service digital agency in Bangladesh. We build custom websites, CRM systems, automation bots, and run Facebook marketing campaigns that grow your business globally."
+        keywords="digital agency bangladesh, web development company bangladesh, CRM integration, sales page design, ecommerce development, python bot automation, facebook marketing, social media management, advantix agency"
+        canonical="/"
+        structuredData={homeStructuredData}
+      />
 
       {/* ── Hero ────────────────────────────────────────────── */}
       <section className="relative min-h-screen flex items-center justify-center pt-20 overflow-hidden">

@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+Disallow: /admin/
+Disallow: /tools/dashboard
+Disallow: /tools/settings
+Disallow: /s/
+Disallow: /login
+
+Sitemap: https://advantix.agency/sitemap.xml

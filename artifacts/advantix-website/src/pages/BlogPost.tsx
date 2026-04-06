@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { Calendar, Clock, Tag, ArrowLeft, User, Loader2, Share2, Check, Copy } from "lucide-react";
+import { SEO } from "@/components/SEO";
 
 type BlogPost = {
   id: number;
@@ -203,9 +204,60 @@ export default function BlogPost() {
   }
 
   const tags = post.tags ? post.tags.split(",").map((t) => t.trim()).filter(Boolean) : [];
+  const postUrl = `https://advantix.agency/blog/${post.slug}`;
+
+  const blogPostStructuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "BlogPosting",
+      "headline": post.seoTitle ?? post.title,
+      "description": post.seoDescription ?? post.excerpt ?? undefined,
+      "image": post.coverImageUrl ?? "https://advantix.agency/images/og-image.png",
+      "url": postUrl,
+      "datePublished": post.publishedAt ?? undefined,
+      "dateModified": post.publishedAt ?? undefined,
+      "author": {
+        "@type": "Organization",
+        "name": post.author,
+        "url": "https://advantix.agency",
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "Advantix Agency",
+        "url": "https://advantix.agency",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://advantix.agency/images/logo-icon.svg",
+        },
+      },
+      "keywords": tags.join(", "),
+      "articleSection": post.category,
+      "inLanguage": "en-US",
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://advantix.agency/" },
+        { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://advantix.agency/blog" },
+        { "@type": "ListItem", "position": 3, "name": post.title, "item": postUrl },
+      ],
+    },
+  ];
 
   return (
     <article className="min-h-screen bg-background">
+      <SEO
+        title={post.seoTitle ?? post.title}
+        description={post.seoDescription ?? post.excerpt ?? `Read "${post.title}" on the Advantix Agency blog.`}
+        keywords={tags.length > 0 ? tags.join(", ") : `${post.category}, advantix blog, digital agency`}
+        ogType="article"
+        ogImage={post.coverImageUrl ?? undefined}
+        canonical={`/blog/${post.slug}`}
+        publishedAt={post.publishedAt ?? undefined}
+        author={post.author}
+        structuredData={blogPostStructuredData}
+      />
       {/* Cover image */}
       {post.coverImageUrl && (
         <div className="relative h-[45vh] md:h-[55vh] overflow-hidden">

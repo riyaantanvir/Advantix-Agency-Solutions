@@ -1,3 +1,4 @@
+import { SEO } from "@/components/SEO";
 import { motion } from "framer-motion";
 import { useListTeamMembers } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,8 +18,36 @@ const card = {
 export default function Team() {
   const { data: teamMembers, isLoading } = useListTeamMembers();
 
+  const teamStructuredData = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Advantix Agency",
+    "url": "https://advantix.agency",
+    "employee": (teamMembers ?? []).map((m) => ({
+      "@type": "Person",
+      "name": m.name,
+      "jobTitle": m.role,
+      "description": m.bio ?? undefined,
+      "image": m.photoUrl ?? undefined,
+      "email": m.email ?? undefined,
+      "sameAs": m.linkedinUrl ? [m.linkedinUrl] : undefined,
+      "worksFor": {
+        "@type": "Organization",
+        "name": "Advantix Agency",
+        "url": "https://advantix.agency",
+      },
+    })),
+  };
+
   return (
     <div className="min-h-screen bg-[#07080c]">
+      <SEO
+        title="Meet Our Team — The Experts Behind Advantix Agency"
+        description="Get to know the talented professionals at Advantix Agency. Our team of web developers, designers, marketers, and automation experts are based in Bangladesh and serve clients worldwide."
+        keywords="advantix team, digital agency team bangladesh, web developers bangladesh, UI designers, marketing experts, python developers, social media managers"
+        canonical="/team"
+        structuredData={teamStructuredData}
+      />
       {/* Section */}
       <section className="relative pt-32 pb-24 bg-[#0d0f17]">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-4/5 h-px bg-gradient-to-r from-transparent via-violet-500/30 to-transparent" />

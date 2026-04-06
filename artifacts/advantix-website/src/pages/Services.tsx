@@ -1,3 +1,4 @@
+import { SEO } from "@/components/SEO";
 import { motion } from "framer-motion";
 import { useListServices } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -32,8 +33,39 @@ export default function Services() {
 
   const activeServices = services?.filter((s) => s.isActive) ?? [];
 
+  const servicesStructuredData = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    "name": "Advantix Agency Services",
+    "description": "Full range of digital services by Advantix Agency",
+    "url": "https://advantix.agency/services",
+    "itemListElement": activeServices.map((s, i) => ({
+      "@type": "ListItem",
+      "position": i + 1,
+      "item": {
+        "@type": "Service",
+        "name": s.name,
+        "description": s.description,
+        "provider": {
+          "@type": "Organization",
+          "name": "Advantix Agency",
+          "url": "https://advantix.agency",
+        },
+        "areaServed": "Worldwide",
+        "url": "https://advantix.agency/services",
+      },
+    })),
+  };
+
   return (
     <div className="min-h-screen bg-background">
+      <SEO
+        title="Our Services — Web Dev, CRM, Automation, Marketing"
+        description="Explore all services by Advantix Agency: custom website development, CRM integration, ecommerce, Python automation bots, Facebook marketing, graphics design, and more. Based in Bangladesh, serving global clients."
+        keywords="web development services, CRM integration service, ecommerce development, python automation, facebook marketing agency, social media management, graphics design, lead generation, advantix services"
+        canonical="/services"
+        structuredData={servicesStructuredData}
+      />
       {/* Hero */}
       <section className="relative pt-36 pb-20 overflow-hidden">
         {/* Background glow */}
