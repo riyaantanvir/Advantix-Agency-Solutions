@@ -19,11 +19,13 @@ import {
   Sparkles,
   Plug,
   Zap,
+  CheckSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const navLinks = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/tasks", label: "Task Management", icon: CheckSquare },
   { path: "/tools", label: "Advantix Tools", icon: Zap },
   { path: "/contacts", label: "Contacts", icon: Mail },
   { path: "/leads", label: "Leads", icon: TrendingUp },

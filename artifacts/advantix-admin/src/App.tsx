@@ -16,6 +16,7 @@ import UserManagement from "./pages/UserManagement";
 import ManageAI from "./pages/ManageAI";
 import Integrations from "./pages/Integrations";
 import Tools from "./pages/Tools";
+import Tasks from "./pages/Tasks";
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminLayout } from "./components/layout/AdminLayout";
@@ -84,6 +85,10 @@ function Router() {
 
       <Route path="/integrations">
         <ProtectedLayout><Integrations /></ProtectedLayout>
+      </Route>
+
+      <Route path="/tasks">
+        <ProtectedLayout><Tasks /></ProtectedLayout>
       </Route>
 
       <Route path="/tools">
