@@ -241,7 +241,7 @@ export function ChatWidget() {
 
   useEffect(() => {
     if (!sessionToken) return;
-    if (phase === "pending_human" || phase === "human" || phase === "chatting") {
+    if (phase === "pending_human" || phase === "human") {
       pollRef.current = setInterval(() => poll(sessionToken, lastMsgId), POLL_INTERVAL);
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
