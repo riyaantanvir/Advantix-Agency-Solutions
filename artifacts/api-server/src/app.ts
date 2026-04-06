@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import router from "./routes/index.js";
 import redirectRouter from "./routes/shortRedirect.js";
 import { logger } from "./lib/logger.js";
+import { pool } from "@workspace/db";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -96,7 +97,7 @@ app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
 app.use(
   session({
-    store: new PgSession({ conString: process.env.DATABASE_URL }),
+    store: new PgSession({ pool }),
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
