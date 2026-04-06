@@ -35,6 +35,12 @@ export async function runMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
+    ALTER TABLE contacts
+      ADD COLUMN IF NOT EXISTS assigned_to text,
+      ADD COLUMN IF NOT EXISTS notes text
+  `);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS portfolio_items (
       id serial PRIMARY KEY,
       title text NOT NULL,

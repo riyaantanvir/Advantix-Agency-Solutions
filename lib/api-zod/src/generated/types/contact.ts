@@ -17,5 +17,7 @@ export interface Contact {
   details?: string | null;
   message: string;
   replied: boolean;
+  assignedTo?: string | null;
+  notes?: string | null;
   createdAt: Date;
 }

@@ -13,6 +13,8 @@ export const contactsTable = pgTable("contacts", {
   details: text("details"),
   message: text("message").notNull(),
   replied: boolean("replied").default(false).notNull(),
+  assignedTo: text("assigned_to"),
+  notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

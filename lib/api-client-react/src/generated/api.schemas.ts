@@ -63,6 +63,8 @@ export interface Contact {
   details?: string | null;
   message: string;
   replied: boolean;
+  assignedTo?: string | null;
+  notes?: string | null;
   createdAt: string;
 }
 
@@ -79,6 +81,8 @@ export interface CreateContactBody {
 
 export interface UpdateContactBody {
   replied?: boolean;
+  assignedTo?: string | null;
+  notes?: string | null;
 }
 
 export interface PortfolioItem {

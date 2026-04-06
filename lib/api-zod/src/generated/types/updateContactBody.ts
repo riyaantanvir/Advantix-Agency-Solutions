@@ -8,4 +8,6 @@
 
 export interface UpdateContactBody {
   replied?: boolean;
+  assignedTo?: string | null;
+  notes?: string | null;
 }

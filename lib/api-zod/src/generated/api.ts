@@ -71,6 +71,8 @@ export const ListContactsResponseItem = zod.object({
   details: zod.string().nullish(),
   message: zod.string(),
   replied: zod.boolean(),
+  assignedTo: zod.string().nullish(),
+  notes: zod.string().nullish(),
   createdAt: zod.date(),
 });
 export const ListContactsResponse = zod.array(ListContactsResponseItem);
@@ -84,6 +86,8 @@ export const UpdateContactParams = zod.object({
 
 export const UpdateContactBody = zod.object({
   replied: zod.boolean().optional(),
+  assignedTo: zod.string().nullish(),
+  notes: zod.string().nullish(),
 });
 
 export const UpdateContactResponse = zod.object({
@@ -97,6 +101,8 @@ export const UpdateContactResponse = zod.object({
   details: zod.string().nullish(),
   message: zod.string(),
   replied: zod.boolean(),
+  assignedTo: zod.string().nullish(),
+  notes: zod.string().nullish(),
   createdAt: zod.date(),
 });
 

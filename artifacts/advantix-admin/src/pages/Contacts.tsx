@@ -1,11 +1,11 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useListContacts, useUpdateContact, useDeleteContact } from "@workspace/api-client-react";
 import type { Contact } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Check, Trash2, Search, Mail, ArrowUpDown, ArrowUp, ArrowDown,
-  Download, Upload, Loader2, AlertCircle, FileText,
+  Download, Upload, Loader2, AlertCircle, FileText, UserCheck, Save,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -100,12 +100,29 @@ function downloadCsv(csv: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+/* ── Admin list hook ────────────────────────────────────────── */
+function useAdminList() {
+  const [admins, setAdmins] = useState<Array<{ id: number; username: string }>>([]);
+  useEffect(() => {
+    fetch("/api/contacts/admins", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setAdmins(Array.isArray(data) ? data : []))
+      .catch(() => setAdmins([]));
+  }, []);
+  return admins;
+}
+
 /* ══════════════════════════════════════════════════════════ */
 export default function Contacts() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  /* dialog edit state */
+  const [editAssignedTo, setEditAssignedTo] = useState<string>("");
+  const [editNotes, setEditNotes] = useState<string>("");
+  const [savingMeta, setSavingMeta] = useState(false);
 
   /* import state */
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -117,10 +134,19 @@ export default function Contacts() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const admins = useAdminList();
 
   const { data: contacts, isLoading } = useListContacts();
   const updateMutation = useUpdateContact();
   const deleteMutation = useDeleteContact();
+
+  /* sync dialog edit state when contact changes */
+  useEffect(() => {
+    if (selectedContact) {
+      setEditAssignedTo(selectedContact.assignedTo ?? "");
+      setEditNotes(selectedContact.notes ?? "");
+    }
+  }, [selectedContact?.id]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -253,6 +279,32 @@ export default function Contacts() {
     );
   };
 
+  /* ── Save assignment + notes ── */
+  const handleSaveMeta = async () => {
+    if (!selectedContact) return;
+    setSavingMeta(true);
+    try {
+      const res = await fetch(`/api/contacts/${selectedContact.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          assignedTo: editAssignedTo || null,
+          notes: editNotes || null,
+        }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      const updated = await res.json() as Contact;
+      setSelectedContact(updated);
+      await queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+      toast({ title: "Saved", description: "Assignment and notes updated." });
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Could not save changes." });
+    } finally {
+      setSavingMeta(false);
+    }
+  };
+
   const thClass = "px-6 py-4 font-semibold text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors";
   const validImportCount = importRows.filter(r => r.name && r.email && r.message).length;
   const skippedCount = importRows.length - validImportCount;
@@ -333,6 +385,7 @@ export default function Contacts() {
                 <th className={thClass} onClick={() => toggleSort("replied")}>
                   <span className="flex items-center">Status <SortIcon column="replied" sortKey={sortKey} sortDir={sortDir} /></span>
                 </th>
+                <th className="px-6 py-4 font-semibold text-muted-foreground hidden xl:table-cell">Assigned To</th>
                 <th className="px-6 py-4 font-semibold text-muted-foreground hidden lg:table-cell">Message</th>
                 <th className="px-6 py-4 font-semibold text-muted-foreground text-right">Actions</th>
               </tr>
@@ -346,6 +399,7 @@ export default function Contacts() {
                     <td className="px-6 py-4"><Skeleton className="h-4 w-40" /></td>
                     <td className="px-6 py-4"><Skeleton className="h-4 w-24" /></td>
                     <td className="px-6 py-4"><Skeleton className="h-6 w-20 rounded-full" /></td>
+                    <td className="px-6 py-4 hidden xl:table-cell"><Skeleton className="h-4 w-24" /></td>
                     <td className="px-6 py-4 hidden lg:table-cell"><Skeleton className="h-4 w-48" /></td>
                     <td className="px-6 py-4 text-right"><Skeleton className="h-8 w-8 inline-block rounded-lg" /></td>
                   </tr>
@@ -370,6 +424,16 @@ export default function Contacts() {
                         <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/20">Pending</Badge>
                       )}
                     </td>
+                    <td className="px-6 py-4 hidden xl:table-cell">
+                      {contact.assignedTo ? (
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-primary">
+                          <UserCheck className="w-3.5 h-3.5 shrink-0" />
+                          {contact.assignedTo}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground/50">—</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 hidden lg:table-cell max-w-[200px]">
                       <p className="text-sm text-muted-foreground truncate">{contact.message}</p>
                     </td>
@@ -390,7 +454,7 @@ export default function Contacts() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-6 py-16 text-center">
+                  <td colSpan={8} className="px-6 py-16 text-center">
                     <Mail className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground text-lg">No contacts found.</p>
                   </td>
@@ -403,7 +467,7 @@ export default function Contacts() {
 
       {/* Contact detail dialog */}
       <Dialog open={!!selectedContact} onOpenChange={(open) => !open && setSelectedContact(null)}>
-        <DialogContent className="sm:max-w-xl bg-card border-border/50">
+        <DialogContent className="sm:max-w-2xl bg-card border-border/50 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-display flex justify-between pr-6">
               Message from {selectedContact?.name}
@@ -472,14 +536,62 @@ export default function Contacts() {
               }
             })()}
 
-            <div className="p-4 bg-secondary/30 rounded-xl border border-border/50 min-h-[120px]">
-              <p className="text-xs text-muted-foreground mb-2">Message / Additional Notes</p>
+            <div className="p-4 bg-secondary/30 rounded-xl border border-border/50 min-h-[100px]">
+              <p className="text-xs text-muted-foreground mb-2">Client Message</p>
               <p className="text-sm whitespace-pre-wrap leading-relaxed text-foreground">
                 {selectedContact?.message}
               </p>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4">
+            {/* ── Assignment + Notes section ── */}
+            <div className="border border-border/40 rounded-xl p-4 space-y-4 bg-secondary/10">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Internal</p>
+
+              {/* Assign admin */}
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5" /> Assigned To
+                </label>
+                <select
+                  value={editAssignedTo}
+                  onChange={e => setEditAssignedTo(e.target.value)}
+                  className="w-full rounded-lg border border-border/50 bg-card text-sm text-foreground px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                >
+                  <option value="">— Unassigned —</option>
+                  {admins.map(a => (
+                    <option key={a.id} value={a.username}>{a.username}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="text-xs text-muted-foreground mb-1.5 block">Internal Notes</label>
+                <textarea
+                  value={editNotes}
+                  onChange={e => setEditNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Add notes about this contact, follow-up actions, etc…"
+                  className="w-full rounded-lg border border-border/50 bg-card text-sm text-foreground px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/40"
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={handleSaveMeta}
+                  disabled={savingMeta}
+                  className="gap-2"
+                >
+                  {savingMeta
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
+                    : <><Save className="w-3.5 h-3.5" /> Save</>
+                  }
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
               {selectedContact && !selectedContact.replied && (
                 <Button
                   onClick={() => handleMarkReplied(selectedContact.id)}

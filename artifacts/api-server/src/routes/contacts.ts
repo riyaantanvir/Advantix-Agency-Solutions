@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, contactsTable } from "@workspace/db";
+import { db, contactsTable, adminsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 
@@ -44,13 +44,30 @@ router.get("/contacts", requireAdmin, async (_req, res) => {
   res.json(contacts);
 });
 
+router.get("/contacts/admins", requireAdmin, async (_req, res) => {
+  const admins = await db
+    .select({ id: adminsTable.id, username: adminsTable.username })
+    .from(adminsTable)
+    .orderBy(adminsTable.username);
+  res.json(admins);
+});
+
 router.patch("/contacts/:id", requireAdmin, async (req, res) => {
   const id = parseInt(String(req.params.id ?? "0"), 10);
-  const { replied } = req.body as { replied?: boolean };
+  const { replied, assignedTo, notes } = req.body as {
+    replied?: boolean;
+    assignedTo?: string | null;
+    notes?: string | null;
+  };
+
+  const setValues: Record<string, unknown> = {};
+  if (replied !== undefined) setValues.replied = replied;
+  if (assignedTo !== undefined) setValues.assignedTo = assignedTo;
+  if (notes !== undefined) setValues.notes = notes;
 
   const [updated] = await db
     .update(contactsTable)
-    .set({ replied: replied ?? false })
+    .set(setValues)
     .where(eq(contactsTable.id, id))
     .returning();
 
