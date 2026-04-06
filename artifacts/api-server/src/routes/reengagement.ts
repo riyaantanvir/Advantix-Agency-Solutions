@@ -22,8 +22,13 @@ router.post("/subscribe", async (req, res) => {
       ON CONFLICT (email) DO UPDATE SET active = true
     `);
     res.json({ ok: true, message: "Subscribed successfully" });
-  } catch {
-    res.status(409).json({ error: "Already subscribed" });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("unique") || msg.includes("duplicate") || msg.includes("conflict")) {
+      res.json({ ok: true, message: "You're already subscribed!" });
+    } else {
+      res.status(500).json({ error: "Subscription failed. Please try again." });
+    }
   }
 });
 
