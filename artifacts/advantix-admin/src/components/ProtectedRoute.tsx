@@ -18,17 +18,17 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     }
   }, [isLoading, session, error, setLocation]);
 
-  if (isLoading) {
+  const notAuth = !isLoading && (!session?.authenticated || error);
+
+  if (isLoading || notAuth) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center">
         <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-        <p className="text-muted-foreground font-medium animate-pulse">Verifying session...</p>
+        <p className="text-muted-foreground font-medium animate-pulse">
+          {notAuth ? "Redirecting to login..." : "Verifying session..."}
+        </p>
       </div>
     );
-  }
-
-  if (!session?.authenticated || error) {
-    return null;
   }
 
   return <>{children}</>;

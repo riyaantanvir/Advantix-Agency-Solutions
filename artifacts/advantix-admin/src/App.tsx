@@ -1,9 +1,10 @@
-import { lazy, Suspense } from "react";
+import { Component, lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminLayout } from "./components/layout/AdminLayout";
@@ -43,6 +44,50 @@ const queryClient = new QueryClient({
   },
 });
 
+/* ── Error Boundary ──────────────────────────────────────────────────────── */
+interface EBState { hasError: boolean; error: Error | null }
+
+class PageErrorBoundary extends Component<{ children: React.ReactNode }, EBState> {
+  state: EBState = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error: Error): EBState {
+    return { hasError: true, error };
+  }
+
+  reset = () => this.setState({ hasError: false, error: null });
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-5 px-6 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-destructive/10 flex items-center justify-center">
+          <AlertTriangle className="w-7 h-7 text-destructive" />
+        </div>
+        <div className="space-y-1.5">
+          <h2 className="text-lg font-semibold text-foreground">Something went wrong</h2>
+          <p className="text-sm text-muted-foreground max-w-sm">
+            This page ran into an unexpected error. Try refreshing or clicking below to retry.
+          </p>
+          {this.state.error && (
+            <p className="text-xs text-destructive/70 font-mono mt-3 bg-destructive/5 rounded-lg px-3 py-2 max-w-md mx-auto break-words">
+              {this.state.error.message}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-3">
+          <Button variant="outline" size="sm" onClick={this.reset}>
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Retry
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+            Reload page
+          </Button>
+        </div>
+      </div>
+    );
+  }
+}
+
+/* ── Loaders ─────────────────────────────────────────────────────────────── */
 function PageLoader() {
   return (
     <div className="flex items-center justify-center min-h-[60vh]">
@@ -51,18 +96,22 @@ function PageLoader() {
   );
 }
 
+/* ── Protected layout wrapper ────────────────────────────────────────────── */
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return (
     <ProtectedRoute>
       <AdminLayout>
-        <Suspense fallback={<PageLoader />}>
-          {children}
-        </Suspense>
+        <PageErrorBoundary>
+          <Suspense fallback={<PageLoader />}>
+            {children}
+          </Suspense>
+        </PageErrorBoundary>
       </AdminLayout>
     </ProtectedRoute>
   );
 }
 
+/* ── Router ──────────────────────────────────────────────────────────────── */
 function Router() {
   return (
     <Switch>
@@ -171,6 +220,7 @@ function Router() {
   );
 }
 
+/* ── App ─────────────────────────────────────────────────────────────────── */
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
