@@ -1,7 +1,21 @@
 import { Router, type IRouter } from "express";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { createOpenAI } from "@workspace/integrations-openai-ai-server";
+import { eq } from "drizzle-orm";
+import { db } from "@workspace/db";
+import { integrationsTable } from "@workspace/db/schema";
 
 const router: IRouter = Router();
+
+async function getOpenAI() {
+  try {
+    const [row] = await db.select().from(integrationsTable).where(eq(integrationsTable.name, "OPENAI_API_KEY"));
+    const key = row?.value || process.env.OPENAI_API_KEY || process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+    if (!key) return null;
+    return createOpenAI(key);
+  } catch {
+    return null;
+  }
+}
 
 const SYSTEM_PROMPT = `You are a helpful assistant for Advantix Agency (advantix.agency). 
 
@@ -65,14 +79,24 @@ router.post("/chat", async (req, res) => {
     return;
   }
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-5.2",
-    max_completion_tokens: 8192,
-    messages: buildMessages(message, conversationHistory),
-  });
+  const openai = await getOpenAI();
+  if (!openai) {
+    res.status(503).json({ error: "AI service not configured. Please contact the administrator." });
+    return;
+  }
 
-  const reply = completion.choices[0]?.message?.content ?? "I'm sorry, I couldn't process your request.";
-  res.json({ reply });
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_completion_tokens: 8192,
+      messages: buildMessages(message, conversationHistory),
+    });
+
+    const reply = completion.choices[0]?.message?.content ?? "I'm sorry, I couldn't process your request.";
+    res.json({ reply });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "AI service error" });
+  }
 });
 
 router.post("/chat/stream", async (req, res) => {
@@ -91,9 +115,16 @@ router.post("/chat/stream", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders();
 
+  const openai = await getOpenAI();
+  if (!openai) {
+    res.write(`data: ${JSON.stringify({ error: "AI service not configured. Add OPENAI_API_KEY in Admin → Integrations." })}\n\n`);
+    res.end();
+    return;
+  }
+
   try {
     const stream = await openai.chat.completions.create({
-      model: "gpt-5.2",
+      model: "gpt-4o-mini",
       max_completion_tokens: 8192,
       messages: buildMessages(message, conversationHistory),
       stream: true,

@@ -1,12 +1,18 @@
 import OpenAI from "openai";
 
-const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ?? "https://api.openai.com/v1";
-const apiKey  = process.env.AI_INTEGRATIONS_OPENAI_API_KEY  ?? process.env.OPENAI_API_KEY;
+// Falls back through: Replit integration → env var → placeholder
+// Actual API calls will fail gracefully if no real key is configured.
+const apiKey =
+  process.env.AI_INTEGRATIONS_OPENAI_API_KEY ??
+  process.env.OPENAI_API_KEY ??
+  "no-key-configured";
 
-if (!apiKey) {
-  throw new Error(
-    "No OpenAI API key found. Set OPENAI_API_KEY (standard) or AI_INTEGRATIONS_OPENAI_API_KEY (Replit integration).",
-  );
-}
+const baseURL =
+  process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ?? "https://api.openai.com/v1";
 
 export const openai = new OpenAI({ apiKey, baseURL });
+
+// Factory: create a fresh client with a specific key (used by routes reading from DB)
+export function createOpenAI(key: string, url?: string): OpenAI {
+  return new OpenAI({ apiKey: key, baseURL: url ?? "https://api.openai.com/v1" });
+}

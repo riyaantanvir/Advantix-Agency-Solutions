@@ -11,20 +11,47 @@ import {
   toolUsersTable,
   integrationsTable,
 } from "@workspace/db/schema";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
-import { ai as geminiAi } from "@workspace/integrations-gemini-ai";
+import { createAnthropic } from "@workspace/integrations-anthropic-ai";
+import { createGemini } from "@workspace/integrations-gemini-ai";
 import { generateImage } from "@workspace/integrations-gemini-ai/image";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { createOpenAI } from "@workspace/integrations-openai-ai-server";
 
 const router = Router();
 
-// Fetch the Grok API key from the integrations table
+// ── DB key helpers ─────────────────────────────────────────────────────────────
+async function getDbKey(name: string): Promise<string | null> {
+  try {
+    const [row] = await db.select().from(integrationsTable).where(eq(integrationsTable.name, name));
+    return row?.value || null;
+  } catch {
+    return null;
+  }
+}
+
 async function getGrokKey(): Promise<string | null> {
-  const [row] = await db
-    .select()
-    .from(integrationsTable)
-    .where(eq(integrationsTable.name, "GROK_API_KEY"));
-  return row?.value || null;
+  return getDbKey("GROK_API_KEY");
+}
+
+async function getOpenAI() {
+  const key = await getDbKey("OPENAI_API_KEY") ?? process.env.OPENAI_API_KEY ?? process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  if (!key) throw new Error("OpenAI API key not configured. Add OPENAI_API_KEY in Admin → Integrations.");
+  return createOpenAI(key);
+}
+
+async function getAnthropic() {
+  const key = await getDbKey("ANTHROPIC_API_KEY") ?? process.env.ANTHROPIC_API_KEY ?? process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY;
+  if (!key) throw new Error("Anthropic API key not configured. Add ANTHROPIC_API_KEY in Admin → Integrations.");
+  return createAnthropic(key);
+}
+
+async function getGemini() {
+  const key = await getDbKey("GOOGLE_AI_API_KEY") ?? process.env.GOOGLE_AI_API_KEY ?? process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  if (!key) throw new Error("Google AI API key not configured. Add GOOGLE_AI_API_KEY in Admin → Integrations.");
+  return createGemini(key);
+}
+
+async function getGeminiKey(): Promise<string | null> {
+  return await getDbKey("GOOGLE_AI_API_KEY") ?? process.env.GOOGLE_AI_API_KEY ?? process.env.AI_INTEGRATIONS_GEMINI_API_KEY ?? null;
 }
 
 type IntentType = "image" | "code" | "reasoning" | "realtime" | "general";
@@ -359,7 +386,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
       ];
       chatMessages.push({ role: "user", content: visionContent as any });
 
-      const stream = await openai.chat.completions.create({
+      const stream = await (await getOpenAI()).chat.completions.create({
         model: "gpt-4o",
         max_tokens: 4096,
         stream: true,
@@ -382,7 +409,9 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
       }
       if (!promptTokens) { promptTokens = Math.ceil(messageText.length / 4) + 800; completionTokens = Math.ceil(fullResponse.length / 4); }
     } else if (intent === "image") {
-      const { b64_json, mimeType } = await generateImage(message);
+      const geminiKey = await getGeminiKey();
+      if (!geminiKey) throw new Error("Google AI API key not configured. Add GOOGLE_AI_API_KEY in Admin → Integrations.");
+      const { b64_json, mimeType } = await generateImage(message, geminiKey);
       fullResponse = `[IMAGE:${mimeType}:${b64_json}]`;
       promptTokens = Math.ceil(message.length / 4);
       completionTokens = 500;
@@ -394,7 +423,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
         .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
       chatMessages.push({ role: "user", content: message });
 
-      const stream = anthropic.messages.stream({
+      const stream = (await getAnthropic()).messages.stream({
         model,
         max_tokens: 8192,
         system: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.", memoriesContext),
@@ -420,7 +449,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
         .map(m => ({ role: m.role === "assistant" ? "model" as const : "user" as const, parts: [{ text: m.content }] }));
       chatMessages.push({ role: "user", parts: [{ text: message }] });
 
-      const stream = await geminiAi.models.generateContentStream({
+      const stream = await (await getGemini()).models.generateContentStream({
         model: "gemini-2.5-flash",
         contents: chatMessages,
         config: { maxOutputTokens: 8192, systemInstruction: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.", memoriesContext) },
@@ -446,7 +475,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
       if (!grokKey) {
         // Grok key not configured — fall back to GPT-4o-mini with a note
         res.write(`data: ${JSON.stringify({ routing: { provider: "openai", model: "gpt-4o-mini", label: "GPT-4o mini (Grok not configured)", intent } })}\n\n`);
-        const fallbackStream = await openai.chat.completions.create({
+        const fallbackStream = await (await getOpenAI()).chat.completions.create({
           model: "gpt-4o-mini",
           max_tokens: 8192,
           stream: true,
@@ -547,7 +576,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
         memoriesContext
       );
 
-      const stream = await openai.chat.completions.create({
+      const stream = await (await getOpenAI()).chat.completions.create({
         model: "gpt-4o",
         max_tokens: 4096,
         stream: true,
@@ -577,7 +606,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
         .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
       chatMessages.push({ role: "user", content: message });
 
-      const stream = await openai.chat.completions.create({
+      const stream = await (await getOpenAI()).chat.completions.create({
         model,
         max_tokens: 8192,
         stream: true,
@@ -653,7 +682,9 @@ Examples of good memories:
 User message: "${userMessage.replace(/"/g, "'")}"`
 
   try {
-    const res = await openai.chat.completions.create({
+    const openaiClient = await getOpenAI().catch(() => null);
+    if (!openaiClient) return;
+    const res = await openaiClient.chat.completions.create({
       model: "gpt-4o-mini",
       max_tokens: 300,
       temperature: 0,
