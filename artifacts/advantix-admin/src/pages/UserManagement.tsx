@@ -26,6 +26,7 @@ interface AdminUser {
 
 async function apiFetch(url: string, options?: RequestInit) {
   const res = await fetch(url, { credentials: "include", ...options });
+  if (res.status === 401) { window.location.href = "/admin/"; return; }
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Request failed");
   return data;
@@ -97,7 +98,7 @@ function UsersTab({ users, isLoading }: UsersTabProps) {
 
   const createMutation = useMutation({
     mutationFn: (body: typeof form) =>
-      apiFetch(`${BASE}/admin/users`, {
+      apiFetch(`/api/admin/users`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -114,7 +115,7 @@ function UsersTab({ users, isLoading }: UsersTabProps) {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
-      apiFetch(`${BASE}/admin/users/${id}`, { method: "DELETE" }),
+      apiFetch(`/api/admin/users/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       toast({ title: "User deleted" });
@@ -283,7 +284,7 @@ function AdminsTab({ admins, isLoading, meUsername }: AdminsTabProps) {
 
   const createMutation = useMutation({
     mutationFn: ({ username, password }: { username: string; password: string }) =>
-      apiFetch(`${BASE}/admin/admins`, {
+      apiFetch(`/api/admin/admins`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
@@ -300,7 +301,7 @@ function AdminsTab({ admins, isLoading, meUsername }: AdminsTabProps) {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
-      apiFetch(`${BASE}/admin/admins/${id}`, { method: "DELETE" }),
+      apiFetch(`/api/admin/admins/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/admins"] });
       toast({ title: "Admin deleted" });
@@ -465,17 +466,17 @@ export default function UserManagement() {
 
   const { data: me } = useQuery<{ authenticated: boolean; username: string }>({
     queryKey: ["/api/auth/me"],
-    queryFn: () => apiFetch(`${BASE}/auth/me`),
+    queryFn: () => apiFetch(`/api/auth/me`),
   });
 
   const { data: users = [], isLoading: usersLoading } = useQuery<ToolUser[]>({
     queryKey: ["/api/admin/users"],
-    queryFn: () => apiFetch(`${BASE}/admin/users`),
+    queryFn: () => apiFetch(`/api/admin/users`),
   });
 
   const { data: admins = [], isLoading: adminsLoading } = useQuery<AdminUser[]>({
     queryKey: ["/api/admin/admins"],
-    queryFn: () => apiFetch(`${BASE}/admin/admins`),
+    queryFn: () => apiFetch(`/api/admin/admins`),
   });
 
   return (

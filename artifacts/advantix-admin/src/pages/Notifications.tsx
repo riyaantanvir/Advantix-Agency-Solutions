@@ -41,8 +41,9 @@ const EVENT_LABELS: Record<string, { label: string; description: string }> = {
   },
 };
 
-async function apiFetch(url: string, opts?: RequestInit) {
+async function apiFetch(url: string, opts?: RequestInit): Promise<unknown> {
   const res = await fetch(url, { credentials: "include", ...opts });
+  if (res.status === 401) { window.location.href = "/admin/"; return; }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Request failed");
   return res.json();
 }
