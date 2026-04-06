@@ -253,7 +253,7 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-4xl w-[95vw] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-display text-xl flex items-center gap-2">
             <BarChart2 className="w-5 h-5 text-primary" />
