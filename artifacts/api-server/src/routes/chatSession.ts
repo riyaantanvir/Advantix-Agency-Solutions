@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, conversations, messages } from "@workspace/db";
+import { db, conversations, messages, leadsTable } from "@workspace/db";
 import { eq, and, gt } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
@@ -60,6 +60,14 @@ router.post("/chat/session", async (req, res) => {
       hasUnreadVisitor: false,
     })
     .returning();
+
+  // Auto-create a lead from this chat session
+  await db.insert(leadsTable).values({
+    name,
+    email,
+    service: "AI Chat",
+    sourcePage: "Chat Widget",
+  }).onConflictDoNothing();
 
   // Welcome message from AI
   await db.insert(messages).values({

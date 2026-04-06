@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useListLeads } from "@workspace/api-client-react";
 import type { Lead } from "@workspace/api-client-react";
 import { format } from "date-fns";
-import { Search, TrendingUp, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Search, TrendingUp, ArrowUpDown, ArrowUp, ArrowDown, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -113,9 +113,16 @@ export default function Leads() {
                       {format(new Date(lead.createdAt), "MMM d, yyyy HH:mm")}
                     </td>
                     <td className="px-6 py-4">
-                      <span className="px-3 py-1 bg-primary/10 text-primary rounded-lg text-xs font-bold uppercase tracking-wider">
-                        {lead.service}
-                      </span>
+                      {lead.service === "AI Chat" ? (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-violet-500/10 text-violet-400 border border-violet-500/20 rounded-lg text-xs font-bold uppercase tracking-wider">
+                          <Sparkles className="w-3 h-3" />
+                          AI Chat
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 bg-primary/10 text-primary rounded-lg text-xs font-bold uppercase tracking-wider">
+                          {lead.service}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       {lead.name || lead.email ? (
