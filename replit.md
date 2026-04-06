@@ -143,7 +143,7 @@ The intent classifier in `advantixAi.ts` routes to the best model:
 - `ai_usage_logs` — Per-request token + cost tracking
 - `ai_user_limits` — Monthly token limits per user
 - `ai_memories` — AI user memory entries
-- `blog_posts` — Blog articles (TipTap HTML content)
+- `blog_posts` — Blog articles (TipTap HTML content); `views` (INT) and `likes` (INT) columns added for engagement tracking
 - `integrations` — API keys / settings stored in DB (Telegram, OpenAI, etc.)
 - `tasks` — Admin task management
 - `recording_sessions` / `recording_stats` — Screen recorder data

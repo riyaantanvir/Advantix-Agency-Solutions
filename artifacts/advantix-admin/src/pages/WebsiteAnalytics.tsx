@@ -191,13 +191,13 @@ export default function WebsiteAnalytics() {
           {activeTab === "overview" && (
             <div className="space-y-6">
               {/* Traffic over time */}
-              {data.byDay.length > 0 && (
+              {(data.byDay ?? []).length > 0 && (
                 <Card className="p-5">
                   <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-primary" /> Traffic Over Time
                   </h3>
                   <div className="flex items-end gap-1 h-24 bg-secondary/20 rounded-xl px-3 py-2">
-                    {data.byDay.map(r => {
+                    {(data.byDay ?? []).map(r => {
                       const pct = Math.max(4, Math.round((parseInt(r.pageviews) / maxDay) * 100));
                       return (
                         <div key={r.day} className="flex-1 flex flex-col items-center gap-0.5" title={`${r.day}: ${r.pageviews} views`}>
@@ -227,26 +227,26 @@ export default function WebsiteAnalytics() {
 
               {/* Countries + Referrers */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {data.byCountry.length > 0 && (
+                {(data.byCountry ?? []).length > 0 && (
                   <Card className="p-5">
                     <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                       <Globe className="w-4 h-4 text-blue-400" /> Countries
                     </h3>
                     <div className="space-y-2">
-                      {data.byCountry.map(r => (
+                      {(data.byCountry ?? []).map(r => (
                         <BarRow key={r.country} label={`${countryFlag(r.country)} ${r.country}`} value={parseInt(r.sessions)} max={maxCountry} color="bg-blue-500" />
                       ))}
                     </div>
                   </Card>
                 )}
 
-                {data.byReferrer.length > 0 && (
+                {(data.byReferrer ?? []).length > 0 && (
                   <Card className="p-5">
                     <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                       <TrendingUp className="w-4 h-4 text-green-400" /> Traffic Sources
                     </h3>
                     <div className="space-y-2">
-                      {data.byReferrer.map(r => (
+                      {(data.byReferrer ?? []).map(r => (
                         <BarRow key={r.referrer} label={r.referrer} value={parseInt(r.sessions)} max={maxRef} color="bg-green-500" />
                       ))}
                     </div>

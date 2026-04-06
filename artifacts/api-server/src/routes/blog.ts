@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, blogPostsTable } from "@workspace/db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, ne, or, sql } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 import multer from "multer";
 import path from "path";
@@ -46,6 +46,7 @@ function estimateReadingTime(content: string): string {
   return `${mins} min read`;
 }
 
+/* ── Public Routes ──────────────────────────────────────── */
 router.get("/blog", async (_req, res) => {
   const posts = await db
     .select()
@@ -64,6 +65,62 @@ router.get("/blog/:slug", async (req, res) => {
   res.json(post);
 });
 
+/* POST /api/blog/:slug/view — fire-and-forget view counter */
+router.post("/blog/:slug/view", async (req, res) => {
+  res.json({ ok: true });
+  db.execute(sql`
+    UPDATE blog_posts SET views = views + 1
+    WHERE slug = ${req.params.slug!} AND status = 'published'
+  `).catch(() => {});
+});
+
+/* POST /api/blog/:slug/like — toggle like */
+router.post("/blog/:slug/like", async (req, res) => {
+  const { action } = req.body as { action?: "like" | "unlike" };
+  if (action !== "like" && action !== "unlike") {
+    res.status(400).json({ error: "action must be 'like' or 'unlike'" }); return;
+  }
+  const delta = action === "like" ? 1 : -1;
+  const result = await db.execute(sql`
+    UPDATE blog_posts
+    SET likes = GREATEST(0, likes + ${delta})
+    WHERE slug = ${req.params.slug!} AND status = 'published'
+    RETURNING likes
+  `);
+  const row = result.rows[0] as { likes: number } | undefined;
+  res.json({ likes: row?.likes ?? 0 });
+});
+
+/* GET /api/blog/:slug/related — same category, exclude self, limit 3 */
+router.get("/blog/:slug/related", async (req, res) => {
+  const [post] = await db
+    .select({ id: blogPostsTable.id, category: blogPostsTable.category, tags: blogPostsTable.tags })
+    .from(blogPostsTable)
+    .where(and(eq(blogPostsTable.slug, req.params.slug!), eq(blogPostsTable.status, "published")));
+
+  if (!post) { res.json([]); return; }
+
+  const related = await db
+    .select({
+      id: blogPostsTable.id, title: blogPostsTable.title, slug: blogPostsTable.slug,
+      excerpt: blogPostsTable.excerpt, coverImageUrl: blogPostsTable.coverImageUrl,
+      author: blogPostsTable.author, category: blogPostsTable.category,
+      readingTime: blogPostsTable.readingTime, publishedAt: blogPostsTable.publishedAt,
+      views: blogPostsTable.views,
+    })
+    .from(blogPostsTable)
+    .where(and(
+      eq(blogPostsTable.status, "published"),
+      ne(blogPostsTable.id, post.id),
+      eq(blogPostsTable.category, post.category),
+    ))
+    .orderBy(desc(blogPostsTable.publishedAt))
+    .limit(3);
+
+  res.json(related);
+});
+
+/* ── Admin Routes ───────────────────────────────────────── */
 router.get("/admin/blog", requireAdmin, async (_req, res) => {
   const posts = await db
     .select()

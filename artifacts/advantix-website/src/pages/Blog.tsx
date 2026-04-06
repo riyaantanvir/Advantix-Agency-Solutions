@@ -2,7 +2,7 @@ import { SEO } from "@/components/SEO";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { Calendar, Clock, Tag, ArrowRight, Loader2, Rss } from "lucide-react";
+import { Calendar, Clock, Tag, ArrowRight, Loader2, Rss, Eye } from "lucide-react";
 
 type BlogPost = {
   id: number;
@@ -15,6 +15,8 @@ type BlogPost = {
   tags: string | null;
   readingTime: string | null;
   featured: boolean;
+  views: number;
+  likes: number;
   publishedAt: string | null;
 };
 
@@ -191,6 +193,7 @@ export default function Blog() {
                               <span className="ml-auto flex items-center gap-3">
                                 {post.publishedAt && <span className="flex items-center gap-1"><Calendar size={10} />{formatDate(post.publishedAt)}</span>}
                                 {post.readingTime && <span className="flex items-center gap-1"><Clock size={10} />{post.readingTime}</span>}
+                                {post.views > 0 && <span className="flex items-center gap-1"><Eye size={10} />{post.views}</span>}
                               </span>
                             </div>
                           </div>

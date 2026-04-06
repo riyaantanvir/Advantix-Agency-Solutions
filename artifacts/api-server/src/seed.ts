@@ -211,6 +211,12 @@ export async function runMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
+    ALTER TABLE blog_posts
+      ADD COLUMN IF NOT EXISTS views integer DEFAULT 0 NOT NULL,
+      ADD COLUMN IF NOT EXISTS likes integer DEFAULT 0 NOT NULL
+  `);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS marketing_campaigns (
       id serial PRIMARY KEY,
       name text NOT NULL,
