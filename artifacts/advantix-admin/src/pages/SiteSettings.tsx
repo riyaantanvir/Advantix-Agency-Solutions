@@ -14,7 +14,8 @@ export default function SiteSettings() {
 
   const { data: cta, isLoading } = useQuery<CTAConfig>({
     queryKey: ["cta-bar"],
-    queryFn: () => fetch("/api/settings/cta-bar").then(r => r.json()),
+    queryFn: () => fetch("/api/settings/cta-bar", { credentials: "include" })
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
   });
 
   const [form, setForm] = useState<CTAConfig>({

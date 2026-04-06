@@ -23,21 +23,23 @@ export default function EmailSubscribers() {
     queryKey: ["email-subscribers", filter],
     queryFn: () =>
       fetch(`/api/admin/subscribers?active=${filter === "all" ? "all" : "true"}`, { credentials: "include" })
-        .then(r => r.json()),
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
   });
 
   const unsubMutation = useMutation({
     mutationFn: (id: number) =>
-      fetch(`/api/admin/subscribers/${id}`, { method: "DELETE", credentials: "include" }).then(r => r.json()),
+      fetch(`/api/admin/subscribers/${id}`, { method: "DELETE", credentials: "include" })
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["email-subscribers"] }); toast({ title: "Unsubscribed" }); },
-    onError: () => toast({ variant: "destructive", title: "Error" }),
+    onError: () => toast({ variant: "destructive", title: "Error unsubscribing" }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
-      fetch(`/api/admin/subscribers/${id}/hard`, { method: "DELETE", credentials: "include" }).then(r => r.json()),
+      fetch(`/api/admin/subscribers/${id}/hard`, { method: "DELETE", credentials: "include" })
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["email-subscribers"] }); toast({ title: "Deleted permanently" }); },
-    onError: () => toast({ variant: "destructive", title: "Error" }),
+    onError: () => toast({ variant: "destructive", title: "Error deleting subscriber" }),
   });
 
   const filtered = subscribers.filter(s =>

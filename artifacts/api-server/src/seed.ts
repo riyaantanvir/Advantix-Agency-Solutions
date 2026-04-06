@@ -211,12 +211,6 @@ export async function runMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
-    ALTER TABLE blog_posts
-      ADD COLUMN IF NOT EXISTS views integer DEFAULT 0 NOT NULL,
-      ADD COLUMN IF NOT EXISTS likes integer DEFAULT 0 NOT NULL
-  `);
-
-  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS site_settings (
       key text PRIMARY KEY,
       value text NOT NULL,
@@ -451,6 +445,12 @@ export async function runMigrations(): Promise<void> {
       created_at timestamptz DEFAULT now() NOT NULL,
       updated_at timestamptz DEFAULT now() NOT NULL
     )
+  `);
+
+  await db.execute(sql`
+    ALTER TABLE blog_posts
+      ADD COLUMN IF NOT EXISTS views integer DEFAULT 0 NOT NULL,
+      ADD COLUMN IF NOT EXISTS likes integer DEFAULT 0 NOT NULL
   `);
 
   await db.execute(sql`
