@@ -391,12 +391,17 @@ export async function seedAdmin(): Promise<void> {
 
   const [existing] = await db.select().from(adminsTable).where(eq(adminsTable.username, username)).limit(1);
 
+  const passwordHash = await bcrypt.hash(password, 12);
+
   if (!existing) {
-    const passwordHash = await bcrypt.hash(password, 12);
     await db.insert(adminsTable).values({ username, passwordHash });
     logger.info({ username }, "Admin user seeded successfully");
   } else {
-    logger.info("Admin user already exists, skipping seed");
+    // Always sync the password hash with the current ADMIN_PASSWORD env var.
+    // This ensures that if the password was changed in DO secrets, it takes
+    // effect on the next deployment without any manual DB intervention.
+    await db.update(adminsTable).set({ passwordHash }).where(eq(adminsTable.username, username));
+    logger.info({ username }, "Admin password synced from ADMIN_PASSWORD env var");
   }
 }
 

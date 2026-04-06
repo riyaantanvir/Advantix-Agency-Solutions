@@ -254,6 +254,7 @@ This app uses **Express 5**, NOT Express 4. Express 5 has breaking changes:
 | `ToolsDashboard` blank screen after login | Missing `loading` guard — was redirecting before session check completed |
 | Vite sourcemap warnings during build | Added `sourcemap: false` + `onwarn` suppression in all 3 Vite configs |
 | "Internal Server Error" after admin login (production) | `connect-pg-simple` session store was using `conString: process.env.DATABASE_URL` (raw URL, no SSL config) — fixed by passing the shared `pool` (which has `ssl: { rejectUnauthorized: false }`) via `new PgSession({ pool })` in `app.ts` |
+| Admin login fails after redeploy / password change | `seedAdmin()` only created admin if row didn't exist — now it ALSO updates the `passwordHash` on every startup to stay in sync with `ADMIN_PASSWORD` env var. No more stale passwords. |
 
 ---
 
