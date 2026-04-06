@@ -1,15 +1,23 @@
 # DigitalOcean App Platform Spec
 # Docs: https://docs.digitalocean.com/products/app-platform/reference/app-spec/
 #
-# HOW TO USE:
-#   1. Push this repo to GitHub
-#   2. Go to DigitalOcean → App Platform → Create App → GitHub repo
-#   3. DigitalOcean will auto-detect this file
-#   4. Set the SECRET environment variables in the DigitalOcean dashboard
-#   5. Click Deploy — everything else is automatic
+# HOW TO USE (IMPORTANT):
+#   Option A — New app (recommended):
+#     1. Push this repo to GitHub
+#     2. DigitalOcean App Platform → Create App → GitHub repo
+#     3. DO will auto-detect this file and configure correctly
+#
+#   Option B — Existing app (if auto-detected wrong components):
+#     1. Go to your App → Settings → App Spec
+#     2. Replace the entire spec with the contents of this file
+#     3. Click Save → Deploy
+#
+#   This config uses ONE Dockerfile-based service that builds and
+#   serves ALL frontends (website, admin, AI). Do NOT add separate
+#   static site components for each frontend package.
 
 name: advantix-agency
-region: sgp1   # Singapore — change to nearest region (nyc1, ams3, blr1, etc.)
+region: sgp1
 
 services:
   - name: web
@@ -18,43 +26,32 @@ services:
     github:
       branch: main
       deploy_on_push: true
-
     http_port: 8080
-
     instance_count: 1
-    instance_size_slug: basic-xxs   # Upgrade as needed
-
+    instance_size_slug: basic-xxs
     health_check:
       http_path: /api/health
       initial_delay_seconds: 30
       period_seconds: 30
       timeout_seconds: 10
       failure_threshold: 3
-
     envs:
-      # Injected automatically by DigitalOcean managed database
       - key: DATABASE_URL
         value: ${db.DATABASE_URL}
-
-      # Set this as a SECRET in the DigitalOcean dashboard (any long random string)
-      # Generate one: openssl rand -hex 32
       - key: SESSION_SECRET
         type: SECRET
-
       - key: NODE_ENV
         value: production
-
       - key: PORT
         value: "8080"
-
-      # Optional: comma-separated extra allowed CORS origins
-      # (not needed if you only access via your .app domain)
-      # - key: ALLOWED_ORIGINS
-      #   value: "https://yourdomain.com,https://www.yourdomain.com"
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        type: SECRET
 
 databases:
   - name: db
     engine: PG
-    version: "15"
-    size: db-s-dev-database   # Free tier dev database; upgrade for production
+    version: "17"
+    size: db-s-dev-database
     num_nodes: 1
