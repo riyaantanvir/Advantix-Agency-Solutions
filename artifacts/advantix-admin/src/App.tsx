@@ -1,28 +1,30 @@
+import { lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/not-found";
-
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Contacts from "./pages/Contacts";
-import Leads from "./pages/Leads";
-import Portfolio from "./pages/Portfolio";
-import Services from "./pages/Services";
-import Team from "./pages/Team";
-import AssistantRequests from "./pages/AssistantRequests";
-import UserManagement from "./pages/UserManagement";
-import ManageAI from "./pages/ManageAI";
-import Integrations from "./pages/Integrations";
-import Tools from "./pages/Tools";
-import Tasks from "./pages/Tasks";
-import Notifications from "./pages/Notifications";
-import Blog from "./pages/Blog";
-import BlogEditor from "./pages/BlogEditor";
+import { Loader2 } from "lucide-react";
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminLayout } from "./components/layout/AdminLayout";
+
+const Login = lazy(() => import("./pages/Login"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Contacts = lazy(() => import("./pages/Contacts"));
+const Leads = lazy(() => import("./pages/Leads"));
+const Portfolio = lazy(() => import("./pages/Portfolio"));
+const Services = lazy(() => import("./pages/Services"));
+const Team = lazy(() => import("./pages/Team"));
+const AssistantRequests = lazy(() => import("./pages/AssistantRequests"));
+const UserManagement = lazy(() => import("./pages/UserManagement"));
+const ManageAI = lazy(() => import("./pages/ManageAI"));
+const Integrations = lazy(() => import("./pages/Integrations"));
+const Tools = lazy(() => import("./pages/Tools"));
+const Tasks = lazy(() => import("./pages/Tasks"));
+const Notifications = lazy(() => import("./pages/Notifications"));
+const Blog = lazy(() => import("./pages/Blog"));
+const BlogEditor = lazy(() => import("./pages/BlogEditor"));
+const NotFound = lazy(() => import("./pages/not-found"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,14 +32,27 @@ const queryClient = new QueryClient({
       retry: 1,
       refetchOnWindowFocus: false,
       staleTime: 30 * 1000,
+      gcTime: 5 * 60 * 1000,
     },
   },
 });
 
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <Loader2 className="w-7 h-7 animate-spin text-primary" />
+    </div>
+  );
+}
+
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return (
     <ProtectedRoute>
-      <AdminLayout>{children}</AdminLayout>
+      <AdminLayout>
+        <Suspense fallback={<PageLoader />}>
+          {children}
+        </Suspense>
+      </AdminLayout>
     </ProtectedRoute>
   );
 }
@@ -45,16 +60,20 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 function Router() {
   return (
     <Switch>
-      <Route path="/login" component={Login} />
-      
+      <Route path="/login">
+        <Suspense fallback={null}>
+          <Login />
+        </Suspense>
+      </Route>
+
       <Route path="/">
         <Redirect to="/dashboard" />
       </Route>
-      
+
       <Route path="/dashboard">
         <ProtectedLayout><Dashboard /></ProtectedLayout>
       </Route>
-      
+
       <Route path="/contacts">
         <ProtectedLayout><Contacts /></ProtectedLayout>
       </Route>
@@ -62,7 +81,7 @@ function Router() {
       <Route path="/leads">
         <ProtectedLayout><Leads /></ProtectedLayout>
       </Route>
-      
+
       <Route path="/portfolio">
         <ProtectedLayout><Portfolio /></ProtectedLayout>
       </Route>
@@ -70,7 +89,7 @@ function Router() {
       <Route path="/services">
         <ProtectedLayout><Services /></ProtectedLayout>
       </Route>
-      
+
       <Route path="/team">
         <ProtectedLayout><Team /></ProtectedLayout>
       </Route>

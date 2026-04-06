@@ -51,6 +51,7 @@ export default function ManageAI() {
         fetch(`/api/ai/admin/stats?period=${period}`, { credentials: "include" }),
         fetch("/api/ai/admin/users", { credentials: "include" }),
       ]);
+      if (statsRes.status === 401 || usersRes.status === 401) { window.location.href = "/admin/"; return; }
       if (statsRes.ok) setStats(await statsRes.json());
       if (usersRes.ok) setUsers(await usersRes.json());
     } finally {
@@ -67,6 +68,7 @@ export default function ManageAI() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ monthlyTokenLimit: tokenLimit, monthlyUsdLimit: usdLimit }),
     });
+    if (res.status === 401) { window.location.href = "/admin/"; return; }
     if (res.ok) {
       setUsers(prev => prev.map(u =>
         u.id === userId ? { ...u, monthlyTokenLimit: tokenLimit, monthlyUsdLimit: usdLimit } : u

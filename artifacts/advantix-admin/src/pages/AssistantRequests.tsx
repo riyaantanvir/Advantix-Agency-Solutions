@@ -8,6 +8,11 @@ import { useToast } from "@/hooks/use-toast";
 
 const POLL_INTERVAL = 3000;
 
+function handle401(res: Response) {
+  if (res.status === 401) { window.location.href = "/admin/"; return true; }
+  return false;
+}
+
 type Session = {
   id: number;
   visitorName: string | null;
@@ -76,6 +81,7 @@ export default function AssistantRequests() {
     try {
       const url = showAll ? `/api/admin/chat/sessions/all` : `/api/admin/chat/sessions`;
       const res = await fetch(url, { credentials: "include" });
+      if (handle401(res)) return;
       if (res.ok) setSessions(await res.json() as Session[]);
     } catch { /* ignore */ }
   }, [showAll]);
@@ -83,6 +89,7 @@ export default function AssistantRequests() {
   const fetchMsgs = useCallback(async (id: number) => {
     try {
       const res = await fetch(`/api/admin/chat/sessions/${id}/messages`, { credentials: "include" });
+      if (handle401(res)) return;
       if (res.ok) {
         setMsgs(await res.json() as Msg[]);
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -130,6 +137,7 @@ export default function AssistantRequests() {
         credentials: "include",
         body: JSON.stringify({ content }),
       });
+      if (handle401(res)) return;
       if (!res.ok) throw new Error("Failed to send");
       await Promise.all([fetchMsgs(selectedId), fetchSessions()]);
     } catch {
@@ -142,10 +150,11 @@ export default function AssistantRequests() {
 
   const handleClose = async (id: number) => {
     try {
-      await fetch(`/api/admin/chat/sessions/${id}/end`, {
+      const res = await fetch(`/api/admin/chat/sessions/${id}/end`, {
         method: "POST",
         credentials: "include",
       });
+      if (handle401(res)) return;
       fetchSessions();
       if (selectedId === id) fetchMsgs(id);
       toast({ title: "Chat ended", description: "The user has been notified." });
