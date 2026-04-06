@@ -112,9 +112,10 @@ app.use(
 );
 
 // ── Uploaded blog images ─────────────────────────────────────────────────────
-// Served at /uploads/ for production (direct Express serving) AND at
-// /api/uploads/ so Replit's /api/ path-based proxy routes it correctly in dev.
-const uploadsDir = path.resolve(__dirname, "../../uploads");
+// Files are saved by blog.ts to <workspace_root>/uploads/blog/
+// (3 levels up from dist/: dist/ → api-server/ → artifacts/ → workspace/)
+// Served at /uploads/ for production AND /api/uploads/ for Replit dev proxy.
+const uploadsDir = path.resolve(__dirname, "../../../uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use("/uploads", express.static(uploadsDir));
 app.use("/api/uploads", express.static(uploadsDir));

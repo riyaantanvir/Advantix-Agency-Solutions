@@ -340,29 +340,6 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
         class: "prose prose-invert max-w-none focus:outline-none px-6 py-5",
         style: `min-height: ${minHeight}px`,
       },
-      handlePaste(view, event) {
-        const items = Array.from(event.clipboardData?.items ?? []);
-        const imageItem = items.find((i) => i.type.startsWith("image/"));
-        if (!imageItem) return false;
-
-        event.preventDefault();
-        const file = imageItem.getAsFile();
-        if (!file) return true;
-
-        setPasteUploading(true);
-        uploadImageFile(file)
-          .then((url) => {
-            view.dispatch(
-              view.state.tr.replaceSelectionWith(
-                view.state.schema.nodes.image.create({ src: url })
-              )
-            );
-          })
-          .catch(() => {})
-          .finally(() => setPasteUploading(false));
-
-        return true;
-      },
     },
     onUpdate({ editor }) {
       onChange(editor.getHTML());
@@ -374,6 +351,50 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
       editor.commands.setContent(content, false);
     }
   }, [content]);
+
+  /* ── Attach paste/drop listener directly to the editor DOM ─── */
+  useEffect(() => {
+    if (!editor) return;
+    const dom = editor.view.dom as HTMLElement;
+
+    async function processImageFile(file: File) {
+      setPasteUploading(true);
+      try {
+        const url = await uploadImageFile(file);
+        editor.chain().focus().setImage({ src: url }).run();
+      } catch {
+        /* silent */
+      } finally {
+        setPasteUploading(false);
+      }
+    }
+
+    function onPaste(e: ClipboardEvent) {
+      const items = Array.from(e.clipboardData?.items ?? []);
+      const imageItem = items.find((i) => i.type.startsWith("image/"));
+      if (!imageItem) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const file = imageItem.getAsFile();
+      if (file) processImageFile(file);
+    }
+
+    function onDrop(e: DragEvent) {
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      const imageFile = files.find((f) => f.type.startsWith("image/"));
+      if (!imageFile) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      processImageFile(imageFile);
+    }
+
+    dom.addEventListener("paste", onPaste, true);
+    dom.addEventListener("drop", onDrop, true);
+    return () => {
+      dom.removeEventListener("paste", onPaste, true);
+      dom.removeEventListener("drop", onDrop, true);
+    };
+  }, [editor]);
 
   if (!editor) return null;
 
