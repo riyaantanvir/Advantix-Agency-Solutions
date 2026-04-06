@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Bug, ImagePlus, Trash2, Send, CheckCircle2, Loader2, ClipboardPaste } from "lucide-react";
 
@@ -64,10 +64,10 @@ export function BugReportModal({ open, onClose }: BugReportModalProps) {
     }
   }, [open]);
 
-  useState(() => {
+  useEffect(() => {
     window.addEventListener("paste", handleGlobalPaste);
     return () => window.removeEventListener("paste", handleGlobalPaste);
-  });
+  }, [handleGlobalPaste]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,7 +99,7 @@ export function BugReportModal({ open, onClose }: BugReportModalProps) {
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -108,15 +108,15 @@ export function BugReportModal({ open, onClose }: BugReportModalProps) {
             onClick={handleClose}
           />
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            initial={{ opacity: 0, scale: 0.95, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            exit={{ opacity: 0, scale: 0.95, y: 12 }}
             transition={{ type: "spring", duration: 0.3 }}
-            className="relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl overflow-hidden"
+            className="relative w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl flex flex-col max-h-[90vh]"
             onPaste={handlePaste}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+            {/* Header — fixed, never scrolls */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center">
                   <Bug className="w-4 h-4 text-red-400" />
@@ -126,13 +126,17 @@ export function BugReportModal({ open, onClose }: BugReportModalProps) {
                   <p className="text-xs text-muted-foreground">Help us improve by reporting issues</p>
                 </div>
               </div>
-              <button onClick={handleClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+              <button
+                onClick={handleClose}
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
+            {/* Body — scrollable */}
             {success ? (
-              <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+              <div className="flex flex-col items-center justify-center py-16 px-6 text-center flex-1">
                 <div className="w-14 h-14 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
                   <CheckCircle2 className="w-7 h-7 text-green-400" />
                 </div>
@@ -140,7 +144,7 @@ export function BugReportModal({ open, onClose }: BugReportModalProps) {
                 <p className="text-sm text-muted-foreground">Thank you for helping us improve. We'll look into it soon.</p>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 min-h-0">
                 {/* Title */}
                 <div>
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
