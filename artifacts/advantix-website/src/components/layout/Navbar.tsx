@@ -33,12 +33,13 @@ export function Navbar() {
   }, [location]);
 
   const navLinks = user
-    ? [{ href: "/", label: "Home" }]
+    ? [{ href: "/", label: "Home" }, { href: "/blog", label: "Blog" }]
     : [
         { href: "/", label: "Home" },
         { href: "/services", label: "Services" },
         { href: "/portfolio", label: "Portfolio" },
         { href: "/team", label: "Team" },
+        { href: "/blog", label: "Blog" },
       ];
 
   const isToolsActive = location.startsWith("/tools");

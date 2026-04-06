@@ -96,7 +96,7 @@ export default function Tasks() {
       const p = new URLSearchParams();
       if (typeFilter !== "all") p.set("type", typeFilter);
       if (priorityFilter !== "all") p.set("priority", priorityFilter);
-      return apiFetch(`${BASE}/api/admin/tasks?${p}`);
+      return apiFetch(`/api/admin/tasks?${p}`);
     },
   });
 
@@ -112,7 +112,7 @@ export default function Tasks() {
   }, [tasks, search]);
 
   const createMutation = useMutation({
-    mutationFn: (data: TaskForm) => apiFetch(`${BASE}/api/admin/tasks`, {
+    mutationFn: (data: TaskForm) => apiFetch(`/api/admin/tasks`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-tasks"] }); closeModal(); toast({ title: "Task created" }); },
@@ -121,7 +121,7 @@ export default function Tasks() {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: TaskForm }) =>
-      apiFetch(`${BASE}/api/admin/tasks/${id}`, {
+      apiFetch(`/api/admin/tasks/${id}`, {
         method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
       }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-tasks"] }); closeModal(); toast({ title: "Task updated" }); },
@@ -130,7 +130,7 @@ export default function Tasks() {
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) =>
-      apiFetch(`${BASE}/api/admin/tasks/${id}/status`, {
+      apiFetch(`/api/admin/tasks/${id}/status`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-tasks"] }),
@@ -138,7 +138,7 @@ export default function Tasks() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => apiFetch(`${BASE}/api/admin/tasks/${id}`, { method: "DELETE" }),
+    mutationFn: (id: number) => apiFetch(`/api/admin/tasks/${id}`, { method: "DELETE" }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-tasks"] }); setDetailTask(null); toast({ title: "Task deleted" }); },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });

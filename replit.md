@@ -28,8 +28,8 @@ Full-stack pnpm workspace monorepo for Advantix Agency (advantix.agency). A comp
 
 | Artifact | Path | Description |
 |---|---|---|
-| `advantix-website` | `/` | Public-facing marketing website (Home, Portfolio, Team, Contact, Tools) |
-| `advantix-admin` | `/admin/` | Protected admin dashboard (login, dashboard, contacts, leads, portfolio, team, AI management) |
+| `advantix-website` | `/` | Public-facing marketing website (Home, Portfolio, Team, Contact, Blog, Tools) |
+| `advantix-admin` | `/admin/` | Protected admin dashboard (login, dashboard, contacts, leads, portfolio, team, blog, AI management) |
 | `advantix-ai` | `/ai/` | Multi-model AI chat tool (login-gated, streaming, GPT/Claude/Gemini router) |
 | `api-server` | — | Express REST API backend (all `/api/*` routes) |
 
@@ -69,6 +69,8 @@ All routes are prefixed with `/api`.
 - `POST /api/contacts` — Submit contact form
 - `GET /api/portfolio` — List portfolio items
 - `GET /api/team` — List team members
+- `GET /api/blog` — List published blog posts
+- `GET /api/blog/:slug` — Get a single blog post by slug
 - `POST /api/leads` — Track a lead/interest
 - `POST /api/track` — Track a page view
 - `POST /api/chat` — AI chat assistant (gpt-4o-mini, Advantix-focused system prompt)
@@ -91,6 +93,12 @@ All routes are prefixed with `/api`.
 - `GET /api/contacts` — List all contacts
 - `GET /api/leads` — List all leads
 - `GET /api/stats` — Get visitor stats
+- `GET /api/admin/blog` — List all blog posts (drafts + published)
+- `GET /api/admin/blog/:id` — Get a single post by ID
+- `POST /api/admin/blog` — Create a new post
+- `PUT /api/admin/blog/:id` — Update a post
+- `DELETE /api/admin/blog/:id` — Delete a post
+- `POST /api/admin/blog/upload-image` — Upload cover/inline image (multipart, field: `image`)
 - `GET /api/ai/admin/stats?period=week|month|all` — AI usage stats by provider
 - `GET /api/ai/admin/users` — Per-user AI usage and costs
 - `PUT /api/ai/admin/users/:id/limit` — Set monthly token limit for a user
@@ -111,6 +119,7 @@ Tables (all managed by Drizzle ORM):
 - `ai_messages` — Individual AI messages with provider/model/token info
 - `ai_usage_logs` — Per-request token + cost tracking by provider
 - `ai_user_limits` — Monthly token limits per user (admin-configurable)
+- `blog_posts` — Blog articles (title, slug, content HTML via TipTap, cover image, status, SEO fields)
 
 ## AI Routing Logic (advantixAi.ts)
 

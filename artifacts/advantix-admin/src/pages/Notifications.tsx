@@ -61,7 +61,7 @@ export default function Notifications() {
   const loadSettings = useCallback(async () => {
     setLoading(true);
     try {
-      const data: Settings = await apiFetch(`${BASE}/api/admin/notifications/settings`);
+      const data: Settings = await apiFetch(`/api/admin/notifications/settings`);
       setSettings(data);
     } catch {
       toast({ title: "Failed to load settings", variant: "destructive" });
@@ -75,7 +75,7 @@ export default function Notifications() {
   async function saveSetting(key: string, value: string) {
     setSaving(key);
     try {
-      await apiFetch(`${BASE}/api/admin/notifications/settings/${key}`, {
+      await apiFetch(`/api/admin/notifications/settings/${key}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value }),
@@ -97,7 +97,7 @@ export default function Notifications() {
     const next = current === "false" ? "true" : "false";
     setSaving(key);
     try {
-      await apiFetch(`${BASE}/api/admin/notifications/settings/${key}`, {
+      await apiFetch(`/api/admin/notifications/settings/${key}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ value: next }),
@@ -114,7 +114,7 @@ export default function Notifications() {
     setTesting(true);
     setTestResult(null);
     try {
-      const result = await apiFetch(`${BASE}/api/admin/notifications/telegram/test`, { method: "POST" });
+      const result = await apiFetch(`/api/admin/notifications/telegram/test`, { method: "POST" });
       setTestResult(result);
       if (result.ok) toast({ title: "Test notification sent!" });
       else toast({ title: result.error ?? "Test failed", variant: "destructive" });

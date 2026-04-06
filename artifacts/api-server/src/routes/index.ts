@@ -21,6 +21,7 @@ import adminNotificationsRouter from "./adminNotifications.js";
 import warUpdateRouter from "./warUpdate.js";
 import landingPageRouter from "./landingPage.js";
 import landingPageProjectsRouter from "./landingPageProjects.js";
+import blogRouter from "./blog.js";
 
 const router: IRouter = Router();
 
@@ -43,6 +44,7 @@ router.use("/ai", advantixAiRouter);
 router.use(adminIntegrationsRouter);
 router.use(adminTasksRouter);
 router.use(adminNotificationsRouter);
+router.use(blogRouter);
 router.use(warUpdateRouter);
 router.use(landingPageRouter);
 router.use(landingPageProjectsRouter);

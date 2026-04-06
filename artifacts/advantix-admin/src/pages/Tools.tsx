@@ -71,7 +71,7 @@ export default function Tools() {
     const win = window.open("about:blank", "_blank");
 
     try {
-      await fetch(`${BASE}/api/admin/tools/auto-login`, {
+      await fetch(`/api/admin/tools/auto-login`, {
         method: "POST",
         credentials: "include",
       });

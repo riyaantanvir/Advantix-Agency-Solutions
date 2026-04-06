@@ -18,6 +18,8 @@ import Integrations from "./pages/Integrations";
 import Tools from "./pages/Tools";
 import Tasks from "./pages/Tasks";
 import Notifications from "./pages/Notifications";
+import Blog from "./pages/Blog";
+import BlogEditor from "./pages/BlogEditor";
 
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminLayout } from "./components/layout/AdminLayout";
@@ -95,6 +97,18 @@ function Router() {
 
       <Route path="/notifications">
         <ProtectedLayout><Notifications /></ProtectedLayout>
+      </Route>
+
+      <Route path="/blog/new">
+        <ProtectedLayout><BlogEditor /></ProtectedLayout>
+      </Route>
+
+      <Route path="/blog/:id/edit">
+        <ProtectedLayout><BlogEditor /></ProtectedLayout>
+      </Route>
+
+      <Route path="/blog">
+        <ProtectedLayout><Blog /></ProtectedLayout>
       </Route>
 
       <Route path="/tools">

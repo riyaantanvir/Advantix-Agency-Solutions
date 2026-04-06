@@ -21,6 +21,7 @@ import {
   Zap,
   CheckSquare,
   Bell,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -34,6 +35,7 @@ const navLinks = [
   { path: "/assistant-requests", label: "Assistant Requests", icon: HeadphonesIcon },
   { path: "/manage-ai", label: "Manage Advantix AI", icon: Sparkles },
   { path: "/integrations", label: "Integrations", icon: Plug },
+  { path: "/blog", label: "Blog", icon: BookOpen },
   { path: "/portfolio", label: "Portfolio", icon: Briefcase },
   { path: "/services", label: "Services", icon: Package },
   { path: "/team", label: "Team", icon: Users },

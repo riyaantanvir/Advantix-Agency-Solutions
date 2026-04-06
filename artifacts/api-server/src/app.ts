@@ -4,6 +4,7 @@ import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import router from "./routes/index.js";
 import redirectRouter from "./routes/shortRedirect.js";
@@ -102,6 +103,11 @@ app.use(
     },
   }),
 );
+
+// ── Uploaded blog images (must be before API prefix) ─────────────────────────
+const uploadsDir = path.resolve(__dirname, "../../uploads");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+app.use("/uploads", express.static(uploadsDir));
 
 // ── URL shortener (must be before API prefix) ─────────────────────────────────
 app.use(redirectRouter);

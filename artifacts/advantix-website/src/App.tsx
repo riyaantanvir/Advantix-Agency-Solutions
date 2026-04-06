@@ -7,6 +7,8 @@ import { ToolsUserProvider } from "@/context/ToolsUserContext";
 import NotFound from "@/pages/not-found";
 
 import Home from "@/pages/Home";
+import Blog from "@/pages/Blog";
+import BlogPost from "@/pages/BlogPost";
 import Services from "@/pages/Services";
 import Portfolio from "@/pages/Portfolio";
 import Team from "@/pages/Team";
@@ -40,6 +42,8 @@ function Router() {
         <AppLayout>
           <Switch>
             <Route path="/" component={Home} />
+            <Route path="/blog/:slug" component={BlogPost} />
+            <Route path="/blog" component={Blog} />
             <Route path="/services" component={Services} />
             <Route path="/portfolio" component={Portfolio} />
             <Route path="/team" component={Team} />
