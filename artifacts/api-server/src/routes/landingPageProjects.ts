@@ -6,14 +6,12 @@ import { requireToolUser } from "../middleware/toolAuth.js";
 
 const router = Router();
 
-router.use(requireToolUser);
-
 function userId(req: Request): number {
   return (req.session as { toolUserId: number }).toolUserId;
 }
 
 // List all projects (summary, no full HTML to keep payload small)
-router.get("/landing-page/projects", async (req: Request, res: Response) => {
+router.get("/landing-page/projects", requireToolUser, async (req: Request, res: Response) => {
   try {
     const rows = await db
       .select({
@@ -32,7 +30,7 @@ router.get("/landing-page/projects", async (req: Request, res: Response) => {
 });
 
 // Get single project with full html + messages
-router.get("/landing-page/projects/:id", async (req: Request, res: Response) => {
+router.get("/landing-page/projects/:id", requireToolUser, async (req: Request, res: Response) => {
   try {
     const [project] = await db
       .select()
@@ -51,7 +49,7 @@ router.get("/landing-page/projects/:id", async (req: Request, res: Response) => 
 });
 
 // Create a new project
-router.post("/landing-page/projects", async (req: Request, res: Response) => {
+router.post("/landing-page/projects", requireToolUser, async (req: Request, res: Response) => {
   const { name, html, messages } = req.body as {
     name?: string;
     html?: string;
@@ -74,7 +72,7 @@ router.post("/landing-page/projects", async (req: Request, res: Response) => {
 });
 
 // Update a project
-router.put("/landing-page/projects/:id", async (req: Request, res: Response) => {
+router.put("/landing-page/projects/:id", requireToolUser, async (req: Request, res: Response) => {
   const { name, html, messages } = req.body as {
     name?: string;
     html?: string;
@@ -108,7 +106,7 @@ router.put("/landing-page/projects/:id", async (req: Request, res: Response) => 
 });
 
 // Delete a project
-router.delete("/landing-page/projects/:id", async (req: Request, res: Response) => {
+router.delete("/landing-page/projects/:id", requireToolUser, async (req: Request, res: Response) => {
   try {
     await db
       .delete(landingPageProjectsTable)
