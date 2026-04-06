@@ -2,11 +2,18 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
+import { cacheGet, cacheSet } from "../lib/cache.js";
+
+const REPORT_TTL = 5 * 60 * 1000; // 5 minutes
 
 const router = Router();
 
 /* ── Weekly Report ─────────────────────────────────────────────────────────── */
 router.get("/marketing/weekly-report", requireAdmin, async (req, res) => {
+  const cacheKey = "marketing:weekly";
+  const cached = cacheGet(cacheKey);
+  if (cached) { res.json(cached); return; }
+
   const [
     trafficThisWeek, trafficLastWeek,
     leadsThisWeek, leadsLastWeek,
@@ -108,7 +115,7 @@ router.get("/marketing/weekly-report", requireAdmin, async (req, res) => {
   const thisClicks     = parseInt((clicksThisWeek.rows[0] as any)?.clicks   ?? "0");
   const lastClicks     = parseInt((clicksLastWeek.rows[0] as any)?.clicks   ?? "0");
 
-  res.json({
+  const weeklyPayload = {
     kpis: {
       sessions:  { current: thisTraffic, previous: lastTraffic, change: pct(thisTraffic, lastTraffic) },
       pageviews: { current: parseInt(tw?.pageviews ?? "0"), previous: parseInt(lw?.pageviews ?? "0"), change: pct(parseInt(tw?.pageviews ?? "0"), parseInt(lw?.pageviews ?? "0")) },
@@ -122,12 +129,17 @@ router.get("/marketing/weekly-report", requireAdmin, async (req, res) => {
     dailyLeads: dailyLeads.rows,
     topPages: topPages.rows,
     topSources: topSources.rows,
-  });
+  };
+  cacheSet(cacheKey, weeklyPayload, REPORT_TTL);
+  res.json(weeklyPayload);
 });
 
 /* ── Conversion Funnel ─────────────────────────────────────────────────────── */
 router.get("/marketing/funnel", requireAdmin, async (req, res) => {
   const days = parseInt(String(req.query.days ?? "30"));
+  const funnelKey = `marketing:funnel:${days}`;
+  const cachedFunnel = cacheGet(funnelKey);
+  if (cachedFunnel) { res.json(cachedFunnel); return; }
   const interval = `${days} days`;
 
   const [visitors, engaged, leads, contacts, byChannel, dailyFunnel] = await Promise.all([
@@ -177,7 +189,7 @@ router.get("/marketing/funnel", requireAdmin, async (req, res) => {
   const funnelRate = (a: number, b: number) =>
     b === 0 ? 0 : parseFloat(((a / b) * 100).toFixed(1));
 
-  res.json({
+  const funnelPayload = {
     funnel: [
       { stage: "Visitors", count: v, color: "bg-blue-500", icon: "👥" },
       { stage: "Engaged", count: e, color: "bg-violet-500", icon: "🔥", rate: funnelRate(e, v) },
@@ -192,7 +204,9 @@ router.get("/marketing/funnel", requireAdmin, async (req, res) => {
     },
     byChannel: byChannel.rows,
     dailyFunnel: dailyFunnel.rows,
-  });
+  };
+  cacheSet(funnelKey, funnelPayload, REPORT_TTL);
+  res.json(funnelPayload);
 });
 
 /* ── Campaigns (ROI Tracker) ───────────────────────────────────────────────── */

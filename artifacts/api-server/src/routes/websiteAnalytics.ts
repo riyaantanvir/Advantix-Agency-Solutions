@@ -3,6 +3,9 @@ import { db, pageEventsTable } from "@workspace/db";
 import { sql, desc } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 import { getIp, getBrowser, getOS, getDevice, parseLanguage, getGeoData } from "../lib/urlClickAnalytics.js";
+import { cacheGet, cacheSet } from "../lib/cache.js";
+
+const ANALYTICS_TTL = 5 * 60 * 1000; // 5 minutes
 
 const router = Router();
 
@@ -46,6 +49,10 @@ router.post("/analytics/track", async (req, res) => {
 /* GET /api/analytics/website — admin only */
 router.get("/analytics/website", requireAdmin, async (req, res) => {
   const days = parseInt(String(req.query.days ?? "30"));
+  const cacheKey = `analytics:website:${days}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) { res.json(cached); return; }
+
   const interval = `${days} days`;
 
   const [totalSessions, totalPageViews, bounceStats, avgTime] = await Promise.all([
@@ -183,7 +190,7 @@ router.get("/analytics/website", requireAdmin, async (req, res) => {
     ? Math.round((parseInt(bounceRow.bounced) / parseInt(bounceRow.total_sessions)) * 100)
     : 0;
 
-  res.json({
+  const payload = {
     summary: {
       sessions: parseInt(String((totalSessions.rows[0] as any)?.sessions ?? "0")),
       pageviews: parseInt(String((totalPageViews.rows[0] as any)?.pageviews ?? "0")),
@@ -203,7 +210,9 @@ router.get("/analytics/website", requireAdmin, async (req, res) => {
     scrollByPage: scrollByPage.rows,
     userJourney: userJourney.rows,
     recentSessions: recentSessions.rows,
-  });
+  };
+  cacheSet(cacheKey, payload, ANALYTICS_TTL);
+  res.json(payload);
 });
 
 export default router;

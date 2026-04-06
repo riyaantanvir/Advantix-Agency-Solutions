@@ -118,8 +118,9 @@ export default function WebsiteAnalytics() {
 
   useEffect(() => {
     setLoading(true);
+    setError("");
     fetch(`${API}/analytics/website?days=${days}`, { credentials: "include" })
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(setData)
       .catch(() => setError("Failed to load analytics"))
       .finally(() => setLoading(false));

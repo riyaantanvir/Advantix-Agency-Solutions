@@ -284,6 +284,20 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  // ── page_events indexes for analytics performance ─────────────────────────
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_page_events_event_type_created_at
+      ON page_events (event_type, created_at DESC)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_page_events_created_at
+      ON page_events (created_at DESC)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_page_events_session_id
+      ON page_events (session_id)
+  `);
+
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS recording_sessions (
       id serial PRIMARY KEY,

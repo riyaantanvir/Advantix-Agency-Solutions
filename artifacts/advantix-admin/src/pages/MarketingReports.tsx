@@ -97,7 +97,8 @@ function WeeklyReportTab() {
 
   useEffect(() => {
     fetch(`${API}/marketing/weekly-report`, { credentials: "include" })
-      .then(r => r.json()).then(setData)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(setData)
       .catch(() => setError("Failed to load weekly report"))
       .finally(() => setLoading(false));
   }, []);
@@ -216,7 +217,8 @@ function ConversionFunnelTab() {
   const load = useCallback(() => {
     setLoading(true);
     fetch(`${API}/marketing/funnel?days=${days}`, { credentials: "include" })
-      .then(r => r.json()).then(setData)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(setData)
       .catch(() => setError("Failed to load funnel data"))
       .finally(() => setLoading(false));
   }, [days]);
@@ -449,7 +451,8 @@ function RoiTrackerTab() {
   const loadCampaigns = useCallback(() => {
     setLoading(true);
     fetch(`${API}/marketing/campaigns`, { credentials: "include" })
-      .then(r => r.json()).then(setCampaigns)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(setCampaigns)
       .catch(() => setError("Failed to load campaigns"))
       .finally(() => setLoading(false));
   }, []);
