@@ -164,7 +164,7 @@ router.post("/tools/auth/logout", (req, res) => {
 /* POST /api/admin/tools/auto-login
    Called from admin panel to silently authenticate as a tool user.
    Finds or creates a special admin tool account, then sets the tool session. */
-router.post("/api/admin/tools/auto-login", requireAdmin, async (req, res) => {
+router.post("/admin/tools/auto-login", requireAdmin, async (req, res) => {
   try {
     const adminSession = req.session as { adminId?: number; username?: string };
     const adminEmail = `admin-${adminSession.adminId ?? 0}@advantix.local`;
