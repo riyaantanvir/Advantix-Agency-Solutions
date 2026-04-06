@@ -22,3 +22,4 @@ export * from "./tasks";
 export * from "./blogPosts";
 export * from "./bugReports";
 export * from "./pageEvents";
+export * from "./contentPlans";

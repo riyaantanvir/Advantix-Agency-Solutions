@@ -476,6 +476,24 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS content_plans (
+      id serial PRIMARY KEY,
+      platform text NOT NULL,
+      title text NOT NULL,
+      description text,
+      content text,
+      scheduled_date text NOT NULL,
+      scheduled_time text,
+      status text DEFAULT 'planned' NOT NULL,
+      post_url text,
+      tags text,
+      notes text,
+      created_at timestamp DEFAULT now() NOT NULL,
+      updated_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
   logger.info("Migrations applied");
 }
 
