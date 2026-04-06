@@ -1,6 +1,7 @@
-import { useEditor, EditorContent, type Editor } from "@tiptap/react";
+import { useEditor, EditorContent, type Editor, NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
+import { Node, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
+import BaseImage from "@tiptap/extension-image";
 import TextAlign from "@tiptap/extension-text-align";
 import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
@@ -8,13 +9,14 @@ import Placeholder from "@tiptap/extension-placeholder";
 import Highlight from "@tiptap/extension-highlight";
 import CharacterCount from "@tiptap/extension-character-count";
 import { TextStyle } from "@tiptap/extension-text-style";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { NodeViewProps } from "@tiptap/react";
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
   List, ListOrdered, Quote, Code, Minus,
   Heading1, Heading2, Heading3, Link2, ImageIcon,
-  Highlighter, Undo, Redo, X, Upload, ExternalLink,
+  Highlighter, Undo, Redo, X, Upload, Loader2,
 } from "lucide-react";
 
 interface RichEditorProps {
@@ -26,6 +28,96 @@ interface RichEditorProps {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+/* ── Upload helper ───────────────────────────────────────────────────────── */
+async function uploadImageFile(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("image", file);
+  const res = await fetch(`/api/admin/blog/upload-image`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+  if (!res.ok) throw new Error("Upload failed");
+  const data = await res.json() as { url: string };
+  return data.url;
+}
+
+/* ── Resizable Image NodeView ────────────────────────────────────────────── */
+const SIZE_PRESETS = [
+  { label: "25%", value: "25%" },
+  { label: "50%", value: "50%" },
+  { label: "75%", value: "75%" },
+  { label: "100%", value: "100%" },
+  { label: "Auto", value: "" },
+];
+
+function ResizableImageView({ node, selected, updateAttributes }: NodeViewProps) {
+  const { src, alt, width } = node.attrs as { src: string; alt?: string; width: string };
+
+  return (
+    <NodeViewWrapper className="relative inline-block my-4 max-w-full" data-drag-handle="">
+      <div className="relative group">
+        <img
+          src={src}
+          alt={alt ?? ""}
+          draggable={false}
+          className="rounded-lg block mx-auto"
+          style={{
+            width: width || "auto",
+            maxWidth: "100%",
+            outline: selected ? "2px solid hsl(var(--primary))" : "none",
+            outlineOffset: "2px",
+          }}
+        />
+
+        {/* Size controls — shown when selected */}
+        {selected && (
+          <div
+            className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-card/95 backdrop-blur-sm border border-border rounded-lg px-2 py-1 shadow-lg z-20"
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            <span className="text-xs text-muted-foreground mr-1 whitespace-nowrap">Image size:</span>
+            {SIZE_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => updateAttributes({ width: p.value })}
+                className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                  (width || "") === p.value
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-secondary hover:bg-secondary/80 text-foreground"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </NodeViewWrapper>
+  );
+}
+
+/* ── Custom Image extension with width attribute ─────────────────────────── */
+const ResizableImage = BaseImage.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: {
+        default: "",
+        parseHTML: (el) => el.style.width || el.getAttribute("width") || "",
+        renderHTML: (attrs) =>
+          attrs.width ? { style: `width: ${attrs.width}; max-width: 100%;` } : {},
+      },
+    };
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(ResizableImageView);
+  },
+});
+
+/* ── Toolbar helpers ─────────────────────────────────────────────────────── */
 function ToolbarButton({
   onClick, active, title, disabled, children,
 }: {
@@ -56,6 +148,7 @@ function Divider() {
   return <div className="w-px h-5 bg-border mx-0.5 self-center" />;
 }
 
+/* ── Image Dialog ────────────────────────────────────────────────────────── */
 function ImageDialog({ editor, onClose }: { editor: Editor; onClose: () => void }) {
   const [tab, setTab] = useState<"url" | "upload">("url");
   const [url, setUrl] = useState("");
@@ -75,15 +168,7 @@ function ImageDialog({ editor, onClose }: { editor: Editor; onClose: () => void 
     setUploading(true);
     setError("");
     try {
-      const formData = new FormData();
-      formData.append("image", file);
-      const res = await fetch(`/api/admin/blog/upload-image`, {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
-      if (!res.ok) throw new Error("Upload failed");
-      const { url: imageUrl } = await res.json() as { url: string };
+      const imageUrl = await uploadImageFile(file);
       editor.chain().focus().setImage({ src: imageUrl }).run();
       onClose();
     } catch {
@@ -129,9 +214,11 @@ function ImageDialog({ editor, onClose }: { editor: Editor; onClose: () => void 
                   className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
                 />
               </div>
-              {url && <div className="rounded-lg overflow-hidden border border-border bg-secondary/30 aspect-video flex items-center justify-center">
-                <img src={url} alt="Preview" className="max-h-full max-w-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              </div>}
+              {url && (
+                <div className="rounded-lg overflow-hidden border border-border bg-secondary/30 aspect-video flex items-center justify-center">
+                  <img src={url} alt="Preview" className="max-h-full max-w-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -169,6 +256,7 @@ function ImageDialog({ editor, onClose }: { editor: Editor; onClose: () => void 
   );
 }
 
+/* ── Link Dialog ─────────────────────────────────────────────────────────── */
 function LinkDialog({ editor, onClose }: { editor: Editor; onClose: () => void }) {
   const [href, setHref] = useState(editor.getAttributes("link").href ?? "");
   const [newTab, setNewTab] = useState(true);
@@ -213,20 +301,37 @@ function LinkDialog({ editor, onClose }: { editor: Editor; onClose: () => void }
   );
 }
 
+/* ── Paste-uploading toast ───────────────────────────────────────────────── */
+function PasteOverlay({ show }: { show: boolean }) {
+  if (!show) return null;
+  return (
+    <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2 shadow-lg text-sm text-foreground pointer-events-none">
+      <Loader2 size={14} className="animate-spin text-primary" />
+      Uploading pasted image…
+    </div>
+  );
+}
+
+/* ── Main Editor ─────────────────────────────────────────────────────────── */
 export default function RichEditor({ content, onChange, placeholder, minHeight = 400 }: RichEditorProps) {
   const [showImageDialog, setShowImageDialog] = useState(false);
   const [showLinkDialog, setShowLinkDialog] = useState(false);
+  const [pasteUploading, setPasteUploading] = useState(false);
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        dropcursor: { color: "hsl(var(--primary))" },
+        link: false,
+        underline: false,
+      }),
       Underline,
       TextStyle,
       Highlight.configure({ multicolor: false }),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Link.configure({ openOnClick: false, HTMLAttributes: { rel: "noopener noreferrer" } }),
-      Image.configure({ inline: false, allowBase64: false, HTMLAttributes: { class: "rounded-lg max-w-full mx-auto my-4" } }),
-      Placeholder.configure({ placeholder: placeholder ?? "Start writing your blog post..." }),
+      ResizableImage.configure({ inline: false, allowBase64: false }),
+      Placeholder.configure({ placeholder: placeholder ?? "Start writing your blog post… (paste images directly!)" }),
       CharacterCount,
     ],
     content,
@@ -234,6 +339,29 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
       attributes: {
         class: "prose prose-invert max-w-none focus:outline-none px-6 py-5",
         style: `min-height: ${minHeight}px`,
+      },
+      handlePaste(view, event) {
+        const items = Array.from(event.clipboardData?.items ?? []);
+        const imageItem = items.find((i) => i.type.startsWith("image/"));
+        if (!imageItem) return false;
+
+        event.preventDefault();
+        const file = imageItem.getAsFile();
+        if (!file) return true;
+
+        setPasteUploading(true);
+        uploadImageFile(file)
+          .then((url) => {
+            view.dispatch(
+              view.state.tr.replaceSelectionWith(
+                view.state.schema.nodes.image.create({ src: url })
+              )
+            );
+          })
+          .catch(() => {})
+          .finally(() => setPasteUploading(false));
+
+        return true;
       },
     },
     onUpdate({ editor }) {
@@ -253,10 +381,9 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
   const chars = editor.storage.characterCount?.characters?.() ?? 0;
 
   return (
-    <div className="border border-border rounded-xl overflow-hidden bg-card">
+    <div className="border border-border rounded-xl overflow-hidden bg-card relative">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-0.5 p-2 border-b border-border bg-secondary/20 sticky top-0 z-10">
-        {/* Undo / Redo */}
         <ToolbarButton title="Undo" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>
           <Undo size={15} />
         </ToolbarButton>
@@ -266,7 +393,6 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
 
         <Divider />
 
-        {/* Headings */}
         <ToolbarButton title="Heading 1" active={editor.isActive("heading", { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
           <Heading1 size={15} />
         </ToolbarButton>
@@ -279,7 +405,6 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
 
         <Divider />
 
-        {/* Text formatting */}
         <ToolbarButton title="Bold" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}>
           <Bold size={15} />
         </ToolbarButton>
@@ -301,7 +426,6 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
 
         <Divider />
 
-        {/* Alignment */}
         <ToolbarButton title="Align left" active={editor.isActive({ textAlign: "left" })} onClick={() => editor.chain().focus().setTextAlign("left").run()}>
           <AlignLeft size={15} />
         </ToolbarButton>
@@ -317,7 +441,6 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
 
         <Divider />
 
-        {/* Lists */}
         <ToolbarButton title="Bullet list" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()}>
           <List size={15} />
         </ToolbarButton>
@@ -336,7 +459,6 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
 
         <Divider />
 
-        {/* Media */}
         <ToolbarButton title="Insert link" active={editor.isActive("link")} onClick={() => setShowLinkDialog(true)}>
           <Link2 size={15} />
         </ToolbarButton>
@@ -353,6 +475,9 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
         <span>{words} {words === 1 ? "word" : "words"} · {chars} characters</span>
         <span className="text-muted-foreground/60">Ctrl+B Bold · Ctrl+I Italic · Ctrl+Z Undo</span>
       </div>
+
+      {/* Paste upload indicator */}
+      <PasteOverlay show={pasteUploading} />
 
       {showImageDialog && editor && <ImageDialog editor={editor} onClose={() => setShowImageDialog(false)} />}
       {showLinkDialog && editor && <LinkDialog editor={editor} onClose={() => setShowLinkDialog(false)} />}
