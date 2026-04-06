@@ -24,6 +24,7 @@ const Tasks = lazy(() => import("./pages/Tasks"));
 const Notifications = lazy(() => import("./pages/Notifications"));
 const Blog = lazy(() => import("./pages/Blog"));
 const BlogEditor = lazy(() => import("./pages/BlogEditor"));
+const BugReports = lazy(() => import("./pages/BugReports"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -132,6 +133,10 @@ function Router() {
 
       <Route path="/tools">
         <ProtectedLayout><Tools /></ProtectedLayout>
+      </Route>
+
+      <Route path="/bug-reports">
+        <ProtectedLayout><BugReports /></ProtectedLayout>
       </Route>
 
       <Route>

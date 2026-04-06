@@ -1,10 +1,11 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Menu, X, LogIn, Wrench, ChevronDown, Link2, Video, LayoutDashboard, LogOut } from "lucide-react";
+import { Menu, X, LogIn, Wrench, ChevronDown, Link2, Video, LayoutDashboard, LogOut, Bug } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToolsUser } from "@/context/ToolsUserContext";
 import { LoginModal } from "@/components/LoginModal";
+import { BugReportModal } from "@/components/BugReportModal";
 
 const expo = [0.22, 1, 0.36, 1] as const;
 
@@ -19,6 +20,7 @@ export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [bugReportOpen, setBugReportOpen] = useState(false);
   const { user, logout } = useToolsUser();
 
   useEffect(() => {
@@ -184,6 +186,16 @@ export function Navbar() {
               </Button>
             )}
 
+            {/* Report Bugs */}
+            <button
+              onClick={() => setBugReportOpen(true)}
+              className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-red-400 transition-colors duration-200"
+              title="Report a Bug"
+            >
+              <Bug className="w-3.5 h-3.5" />
+              Report Bug
+            </button>
+
             {!user && (
               <Link href="/contact">
                 <motion.div
@@ -223,6 +235,9 @@ export function Navbar() {
 
       {/* Login Modal */}
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+
+      {/* Bug Report Modal */}
+      <BugReportModal open={bugReportOpen} onClose={() => setBugReportOpen(false)} />
 
       {/* Mobile Menu */}
       <AnimatePresence>
@@ -274,6 +289,21 @@ export function Navbar() {
                     </Link>
                   );
                 })}
+              </motion.div>
+
+              {/* Report Bug in mobile */}
+              <motion.div
+                initial={{ opacity: 0, x: -16 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.22, duration: 0.3, ease: expo }}
+              >
+                <button
+                  onClick={() => { setMobileMenuOpen(false); setBugReportOpen(true); }}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-secondary/60 transition-colors"
+                >
+                  <Bug className="w-4 h-4 text-red-400" />
+                  <span className="text-base font-medium text-muted-foreground">Report a Bug</span>
+                </button>
               </motion.div>
 
               <motion.div

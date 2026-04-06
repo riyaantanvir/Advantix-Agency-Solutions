@@ -20,3 +20,4 @@ export * from "./integrations";
 export * from "./landingPageProjects";
 export * from "./tasks";
 export * from "./blogPosts";
+export * from "./bugReports";
