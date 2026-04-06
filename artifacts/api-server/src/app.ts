@@ -111,10 +111,13 @@ app.use(
   }),
 );
 
-// ── Uploaded blog images (must be before API prefix) ─────────────────────────
+// ── Uploaded blog images ─────────────────────────────────────────────────────
+// Served at /uploads/ for production (direct Express serving) AND at
+// /api/uploads/ so Replit's /api/ path-based proxy routes it correctly in dev.
 const uploadsDir = path.resolve(__dirname, "../../uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use("/uploads", express.static(uploadsDir));
+app.use("/api/uploads", express.static(uploadsDir));
 
 // ── URL shortener (must be before API prefix) ─────────────────────────────────
 app.use(redirectRouter);

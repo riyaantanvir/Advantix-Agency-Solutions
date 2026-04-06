@@ -138,7 +138,7 @@ router.get("/admin/blog/:id", requireAdmin, async (req, res) => {
 
 router.post("/admin/blog/upload-image", requireAdmin, upload.single("image"), (req, res) => {
   if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
-  const url = `/uploads/blog/${req.file.filename}`;
+  const url = `/api/uploads/blog/${req.file.filename}`;
   res.json({ url });
 });
 
