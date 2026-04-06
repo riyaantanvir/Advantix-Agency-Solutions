@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { db, toolUsersTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
+import { requireAdmin } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -158,6 +159,39 @@ router.post("/tools/auth/logout", (req, res) => {
   req.session.toolUserEmail = undefined;
   req.session.toolUserName = undefined;
   res.json({ ok: true });
+});
+
+/* POST /api/admin/tools/auto-login
+   Called from admin panel to silently authenticate as a tool user.
+   Finds or creates a special admin tool account, then sets the tool session. */
+router.post("/api/admin/tools/auto-login", requireAdmin, async (req, res) => {
+  try {
+    const adminSession = req.session as { adminId?: number; username?: string };
+    const adminEmail = `admin-${adminSession.adminId ?? 0}@advantix.local`;
+    const adminName = adminSession.username ?? "Admin";
+
+    let [user] = await db
+      .select()
+      .from(toolUsersTable)
+      .where(eq(toolUsersTable.email, adminEmail))
+      .limit(1);
+
+    if (!user) {
+      const passwordHash = await bcrypt.hash(Math.random().toString(36), 10);
+      [user] = await db
+        .insert(toolUsersTable)
+        .values({ name: adminName, email: adminEmail, passwordHash })
+        .returning();
+    }
+
+    req.session.toolUserId = user.id;
+    req.session.toolUserEmail = user.email;
+    req.session.toolUserName = user.name;
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Auto-login failed" });
+  }
 });
 
 export default router;

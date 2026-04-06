@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
-import { Link2, Video, ArrowRight, Zap, Sparkles, Shield, ExternalLink } from "lucide-react";
+import { Link2, Video, ArrowRight, Zap, Sparkles, Shield, ExternalLink, Loader2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
 
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const expo = [0.22, 1, 0.36, 1] as const;
 
 const tools = [
@@ -56,6 +59,36 @@ const tools = [
 ];
 
 export default function Tools() {
+  const { toast } = useToast();
+  const [loadingTool, setLoadingTool] = useState<string | null>(null);
+
+  const openTool = async (e: React.MouseEvent, tool: typeof tools[number]) => {
+    e.preventDefault();
+
+    setLoadingTool(tool.name);
+
+    // Open the window immediately so popup blockers don't block it
+    const win = window.open("about:blank", "_blank");
+
+    try {
+      await fetch(`${BASE}/api/admin/tools/auto-login`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Non-fatal — still navigate even if auto-login fails
+    } finally {
+      setLoadingTool(null);
+    }
+
+    if (win) {
+      win.location.href = tool.href;
+    } else {
+      // Fallback if popup was blocked
+      window.open(tool.href, "_blank");
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -66,7 +99,7 @@ export default function Tools() {
           </div>
           <div>
             <h1 className="text-3xl font-display font-bold text-foreground">Advantix Tools</h1>
-            <p className="text-muted-foreground text-sm mt-0.5">All tools in one place — accessible directly from your admin panel.</p>
+            <p className="text-muted-foreground text-sm mt-0.5">All tools in one place — open instantly, no login required.</p>
           </div>
         </div>
       </div>
@@ -75,17 +108,18 @@ export default function Tools() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {tools.map((tool, idx) => {
           const Icon = tool.icon;
+          const isLoading = loadingTool === tool.name;
           return (
             <motion.a
               key={tool.name}
               href={tool.href}
-              target="_blank"
-              rel="noopener noreferrer"
+              onClick={(e) => openTool(e, tool)}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.45, ease: expo, delay: idx * 0.08 }}
               whileHover={{ y: -3, scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
+              className="block"
             >
               <Card className={`p-7 h-full border cursor-pointer transition-all duration-300 hover:shadow-lg bg-card ${tool.border}`}>
                 {/* Icon + badge row */}
@@ -106,8 +140,17 @@ export default function Tools() {
 
                 {/* CTA */}
                 <div className={`flex items-center gap-2 text-sm font-semibold ${tool.color}`}>
-                  {tool.linkLabel}
-                  <ExternalLink className="w-3.5 h-3.5" />
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Opening...
+                    </>
+                  ) : (
+                    <>
+                      {tool.linkLabel}
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </>
+                  )}
                 </div>
               </Card>
             </motion.a>
@@ -118,7 +161,7 @@ export default function Tools() {
       {/* Info banner */}
       <div className="flex items-start gap-3 px-5 py-4 rounded-xl bg-primary/5 border border-primary/20 text-sm text-muted-foreground">
         <ArrowRight className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-        <p>All tools open in a new tab. As an admin, you have full access to every tool — no sign-up required.</p>
+        <p>All tools open in a new tab. As an admin, you are automatically signed in — no separate login needed.</p>
       </div>
     </div>
   );
