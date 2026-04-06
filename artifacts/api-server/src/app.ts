@@ -145,7 +145,8 @@ if (isProd) {
   // Public website at /  (catch-all last)
   if (fs.existsSync(websiteDir)) {
     app.use(express.static(websiteDir, { index: false }));
-    app.get("*", (req, res, next) => {
+    // Express 5 requires named wildcard params — "/*path" instead of "*"
+    app.get("/{*path}", (req, res, next) => {
       if (req.path.startsWith("/api") || req.path.startsWith("/s/")) {
         next();
         return;
