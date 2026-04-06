@@ -7,8 +7,24 @@ const router: IRouter = Router();
 
 /* ── Email Subscribers ──────────────────────────────────── */
 
+/* ── Newsletter Settings helpers ─────────────────────────── */
+async function getNewsletterEnabled(): Promise<boolean> {
+  const r = await db.execute(sql`
+    SELECT value FROM site_settings WHERE key = 'newsletter_enabled'
+  `);
+  const rows = r.rows as { value: string }[];
+  if (rows.length === 0) return true; // default on
+  return rows[0].value !== "false";
+}
+
 /* POST /api/subscribe — public email capture */
 router.post("/subscribe", async (req, res) => {
+  const enabled = await getNewsletterEnabled();
+  if (!enabled) {
+    res.status(503).json({ error: "Newsletter subscriptions are currently disabled." });
+    return;
+  }
+
   const { email, name, source } = req.body as {
     email?: string; name?: string; source?: string;
   };
@@ -57,6 +73,22 @@ router.delete("/admin/subscribers/:id/hard", requireAdmin, async (req, res) => {
   const id = parseInt(String(req.params.id ?? "0"), 10);
   await db.execute(sql`DELETE FROM email_subscribers WHERE id = ${id}`);
   res.json({ ok: true });
+});
+
+/* GET /api/settings/newsletter — public */
+router.get("/settings/newsletter", async (_req, res) => {
+  res.json({ enabled: await getNewsletterEnabled() });
+});
+
+/* PUT /api/admin/settings/newsletter — admin toggle */
+router.put("/admin/settings/newsletter", requireAdmin, async (req, res) => {
+  const { enabled } = req.body as { enabled?: boolean };
+  if (enabled === undefined) { res.status(400).json({ error: "enabled required" }); return; }
+  await db.execute(sql`
+    INSERT INTO site_settings (key, value) VALUES ('newsletter_enabled', ${String(enabled)})
+    ON CONFLICT (key) DO UPDATE SET value = ${String(enabled)}, updated_at = now()
+  `);
+  res.json({ enabled: await getNewsletterEnabled() });
 });
 
 /* ── CTA Bar Settings ────────────────────────────────────── */
