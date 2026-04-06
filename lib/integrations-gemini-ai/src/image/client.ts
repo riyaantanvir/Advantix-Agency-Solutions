@@ -3,14 +3,15 @@ import { GoogleGenAI, Modality } from "@google/genai";
 const apiKey =
   process.env.AI_INTEGRATIONS_GEMINI_API_KEY ??
   process.env.GOOGLE_AI_API_KEY ??
-  "no-key-configured";
+  "AIzaSy-placeholder-key";
 
-const baseURL = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL ?? undefined;
-
-export const ai = new GoogleGenAI({
-  apiKey,
-  ...(baseURL ? { httpOptions: { apiVersion: "", baseUrl: baseURL } } : {}),
-});
+let _ai: GoogleGenAI;
+try {
+  _ai = new GoogleGenAI({ apiKey });
+} catch {
+  _ai = new GoogleGenAI({ apiKey: "AIzaSy-placeholder-key" });
+}
+export const ai = _ai;
 
 export function createGeminiImageClient(key: string): GoogleGenAI {
   return new GoogleGenAI({ apiKey: key });
@@ -20,7 +21,7 @@ export async function generateImage(
   prompt: string,
   key?: string
 ): Promise<{ b64_json: string; mimeType: string }> {
-  const client = key ? createGeminiImageClient(key) : ai;
+  const client = key ? createGeminiImageClient(key) : _ai;
   const response = await client.models.generateContent({
     model: "gemini-2.5-flash-image",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
