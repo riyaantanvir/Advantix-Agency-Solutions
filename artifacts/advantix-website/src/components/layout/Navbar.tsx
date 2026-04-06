@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Menu, X, LogIn, Wrench, ChevronDown, Link2, Video, LayoutDashboard, LogOut, Bug } from "lucide-react";
+import { Menu, X, LogIn, Wrench, ChevronDown, Link2, Video, LayoutDashboard, LogOut, Bug, Shield } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToolsUser } from "@/context/ToolsUserContext";
@@ -21,7 +21,7 @@ export function Navbar() {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [bugReportOpen, setBugReportOpen] = useState(false);
-  const { user, logout } = useToolsUser();
+  const { user, isAdmin, logout } = useToolsUser();
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
@@ -155,8 +155,13 @@ export function Navbar() {
               </AnimatePresence>
             </div>
 
-            {/* Conditional: logged-in user OR login button */}
-            {user ? (
+            {/* Conditional: admin / logged-in user / login button */}
+            {isAdmin ? (
+              <a href="/admin/" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-semibold text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors duration-200">
+                <Shield className="w-4 h-4" />
+                Admin Panel
+              </a>
+            ) : user ? (
               <div className="flex items-center gap-1.5">
                 <Link href="/tools/dashboard">
                   <div className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-semibold transition-colors duration-200 hover:text-primary hover:bg-primary/5 ${location === "/tools/dashboard" ? "text-primary bg-primary/5" : "text-muted-foreground"}`}>
@@ -196,7 +201,7 @@ export function Navbar() {
               Report Bug
             </button>
 
-            {!user && (
+            {!user && !isAdmin && (
               <Link href="/contact">
                 <motion.div
                   whileHover={{ scale: 1.04 }}
@@ -312,7 +317,13 @@ export function Navbar() {
                 transition={{ delay: 0.24, duration: 0.3, ease: expo }}
                 className="pt-2 flex flex-col gap-2"
               >
-                {user ? (
+                {isAdmin ? (
+                  <a href="/admin/" className="w-full">
+                    <Button variant="outline" className="w-full font-semibold gap-2 border-amber-500/40 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300">
+                      <Shield className="w-4 h-4" /> Admin Panel
+                    </Button>
+                  </a>
+                ) : user ? (
                   <>
                     <Link href="/tools/dashboard" className="block">
                       <Button variant="outline" className="w-full font-semibold gap-2">
@@ -329,7 +340,7 @@ export function Navbar() {
                     <LogIn className="w-4 h-4" /> Login
                   </Button>
                 )}
-                {!user && (
+                {!user && !isAdmin && (
                   <Link href="/contact">
                     <Button className="w-full font-semibold bg-primary hover:bg-primary/90 text-primary-foreground">
                       Get Started
