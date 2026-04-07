@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import crypto from "node:crypto";
 import {
   db,
   emailSendersTable,
@@ -14,6 +15,56 @@ import { requireAdmin } from "../middleware/auth.js";
 import { sendEmail, sendBulkEmails } from "../services/resendMailer.js";
 
 const router: IRouter = Router();
+
+const TRACKING_SECRET = process.env.SESSION_SECRET || process.env.TRACKING_SECRET || "advantix-track-default-key";
+
+function signTrackingToken(campaignId: number, email: string, extra?: string): string {
+  const payload = `${campaignId}:${email}${extra ? `:${extra}` : ""}`;
+  const hmac = crypto.createHmac("sha256", TRACKING_SECRET).update(payload).digest("hex").slice(0, 16);
+  return hmac;
+}
+
+function verifyTrackingToken(token: string, campaignId: number, email: string, extra?: string): boolean {
+  return token === signTrackingToken(campaignId, email, extra);
+}
+
+function getTrackingBaseUrl(): string {
+  if (process.env.NODE_ENV === "production") {
+    return process.env.APP_URL || "https://advantix.digital";
+  }
+  const replitDomain = (process.env.REPLIT_DOMAINS ?? "").split(",")[0]?.trim();
+  if (replitDomain) return `https://${replitDomain}`;
+  return "http://localhost:3000";
+}
+
+function injectTrackingPixel(html: string, campaignId: number, email: string): string {
+  const base = getTrackingBaseUrl();
+  const t = signTrackingToken(campaignId, email);
+  const params = new URLSearchParams({ c: String(campaignId), e: email, t });
+  const pixelUrl = `${base}/api/email/track/open?${params.toString()}`;
+  const pixel = `<img src="${pixelUrl}" width="1" height="1" alt="" style="display:none;width:1px;height:1px;border:0;" />`;
+
+  if (html.includes("</body>")) {
+    return html.replace("</body>", `${pixel}</body>`);
+  }
+  return html + pixel;
+}
+
+function wrapLinksForTracking(html: string, campaignId: number, email: string): string {
+  const base = getTrackingBaseUrl();
+  return html.replace(
+    /<a\s([^>]*?)href=["'](https?:\/\/[^"']+)["']([^>]*?)>/gi,
+    (_match, before: string, url: string, after: string) => {
+      if (url.includes("/track/") || url.includes("mailto:") || url.includes("unsubscribe@")) {
+        return _match;
+      }
+      const t = signTrackingToken(campaignId, email, url);
+      const params = new URLSearchParams({ c: String(campaignId), e: email, url, t });
+      const trackUrl = `${base}/api/email/track/click?${params.toString()}`;
+      return `<a ${before}href="${trackUrl}"${after}>`;
+    }
+  );
+}
 
 function appendUnsubscribeFooter(html: string, recipientEmail: string): string {
   const unsubLink = `mailto:unsubscribe@advantix.digital?subject=unsubscribe&body=${encodeURIComponent(recipientEmail)}`;
@@ -403,6 +454,9 @@ router.post("/email/campaigns/:id/send", requireAdmin, async (req, res) => {
       html = appendUnsubscribeFooter(html, r.email);
     }
 
+    html = injectTrackingPixel(html, id, r.email);
+    html = wrapLinksForTracking(html, id, r.email);
+
     return {
       to: r.email,
       from: senderFrom,
@@ -564,20 +618,6 @@ router.post("/email/send-single", requireAdmin, async (req, res) => {
     finalHtml = appendUnsubscribeFooter(finalHtml, trimmedTo);
   }
 
-  const mailResult = await sendEmail({
-    to: trimmedTo,
-    from: fromAddress,
-    subject: trimmedSubject,
-    html: finalHtml,
-    replyTo: replyToAddr,
-    listUnsubscribe: `mailto:unsubscribe@advantix.digital?subject=unsubscribe&body=${encodeURIComponent(trimmedTo)}`,
-  });
-
-  if (!mailResult.success) {
-    res.status(502).json({ error: `Email delivery failed: ${mailResult.error}` });
-    return;
-  }
-
   const [singleCampaign] = await db.insert(emailCampaignsTable).values({
     name: `Single: ${trimmedSubject.slice(0, 60)}`,
     subject: trimmedSubject,
@@ -587,9 +627,30 @@ router.post("/email/send-single", requireAdmin, async (req, res) => {
     htmlContent: finalHtml,
     recipientListName: "__single__",
     recipientCount: 1,
-    status: "sent",
-    sentAt: new Date(),
+    status: "draft",
   }).returning();
+
+  let trackedHtml = injectTrackingPixel(finalHtml, singleCampaign.id, trimmedTo);
+  trackedHtml = wrapLinksForTracking(trackedHtml, singleCampaign.id, trimmedTo);
+
+  const mailResult = await sendEmail({
+    to: trimmedTo,
+    from: fromAddress,
+    subject: trimmedSubject,
+    html: trackedHtml,
+    replyTo: replyToAddr,
+    listUnsubscribe: `mailto:unsubscribe@advantix.digital?subject=unsubscribe&body=${encodeURIComponent(trimmedTo)}`,
+  });
+
+  if (!mailResult.success) {
+    await db.delete(emailCampaignsTable).where(eq(emailCampaignsTable.id, singleCampaign.id));
+    res.status(502).json({ error: `Email delivery failed: ${mailResult.error}` });
+    return;
+  }
+
+  await db.update(emailCampaignsTable)
+    .set({ status: "sent", sentAt: new Date(), updatedAt: new Date() })
+    .where(eq(emailCampaignsTable.id, singleCampaign.id));
 
   await db.insert(emailEventsTable).values({
     campaignId: singleCampaign.id,
@@ -610,6 +671,71 @@ router.post("/email/send-single", requireAdmin, async (req, res) => {
     subject: trimmedSubject,
     resendId: mailResult.resendId,
   });
+});
+
+// ── PUBLIC TRACKING ENDPOINTS (no auth — hit by email clients) ────────────
+
+const TRANSPARENT_GIF = Buffer.from(
+  "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+  "base64"
+);
+
+router.get("/email/track/open", async (req, res) => {
+  res.set({
+    "Content-Type": "image/gif",
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
+  });
+  res.end(TRANSPARENT_GIF);
+
+  const campaignId = parseInt(String(req.query.c), 10);
+  const contactEmail = String(req.query.e || "").trim();
+  const token = String(req.query.t || "");
+  if (!campaignId || !contactEmail || !token) return;
+  if (!verifyTrackingToken(token, campaignId, contactEmail)) return;
+
+  try {
+    await db.execute(sql`
+      INSERT INTO email_events (campaign_id, contact_email, event_type, metadata)
+      SELECT ${campaignId}, ${contactEmail}, 'opened', ${JSON.stringify({ ua: req.headers["user-agent"] ?? "" })}
+      WHERE NOT EXISTS (
+        SELECT 1 FROM email_events
+        WHERE campaign_id = ${campaignId}
+          AND contact_email = ${contactEmail}
+          AND event_type = 'opened'
+      )
+    `);
+  } catch (_) {}
+});
+
+router.get("/email/track/click", async (req, res) => {
+  const campaignId = parseInt(String(req.query.c), 10);
+  const contactEmail = String(req.query.e || "").trim();
+  const targetUrl = String(req.query.url || "");
+  const token = String(req.query.t || "");
+
+  if (!targetUrl || !targetUrl.startsWith("http")) {
+    res.status(400).send("Invalid URL");
+    return;
+  }
+
+  res.redirect(302, targetUrl);
+
+  if (!campaignId || !contactEmail || !token) return;
+  if (!verifyTrackingToken(token, campaignId, contactEmail, targetUrl)) return;
+
+  try {
+    await db.insert(emailEventsTable).values({
+      campaignId,
+      contactEmail,
+      eventType: "clicked",
+      metadata: JSON.stringify({
+        url: targetUrl,
+        ua: req.headers["user-agent"] ?? "",
+      }),
+    });
+  } catch (_) {}
 });
 
 // ── WEBHOOK (for future Resend integration) ────────────────────────────────
