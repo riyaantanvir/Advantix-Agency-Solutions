@@ -43,7 +43,7 @@ Full-stack pnpm monorepo for **Advantix Agency** (advantix.agency). A complete d
 | Artifact | Served At | Description |
 |----------|-----------|-------------|
 | `advantix-website` | `/` | Public marketing website — Home, Portfolio, Team, Contact, Blog, Tools (URL Shortener, Screen Recorder, War Update), user login/dashboard |
-| `advantix-admin` | `/admin/` | Protected admin dashboard — Contacts, Leads, Portfolio, Team, Blog, AI Management, Integrations, Tasks, Notifications, Bug Reports, Website Analytics, Marketing Reports, Push Notifications, Email Subscribers, Email Marketing, Site Settings, Content Planner |
+| `advantix-admin` | `/admin/` | Protected admin dashboard — grouped sidebar: Management (Tasks, Alerts, Bugs, Contacts, Leads, Users), Marketing (Email, Push, Subscribers, Content, Reports), Content (Blog, Portfolio, Services, Team), System (Tools, AI, Integrations, Assistant Requests, Settings), plus Dashboard and Website Analytics |
 | `advantix-ai` | `/ai/` | Multi-model AI chat tool — streaming, GPT/Claude/Gemini auto-routing, landing page builder, memory system |
 | `api-server` | — | Express REST API backend (all `/api/*` routes, serves all frontends in production) |
 
@@ -315,6 +315,7 @@ All routes prefixed with `/api`.
   - `GET /api/email/stats` — Dashboard stats
   - `GET /api/email/lists` — Contact list summary
   - `POST /api/email/webhook` — Resend webhook receiver (unauthenticated)
+  - **NOTE**: Email sending is currently log-only (records campaigns/events in DB). User dismissed Resend integration; needs either Resend API key set as `RESEND_API_KEY` secret, or another email provider, to enable actual delivery.
 
 ---
 

@@ -27,33 +27,76 @@ import {
   Megaphone,
   Settings,
   CalendarDays,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const navLinks = [
+type NavLink = { path: string; label: string; icon: React.ComponentType<{ className?: string }> };
+
+type NavGroup = {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children: NavLink[];
+};
+
+type NavItem = NavLink | NavGroup;
+
+function isGroup(item: NavItem): item is NavGroup {
+  return "children" in item;
+}
+
+const navItems: NavItem[] = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/tasks", label: "Task Management", icon: CheckSquare },
-  { path: "/notifications", label: "Alert Management", icon: Bell },
-  { path: "/bug-reports", label: "Bug Management", icon: Bug },
+  {
+    label: "Management",
+    icon: CheckSquare,
+    children: [
+      { path: "/tasks", label: "Tasks", icon: CheckSquare },
+      { path: "/notifications", label: "Alerts", icon: Bell },
+      { path: "/bug-reports", label: "Bug Reports", icon: Bug },
+      { path: "/contacts", label: "Contacts", icon: Mail },
+      { path: "/leads", label: "Leads", icon: TrendingUp },
+      { path: "/user-management", label: "Users", icon: UserCog },
+    ],
+  },
+  {
+    label: "Marketing",
+    icon: Megaphone,
+    children: [
+      { path: "/email-marketing", label: "Email Marketing", icon: Mail },
+      { path: "/push-notifications", label: "Push Notifications", icon: Bell },
+      { path: "/email-subscribers", label: "Email Subscribers", icon: Mail },
+      { path: "/content-planner", label: "Content Planner", icon: CalendarDays },
+      { path: "/marketing-reports", label: "Reports", icon: BarChart2 },
+    ],
+  },
+  {
+    label: "Content",
+    icon: BookOpen,
+    children: [
+      { path: "/blog", label: "Blog", icon: BookOpen },
+      { path: "/portfolio", label: "Portfolio", icon: Briefcase },
+      { path: "/services", label: "Services", icon: Package },
+      { path: "/team", label: "Team", icon: Users },
+    ],
+  },
   { path: "/website-analytics", label: "Website Analytics", icon: BarChart2 },
-  { path: "/content-planner",    label: "Content Planner",     icon: CalendarDays },
-  { path: "/email-marketing",   label: "Email Marketing",     icon: Mail },
-  { path: "/marketing-reports",  label: "Marketing Reports",   icon: Megaphone },
-  { path: "/push-notifications", label: "Push Notifications",  icon: Bell },
-  { path: "/email-subscribers",  label: "Email Subscribers",   icon: Mail },
-  { path: "/site-settings",      label: "Site Settings",       icon: Settings },
-  { path: "/tools", label: "Advantix Tools", icon: Zap },
-  { path: "/contacts", label: "Contacts", icon: Mail },
-  { path: "/leads", label: "Leads", icon: TrendingUp },
-  { path: "/assistant-requests", label: "Assistant Requests", icon: HeadphonesIcon },
-  { path: "/manage-ai", label: "Manage Advantix AI", icon: Sparkles },
-  { path: "/integrations", label: "Integrations", icon: Plug },
-  { path: "/blog", label: "Blog", icon: BookOpen },
-  { path: "/portfolio", label: "Portfolio", icon: Briefcase },
-  { path: "/services", label: "Services", icon: Package },
-  { path: "/team", label: "Team", icon: Users },
-  { path: "/user-management", label: "User Management", icon: UserCog },
+  {
+    label: "System",
+    icon: Settings,
+    children: [
+      { path: "/tools", label: "Advantix Tools", icon: Zap },
+      { path: "/manage-ai", label: "Manage AI", icon: Sparkles },
+      { path: "/integrations", label: "Integrations", icon: Plug },
+      { path: "/assistant-requests", label: "Assistant Requests", icon: HeadphonesIcon },
+      { path: "/site-settings", label: "Site Settings", icon: Settings },
+    ],
+  },
 ];
+
+function getGroupDefaultOpen(group: NavGroup, currentPath: string): boolean {
+  return group.children.some((child) => currentPath === child.path);
+}
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
@@ -61,6 +104,18 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const logoutMutation = useLogout();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const initialOpen: Record<string, boolean> = {};
+  navItems.forEach((item) => {
+    if (isGroup(item)) {
+      initialOpen[item.label] = getGroupDefaultOpen(item, location);
+    }
+  });
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(initialOpen);
+
+  const toggleGroup = (label: string) => {
+    setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
+  };
 
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
@@ -72,6 +127,65 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const renderLink = (link: NavLink, indent = false) => {
+    const isActive = location === link.path;
+    const Icon = link.icon;
+    return (
+      <Link
+        key={link.path}
+        href={link.path}
+        onClick={() => setIsMobileMenuOpen(false)}
+        className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group text-sm ${
+          indent ? "ml-3 pl-5" : ""
+        } ${
+          isActive
+            ? "bg-primary/10 text-primary font-semibold"
+            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground font-medium"
+        }`}
+      >
+        <Icon className={`w-4 h-4 shrink-0 transition-colors ${isActive ? "text-primary" : "group-hover:text-foreground"}`} />
+        <span className="truncate">{link.label}</span>
+      </Link>
+    );
+  };
+
+  const renderGroup = (group: NavGroup) => {
+    const isOpen = openGroups[group.label] ?? false;
+    const hasActiveChild = group.children.some((c) => location === c.path);
+    const Icon = group.icon;
+    return (
+      <div key={group.label}>
+        <button
+          onClick={() => toggleGroup(group.label)}
+          className={`flex items-center gap-3 w-full px-4 py-2.5 rounded-lg transition-all duration-200 group text-sm ${
+            hasActiveChild
+              ? "text-primary font-semibold"
+              : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground font-medium"
+          }`}
+        >
+          <Icon className={`w-4 h-4 shrink-0 transition-colors ${hasActiveChild ? "text-primary" : "group-hover:text-foreground"}`} />
+          <span className="truncate flex-1 text-left">{group.label}</span>
+          <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+        </button>
+        <AnimatePresence initial={false}>
+          {isOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              className="overflow-hidden"
+            >
+              <div className="py-1 space-y-0.5">
+                {group.children.map((child) => renderLink(child, true))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
+
   const SidebarContent = () => (
     <>
       <div className="p-6 shrink-0">
@@ -81,35 +195,19 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
-        {navLinks.map((link) => {
-          const isActive = location === link.path;
-          const Icon = link.icon;
-          return (
-            <Link 
-              key={link.path} 
-              href={link.path}
-              onClick={() => setIsMobileMenuOpen(false)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${
-                isActive 
-                  ? "bg-primary/10 text-primary font-semibold" 
-                  : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground font-medium"
-              }`}
-            >
-              <Icon className={`w-5 h-5 transition-colors ${isActive ? "text-primary" : "group-hover:text-foreground"}`} />
-              {link.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 px-3 space-y-1 mt-2 overflow-y-auto">
+        {navItems.map((item) =>
+          isGroup(item) ? renderGroup(item) : renderLink(item)
+        )}
       </nav>
 
       <div className="p-4 shrink-0 border-t border-border/50">
         <button
           onClick={handleLogout}
           disabled={logoutMutation.isPending}
-          className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors font-medium group"
+          className="flex items-center gap-3 w-full px-4 py-2.5 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors font-medium group text-sm"
         >
-          <LogOut className="w-5 h-5 group-hover:text-destructive transition-colors" />
+          <LogOut className="w-4 h-4 group-hover:text-destructive transition-colors" />
           {logoutMutation.isPending ? "Logging out..." : "Logout"}
         </button>
       </div>
@@ -118,12 +216,10 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Desktop Sidebar */}
       <aside className="hidden md:flex flex-col w-64 border-r border-border/50 bg-card/50 backdrop-blur-xl fixed inset-y-0 z-20">
         <SidebarContent />
       </aside>
 
-      {/* Mobile Header */}
       <header className="md:hidden fixed top-0 left-0 right-0 h-16 border-b border-border/50 bg-background/80 backdrop-blur-xl z-30 flex items-center justify-between px-4">
         <div className="flex items-center gap-3">
           <img src="/images/logo-icon.svg" alt="Advantix" className="w-8 h-8 object-contain" />
@@ -134,7 +230,6 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         </Button>
       </header>
 
-      {/* Mobile Menu Overlay */}
       <AnimatePresence>
         {isMobileMenuOpen && (
           <>
@@ -163,7 +258,6 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         )}
       </AnimatePresence>
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 md:ml-64 pt-16 md:pt-0">
         <div className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full">
           <motion.div
