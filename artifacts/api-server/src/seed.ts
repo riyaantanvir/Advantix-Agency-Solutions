@@ -499,6 +499,29 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS inbox_messages (
+      id serial PRIMARY KEY,
+      thread_id text NOT NULL,
+      direction text NOT NULL DEFAULT 'inbound',
+      from_email text NOT NULL,
+      from_name text NOT NULL DEFAULT '',
+      to_email text NOT NULL,
+      subject text NOT NULL,
+      body_html text NOT NULL DEFAULT '',
+      body_text text NOT NULL DEFAULT '',
+      is_read boolean NOT NULL DEFAULT false,
+      campaign_id integer,
+      resend_id text,
+      received_at timestamptz NOT NULL DEFAULT now(),
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_inbox_messages_thread_id ON inbox_messages(thread_id)
+  `);
+
   logger.info("Migrations applied");
 }
 
