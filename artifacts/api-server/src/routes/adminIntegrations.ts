@@ -108,6 +108,14 @@ async function testIntegrationKey(name: string, key: string): Promise<{ ok: bool
         ? { ok: true, message: "Connected — SendGrid key is valid" }
         : { ok: false, message: `SendGrid returned ${r.status}: ${r.statusText}` };
     }
+    if (name === "RESEND_WEBHOOK_SECRET" || name.includes("WEBHOOK_SECRET")) {
+      if (key.startsWith("whsec_")) {
+        return { ok: true, message: "Webhook secret format is valid (whsec_ prefix detected)" };
+      }
+      return key.length > 10
+        ? { ok: true, message: "Webhook secret saved — will be used to verify incoming webhooks" }
+        : { ok: false, message: "Secret looks too short — check the value from Resend → Webhooks" };
+    }
     if (name.includes("RESEND")) {
       const r = await fetch("https://api.resend.com/emails", {
         method: "POST",
