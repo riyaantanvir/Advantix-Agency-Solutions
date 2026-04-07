@@ -50,7 +50,7 @@ export default function InboxPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: threads = [], isLoading } = useQuery<Thread[]>({
+  const { data: threads = [], isLoading, isFetching, refetch } = useQuery<Thread[]>({
     queryKey: ["inbox-threads"],
     queryFn: () => apiFetch("/api/inbox/threads"),
     refetchInterval: 30000,
@@ -79,10 +79,11 @@ export default function InboxPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => queryClient.invalidateQueries({ queryKey: ["inbox-threads"] })}
+          onClick={() => refetch()}
+          disabled={isFetching}
         >
-          <RefreshCw className="w-3.5 h-3.5 mr-1" />
-          Refresh
+          {isFetching ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+          {isFetching ? "Refreshing..." : "Refresh"}
         </Button>
       </div>
 
