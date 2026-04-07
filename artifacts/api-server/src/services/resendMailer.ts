@@ -11,12 +11,36 @@ async function getResendApiKey(): Promise<string | null> {
   return row?.value || null;
 }
 
+function stripHtmlToText(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/h[1-6]>/gi, "\n\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "- ")
+    .replace(/<\/tr>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&bull;/g, "•")
+    .replace(/&rarr;/g, "→")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export interface SendEmailParams {
   to: string;
   from: string;
   subject: string;
   html: string;
   replyTo?: string;
+  listUnsubscribe?: string;
 }
 
 export interface SendEmailResult {
@@ -32,6 +56,15 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
   }
 
   const resend = new Resend(apiKey);
+  const textContent = stripHtmlToText(params.html);
+
+  const headers: Record<string, string> = {};
+  if (params.listUnsubscribe) {
+    headers["List-Unsubscribe"] = `<${params.listUnsubscribe}>`;
+    if (params.listUnsubscribe.startsWith("https://")) {
+      headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
+    }
+  }
 
   try {
     const { data, error } = await resend.emails.send({
@@ -39,7 +72,9 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
       to: [params.to],
       subject: params.subject,
       html: params.html,
-      replyTo: params.replyTo,
+      text: textContent,
+      replyTo: params.replyTo || extractEmailFromAddress(params.from),
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
     });
 
     if (error) {
@@ -66,13 +101,24 @@ export async function sendBulkEmails(
   const errors: string[] = [];
 
   for (const email of emails) {
+    const textContent = stripHtmlToText(email.html);
+    const headers: Record<string, string> = {};
+    if (email.listUnsubscribe) {
+      headers["List-Unsubscribe"] = `<${email.listUnsubscribe}>`;
+      if (email.listUnsubscribe.startsWith("https://")) {
+        headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click";
+      }
+    }
+
     try {
       const { error } = await resend.emails.send({
         from: email.from,
         to: [email.to],
         subject: email.subject,
         html: email.html,
-        replyTo: email.replyTo,
+        text: textContent,
+        replyTo: email.replyTo || extractEmailFromAddress(email.from),
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
       });
       if (error) {
         failed++;
@@ -87,4 +133,9 @@ export async function sendBulkEmails(
   }
 
   return { sent, failed, errors };
+}
+
+function extractEmailFromAddress(from: string): string {
+  const match = from.match(/<([^>]+)>/);
+  return match ? match[1] : from;
 }

@@ -15,6 +15,29 @@ import { sendEmail, sendBulkEmails } from "../services/resendMailer.js";
 
 const router: IRouter = Router();
 
+function appendUnsubscribeFooter(html: string, recipientEmail: string): string {
+  const unsubLink = `mailto:unsubscribe@advantix.digital?subject=unsubscribe&body=${encodeURIComponent(recipientEmail)}`;
+  const footer = `
+    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:32px;border-top:1px solid #e5e7eb;padding-top:20px;">
+      <tr>
+        <td align="center" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:12px;color:#9ca3af;line-height:1.6;">
+          <p style="margin:0 0 8px 0;">Advantix Digital &bull; Premium Digital Solutions</p>
+          <p style="margin:0 0 8px 0;">
+            <a href="${unsubLink}" style="color:#6b7280;text-decoration:underline;">Unsubscribe</a>
+            &nbsp;&bull;&nbsp;
+            <a href="https://advantix.digital" style="color:#6b7280;text-decoration:underline;">Visit our website</a>
+          </p>
+          <p style="margin:0;color:#d1d5db;font-size:11px;">You received this email because you are a valued contact of Advantix Digital.</p>
+        </td>
+      </tr>
+    </table>`;
+
+  if (html.includes("</body>")) {
+    return html.replace("</body>", `${footer}</body>`);
+  }
+  return html + footer;
+}
+
 // ── SENDERS ────────────────────────────────────────────────────────────────
 
 router.get("/email/senders", requireAdmin, async (_req, res) => {
@@ -355,10 +378,14 @@ router.post("/email/campaigns/:id/send", requireAdmin, async (req, res) => {
 
   if (recipients.length === 0) { res.status(400).json({ error: "No recipients in this list" }); return; }
 
-  let senderFrom = "Advantix <noreply@advantix.digital>";
+  let senderFrom = "Advantix Digital <noreply@advantix.digital>";
+  let replyToAddr = "hello@advantix.digital";
   if (campaign.senderId) {
     const [sender] = await db.select().from(emailSendersTable).where(eq(emailSendersTable.id, campaign.senderId));
-    if (sender) senderFrom = `${sender.name} <${sender.email}>`;
+    if (sender) {
+      senderFrom = `${sender.name} <${sender.email}>`;
+      replyToAddr = sender.email;
+    }
   }
 
   let templateHtml = campaign.htmlContent ?? "";
@@ -367,16 +394,26 @@ router.post("/email/campaigns/:id/send", requireAdmin, async (req, res) => {
     if (tmpl?.htmlBody) templateHtml = tmpl.htmlBody;
   }
 
-  const emailsToSend = recipients.map((r) => ({
-    to: r.email,
-    from: senderFrom,
-    subject: (campaign.subject ?? "")
+  const emailsToSend = recipients.map((r) => {
+    let html = (templateHtml || `<p>${campaign.subject}</p>`)
       .replace(/\{\{name\}\}/gi, r.name ?? "")
-      .replace(/\{\{email\}\}/gi, r.email),
-    html: (templateHtml || `<p>${campaign.subject}</p>`)
-      .replace(/\{\{name\}\}/gi, r.name ?? "")
-      .replace(/\{\{email\}\}/gi, r.email),
-  }));
+      .replace(/\{\{email\}\}/gi, r.email);
+
+    if (!/unsubscribe/i.test(html)) {
+      html = appendUnsubscribeFooter(html, r.email);
+    }
+
+    return {
+      to: r.email,
+      from: senderFrom,
+      subject: (campaign.subject ?? "")
+        .replace(/\{\{name\}\}/gi, r.name ?? "")
+        .replace(/\{\{email\}\}/gi, r.email),
+      html,
+      replyTo: replyToAddr,
+      listUnsubscribe: `mailto:unsubscribe@advantix.digital?subject=unsubscribe&body=${encodeURIComponent(r.email)}`,
+    };
+  });
 
   const bulkResult = await sendBulkEmails(emailsToSend);
 
@@ -515,13 +552,25 @@ router.post("/email/send-single", requireAdmin, async (req, res) => {
 
   const fromAddress = senderInfo
     ? `${senderInfo.name} <${senderInfo.email}>`
-    : "Advantix <noreply@advantix.digital>";
+    : "Advantix Digital <noreply@advantix.digital>";
+
+  const replyToAddr = senderInfo?.email || "hello@advantix.digital";
+
+  if (!finalHtml) {
+    finalHtml = `<p>${trimmedSubject}</p>`;
+  }
+
+  if (!/unsubscribe/i.test(finalHtml)) {
+    finalHtml = appendUnsubscribeFooter(finalHtml, trimmedTo);
+  }
 
   const mailResult = await sendEmail({
     to: trimmedTo,
     from: fromAddress,
     subject: trimmedSubject,
-    html: finalHtml || `<p>${trimmedSubject}</p>`,
+    html: finalHtml,
+    replyTo: replyToAddr,
+    listUnsubscribe: `mailto:unsubscribe@advantix.digital?subject=unsubscribe&body=${encodeURIComponent(trimmedTo)}`,
   });
 
   if (!mailResult.success) {
