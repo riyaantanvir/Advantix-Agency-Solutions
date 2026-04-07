@@ -729,6 +729,10 @@ function TemplatesTab() {
   const [form, setForm] = useState({ name: "", subject: "", previewText: "", htmlBody: "", jsonBlocks: "[]" });
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
+  const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<any>(null);
+  const [restoreMode, setRestoreMode] = useState<"merge" | "replace">("merge");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: templates = [], isLoading } = useQuery<Template[]>({
     queryKey: ["email-templates"],
@@ -764,6 +768,64 @@ function TemplatesTab() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["email-templates"] }); toast({ title: "Template duplicated" }); },
   });
 
+  const restoreMutation = useMutation({
+    mutationFn: async () => {
+      if (!restoreFile?.templates) throw new Error("Invalid backup file");
+      return apiFetch("/api/email/templates/backup/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ templates: restoreFile.templates, mode: restoreMode }),
+      });
+    },
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ["email-templates"] });
+      qc.invalidateQueries({ queryKey: ["email-stats"] });
+      setRestoreDialogOpen(false);
+      setRestoreFile(null);
+      toast({ title: "Restore complete", description: `${data.imported} imported, ${data.skipped} skipped` });
+    },
+    onError: (err: Error) => toast({ variant: "destructive", title: "Restore failed", description: err.message }),
+  });
+
+  async function handleBackup() {
+    try {
+      const res = await fetch("/api/email/templates/backup/export", { credentials: "include" });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `templates-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Backup downloaded" });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Backup failed", description: err.message });
+    }
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string);
+        if (!data.templates || !Array.isArray(data.templates)) {
+          toast({ variant: "destructive", title: "Invalid file", description: "This doesn't look like a templates backup file" });
+          return;
+        }
+        setRestoreFile(data);
+        setRestoreMode("merge");
+        setRestoreDialogOpen(true);
+      } catch {
+        toast({ variant: "destructive", title: "Invalid file", description: "Could not parse JSON file" });
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   function resetForm() {
     setForm({ name: "", subject: "", previewText: "", htmlBody: "", jsonBlocks: "[]" });
     setEditingId(null);
@@ -789,9 +851,18 @@ function TemplatesTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-semibold">Templates ({templates.length})</h2>
-        <Button onClick={openNew}><Plus className="w-4 h-4 mr-2" /> New Template</Button>
+        <div className="flex items-center gap-2">
+          <input type="file" accept=".json" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
+          <Button variant="outline" size="sm" onClick={handleBackup} disabled={templates.length === 0}>
+            <Download className="w-4 h-4 mr-1" /> Backup
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+            <Upload className="w-4 h-4 mr-1" /> Restore
+          </Button>
+          <Button onClick={openNew}><Plus className="w-4 h-4 mr-2" /> New Template</Button>
+        </div>
       </div>
 
       {templates.length === 0 ? (
@@ -886,6 +957,44 @@ function TemplatesTab() {
               sandbox=""
             />
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={restoreDialogOpen} onOpenChange={(o) => { if (!o) { setRestoreDialogOpen(false); setRestoreFile(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Restore Templates</DialogTitle></DialogHeader>
+          {restoreFile && (
+            <div className="space-y-4">
+              <div className="bg-muted/50 rounded-lg p-4 space-y-1 text-sm">
+                <p><span className="font-medium">Templates in file:</span> {restoreFile.templates?.length || 0}</p>
+                {restoreFile.exportedAt && <p><span className="font-medium">Exported:</span> {new Date(restoreFile.exportedAt).toLocaleString()}</p>}
+                {restoreFile.source && <p><span className="font-medium">Source:</span> {restoreFile.source}</p>}
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Restore Mode</label>
+                <div className="flex gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="restoreMode" checked={restoreMode === "merge"} onChange={() => setRestoreMode("merge")} className="accent-primary" />
+                    <span className="text-sm">Merge (skip duplicates)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="restoreMode" checked={restoreMode === "replace"} onChange={() => setRestoreMode("replace")} className="accent-primary" />
+                    <span className="text-sm text-destructive">Replace all</span>
+                  </label>
+                </div>
+                {restoreMode === "replace" && (
+                  <p className="text-xs text-destructive">This will delete all existing templates and replace them with the backup.</p>
+                )}
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => { setRestoreDialogOpen(false); setRestoreFile(null); }}>Cancel</Button>
+                <Button onClick={() => restoreMutation.mutate()} disabled={restoreMutation.isPending}>
+                  {restoreMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Upload className="w-4 h-4 mr-1" />}
+                  Restore
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -148,6 +148,56 @@ router.get("/email/templates", requireAdmin, async (_req, res) => {
   res.json(items);
 });
 
+router.get("/email/templates/backup/export", requireAdmin, async (_req, res) => {
+  const items = await db.select().from(emailTemplatesTable).orderBy(desc(emailTemplatesTable.updatedAt));
+  const backup = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    source: "advantix-digital",
+    templates: items.map(t => ({
+      name: t.name,
+      subject: t.subject,
+      previewText: t.previewText,
+      htmlBody: t.htmlBody,
+      jsonBlocks: t.jsonBlocks,
+      isSystem: t.isSystem,
+    })),
+  };
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Content-Disposition", `attachment; filename="templates-backup-${new Date().toISOString().slice(0, 10)}.json"`);
+  res.json(backup);
+});
+
+router.post("/email/templates/backup/import", requireAdmin, async (req, res) => {
+  const { templates, mode } = req.body as { templates: any[]; mode?: "merge" | "replace" };
+  if (!Array.isArray(templates) || templates.length === 0) {
+    res.status(400).json({ error: "No templates found in backup file" });
+    return;
+  }
+  let imported = 0;
+  let skipped = 0;
+  if (mode === "replace") {
+    await db.delete(emailTemplatesTable);
+  }
+  for (const t of templates) {
+    if (!t.name) { skipped++; continue; }
+    if (mode !== "replace") {
+      const existing = await db.select().from(emailTemplatesTable).where(eq(emailTemplatesTable.name, t.name));
+      if (existing.length > 0) { skipped++; continue; }
+    }
+    await db.insert(emailTemplatesTable).values({
+      name: t.name,
+      subject: t.subject ?? "",
+      previewText: t.previewText ?? "",
+      htmlBody: t.htmlBody ?? "",
+      jsonBlocks: t.jsonBlocks ?? "[]",
+      isSystem: t.isSystem ?? false,
+    });
+    imported++;
+  }
+  res.json({ imported, skipped, total: templates.length });
+});
+
 router.get("/email/templates/:id", requireAdmin, async (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   const [item] = await db.select().from(emailTemplatesTable).where(eq(emailTemplatesTable.id, id));
