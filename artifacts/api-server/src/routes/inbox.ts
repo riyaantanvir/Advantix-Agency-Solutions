@@ -135,6 +135,7 @@ async function getWebhookSecret(): Promise<string | null> {
 
 router.post("/inbox/webhook", async (req: Request, res: Response) => {
   try {
+    console.log("[webhook] Received webhook POST, type:", req.body?.type, "keys:", Object.keys(req.body || {}));
     const secret = await getWebhookSecret();
 
     if (secret) {
@@ -150,7 +151,9 @@ router.post("/inbox/webhook", async (req: Request, res: Response) => {
             "svix-timestamp": svixTimestamp,
             "svix-signature": svixSignature,
           });
-        } catch {
+          console.log("[webhook] Signature verified OK");
+        } catch (verifyErr: any) {
+          console.error("[webhook] Signature verification failed:", verifyErr?.message);
           res.status(400).json({ error: "Invalid webhook signature" });
           return;
         }
@@ -164,6 +167,7 @@ router.post("/inbox/webhook", async (req: Request, res: Response) => {
     }
 
     const eventType = payload.type;
+    console.log("[webhook] Event type:", eventType);
 
     if (eventType === "email.received" || (!eventType && payload.from && payload.to)) {
       const data = eventType ? payload.data : payload;
@@ -174,6 +178,8 @@ router.post("/inbox/webhook", async (req: Request, res: Response) => {
       const subject = data.subject || "(No Subject)";
       const bodyHtml = data.html || "";
       const bodyText = data.text || "";
+
+      console.log("[webhook] Inbound email from:", fromEmail, "to:", toEmail, "subject:", subject);
 
       if (fromEmail && toEmail) {
         const threadId = generateThreadId(fromEmail, toEmail);
@@ -189,12 +195,13 @@ router.post("/inbox/webhook", async (req: Request, res: Response) => {
           isRead: false,
           receivedAt: new Date(),
         });
+        console.log("[webhook] Saved inbound message, threadId:", threadId);
       }
     }
 
     res.status(200).json({ ok: true });
   } catch (err: any) {
-    console.error("Webhook error:", err?.message);
+    console.error("[webhook] Error:", err?.message);
     res.status(200).json({ ok: true });
   }
 });
