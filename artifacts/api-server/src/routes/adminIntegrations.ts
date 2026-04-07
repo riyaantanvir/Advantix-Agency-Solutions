@@ -110,11 +110,27 @@ async function testIntegrationKey(name: string, key: string): Promise<{ ok: bool
     }
     if (name.includes("RESEND")) {
       const r = await fetch("https://api.resend.com/emails", {
-        headers: { Authorization: `Bearer ${key}` },
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: "test@resend.dev",
+          to: ["delivered@resend.dev"],
+          subject: "Advantix Connection Test",
+          html: "<p>Test</p>",
+        }),
       });
-      return r.status === 200 || r.status === 405
-        ? { ok: true, message: "Connected — Resend key is valid" }
-        : { ok: false, message: `Resend returned ${r.status}: ${r.statusText}` };
+      if (r.ok) {
+        return { ok: true, message: "Connected — Resend key is valid and email delivery works" };
+      }
+      const body = await r.json().catch(() => null);
+      const msg = body?.message || r.statusText;
+      if (r.status === 401 || r.status === 403) {
+        return { ok: false, message: `Resend authentication failed: ${msg}` };
+      }
+      return { ok: false, message: `Resend returned ${r.status}: ${msg}` };
     }
     if (name.includes("SLACK") && key.startsWith("https://")) {
       const r = await fetch(key, {
