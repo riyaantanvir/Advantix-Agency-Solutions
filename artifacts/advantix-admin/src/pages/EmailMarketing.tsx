@@ -1286,6 +1286,8 @@ function SendersTab() {
 function ReportsTab() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [page, setPage] = useState(0);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const perPage = 10;
 
   const { data: campaigns = [], isLoading } = useQuery<Campaign[]>({
@@ -1293,7 +1295,21 @@ function ReportsTab() {
     queryFn: () => apiFetch("/api/email/campaigns"),
   });
 
-  const sentCampaigns = campaigns.filter((c) => c.status === "sent");
+  const sentCampaigns = campaigns.filter((c) => {
+    if (c.status !== "sent") return false;
+    if (dateFrom && c.sentAt) {
+      const sent = new Date(c.sentAt);
+      const from = new Date(dateFrom);
+      if (sent < from) return false;
+    }
+    if (dateTo && c.sentAt) {
+      const sent = new Date(c.sentAt);
+      const to = new Date(dateTo);
+      to.setHours(23, 59, 59, 999);
+      if (sent > to) return false;
+    }
+    return true;
+  });
   const totalPages = Math.ceil(sentCampaigns.length / perPage);
   const paginated = sentCampaigns.slice(page * perPage, (page + 1) * perPage);
 
@@ -1301,11 +1317,34 @@ function ReportsTab() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-semibold">Campaign Reports</h2>
-        {sentCampaigns.length > 0 && (
-          <span className="text-xs text-muted-foreground">{sentCampaigns.length} campaigns</span>
-        )}
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => { setDateFrom(e.target.value); setPage(0); }}
+            className="h-8 px-2 text-xs rounded-md border border-border bg-background text-foreground"
+            placeholder="From"
+          />
+          <span className="text-xs text-muted-foreground">to</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => { setDateTo(e.target.value); setPage(0); }}
+            className="h-8 px-2 text-xs rounded-md border border-border bg-background text-foreground"
+            placeholder="To"
+          />
+          {(dateFrom || dateTo) && (
+            <button
+              onClick={() => { setDateFrom(""); setDateTo(""); setPage(0); }}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Clear
+            </button>
+          )}
+          <span className="text-xs text-muted-foreground ml-1">{sentCampaigns.length} campaigns</span>
+        </div>
       </div>
 
       {sentCampaigns.length === 0 ? (
