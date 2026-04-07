@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 
+type TeamMember = { id: number; name: string; role: string; photoUrl: string | null };
+
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 type Task = {
@@ -41,18 +43,18 @@ type TaskForm = {
 };
 
 const STATUSES = [
-  { id: "todo", label: "To Do", color: "bg-slate-500", light: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
-  { id: "in_progress", label: "In Progress", color: "bg-blue-500", light: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
-  { id: "review", label: "In Review", color: "bg-amber-500", light: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
-  { id: "done", label: "Done", color: "bg-green-500", light: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" },
-  { id: "cancelled", label: "Cancelled", color: "bg-red-400", light: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300" },
+  { id: "todo", label: "To Do", color: "bg-slate-500", light: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300", colBg: "bg-slate-50/50 dark:bg-slate-900/20" },
+  { id: "in_progress", label: "In Progress", color: "bg-blue-500", light: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300", colBg: "bg-blue-50/50 dark:bg-blue-950/20" },
+  { id: "review", label: "In Review", color: "bg-amber-500", light: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300", colBg: "bg-amber-50/50 dark:bg-amber-950/20" },
+  { id: "done", label: "Done", color: "bg-green-500", light: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300", colBg: "bg-green-50/50 dark:bg-green-950/20" },
+  { id: "cancelled", label: "Cancelled", color: "bg-red-400", light: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300", colBg: "bg-red-50/50 dark:bg-red-950/20" },
 ];
 
 const PRIORITIES = [
-  { id: "low", label: "Low", color: "text-slate-500", bg: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" },
-  { id: "medium", label: "Medium", color: "text-blue-500", bg: "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400" },
-  { id: "high", label: "High", color: "text-orange-500", bg: "bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400" },
-  { id: "urgent", label: "Urgent", color: "text-red-500", bg: "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400" },
+  { id: "low", label: "Low", color: "text-slate-500", bg: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400", border: "border-l-slate-400" },
+  { id: "medium", label: "Medium", color: "text-blue-500", bg: "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400", border: "border-l-blue-500" },
+  { id: "high", label: "High", color: "text-orange-500", bg: "bg-orange-100 text-orange-600 dark:bg-orange-900/40 dark:text-orange-400", border: "border-l-orange-500" },
+  { id: "urgent", label: "Urgent", color: "text-red-500", bg: "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400", border: "border-l-red-500" },
 ];
 
 const EMPTY_FORM: TaskForm = {
@@ -99,6 +101,11 @@ export default function Tasks() {
       if (priorityFilter !== "all") p.set("priority", priorityFilter);
       return apiFetch(`/api/admin/tasks?${p}`);
     },
+  });
+
+  const { data: teamMembers = [] } = useQuery<TeamMember[]>({
+    queryKey: ["team-members"],
+    queryFn: () => apiFetch("/api/team"),
   });
 
   const filtered = useMemo(() => {
@@ -415,8 +422,19 @@ export default function Tasks() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">Assigned To</label>
-                      <Input value={form.assignedTo} onChange={e => setForm(f => ({ ...f, assignedTo: e.target.value }))}
-                        placeholder="Team member..." className="rounded-xl" />
+                      <select
+                        value={form.assignedTo}
+                        onChange={e => setForm(f => ({ ...f, assignedTo: e.target.value }))}
+                        className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring appearance-none cursor-pointer"
+                      >
+                        <option value="">Unassigned</option>
+                        {form.assignedTo && !teamMembers.some(m => m.name === form.assignedTo) && (
+                          <option value={form.assignedTo}>{form.assignedTo} (not on team)</option>
+                        )}
+                        {teamMembers.map(m => (
+                          <option key={m.id} value={m.name}>{m.name} — {m.role}</option>
+                        ))}
+                      </select>
                     </div>
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">Due Date</label>
@@ -460,11 +478,11 @@ function KanbanView({ tasks, onEdit, onDelete, onStatusChange, onDetail }: {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 pb-4">
       {STATUSES.map(col => (
-        <div key={col.id} className="flex flex-col gap-3">
+        <div key={col.id} className={`flex flex-col gap-3 rounded-xl p-2.5 ${col.colBg}`}>
           <div className="flex items-center gap-2 px-1">
             <span className={`w-2.5 h-2.5 rounded-full ${col.color}`} />
             <span className="text-sm font-semibold text-foreground">{col.label}</span>
-            <span className="ml-auto text-xs text-muted-foreground bg-secondary rounded-full px-2 py-0.5">{tasks[col.id]?.length ?? 0}</span>
+            <span className={`ml-auto text-xs font-medium rounded-full px-2 py-0.5 ${col.light}`}>{tasks[col.id]?.length ?? 0}</span>
           </div>
           <div className="flex flex-col gap-2 min-h-20">
             <AnimatePresence>
@@ -524,16 +542,11 @@ function TaskCard({ task, onEdit, onDelete, onDetail, compact = false }: {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
       onClick={() => onDetail(task)}
-      className={`bg-card border border-border rounded-xl p-3.5 cursor-pointer hover:border-primary/30 hover:shadow-sm transition-all group ${compact ? "" : "flex items-start gap-4"}`}
+      className={`bg-card border border-border rounded-xl p-3.5 cursor-pointer hover:border-primary/30 hover:shadow-md transition-all group border-l-[3px] ${pi.border} ${compact ? "" : "flex items-start gap-3"} ${overdue ? "ring-1 ring-red-500/20" : ""}`}
     >
-      {/* Priority indicator */}
-      <div className={`${compact ? "mb-2" : "mt-0.5 shrink-0"}`}>
-        {!compact && <span className={`w-2.5 h-2.5 rounded-full block mt-1 ${pi.color.replace("text-", "bg-")}`} />}
-      </div>
-
       <div className="flex-1 min-w-0">
         <div className="flex items-start gap-2 flex-wrap">
-          <p className={`font-semibold text-foreground text-sm leading-snug flex-1 ${compact ? "" : ""}`}>{task.title}</p>
+          <p className="font-semibold text-foreground text-sm leading-snug flex-1">{task.title}</p>
           {!compact && (
             <div className="flex gap-1.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
               <button onClick={() => onEdit(task)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground"><Pencil className="w-3.5 h-3.5" /></button>
@@ -543,23 +556,28 @@ function TaskCard({ task, onEdit, onDelete, onDetail, compact = false }: {
         </div>
 
         {task.description && !compact && (
-          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{task.description}</p>
+          <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">{task.description}</p>
         )}
 
-        <div className="flex flex-wrap gap-1.5 mt-2 items-center">
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${pi.bg}`}>{pi.label}</span>
-          {!compact && <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${si.light}`}>{si.label}</span>}
+        <div className="flex flex-wrap gap-1.5 mt-2.5 items-center">
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${pi.bg}`}>{pi.label}</span>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${si.light}`}>{si.label}</span>
           {task.type === "client" && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
               {task.clientName ? task.clientName : "Client"}
             </span>
           )}
+        </div>
+
+        <div className="flex flex-wrap gap-2.5 mt-2 items-center">
           {task.assignedTo && (
-            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5"><User className="w-2.5 h-2.5" />{task.assignedTo}</span>
+            <span className="text-[11px] text-primary/80 font-medium flex items-center gap-1 bg-primary/5 px-2 py-0.5 rounded-full">
+              <User className="w-3 h-3" />{task.assignedTo}
+            </span>
           )}
           {task.dueDate && (
-            <span className={`text-[10px] flex items-center gap-0.5 ${overdue ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
-              <Calendar className="w-2.5 h-2.5" />{new Date(task.dueDate).toLocaleDateString()}
+            <span className={`text-[11px] flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${overdue ? "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400" : "bg-muted text-muted-foreground"}`}>
+              <Calendar className="w-3 h-3" />{new Date(task.dueDate).toLocaleDateString()}
             </span>
           )}
         </div>
