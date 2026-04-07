@@ -1,0 +1,455 @@
+import { Router, type IRouter } from "express";
+import {
+  db,
+  emailSendersTable,
+  emailTemplatesTable,
+  emailContactsTable,
+  emailCampaignsTable,
+  emailEventsTable,
+  contactsTable,
+  leadsTable,
+} from "@workspace/db";
+import { eq, desc, asc, sql, and, inArray } from "drizzle-orm";
+import { requireAdmin } from "../middleware/auth.js";
+
+const router: IRouter = Router();
+
+// ── SENDERS ────────────────────────────────────────────────────────────────
+
+router.get("/email/senders", requireAdmin, async (_req, res) => {
+  const items = await db.select().from(emailSendersTable).orderBy(desc(emailSendersTable.createdAt));
+  res.json(items);
+});
+
+router.post("/email/senders", requireAdmin, async (req, res) => {
+  const { name, email } = req.body as { name?: string; email?: string };
+  if (!name || !email) {
+    res.status(400).json({ error: "Name and email are required" });
+    return;
+  }
+  const existing = await db.select().from(emailSendersTable).where(eq(emailSendersTable.email, email));
+  if (existing.length > 0) {
+    res.status(409).json({ error: "Sender with this email already exists" });
+    return;
+  }
+  const hasDefault = await db.select().from(emailSendersTable).where(eq(emailSendersTable.isDefault, true));
+  const [item] = await db.insert(emailSendersTable).values({
+    name,
+    email,
+    status: "verified",
+    isDefault: hasDefault.length === 0,
+  }).returning();
+  res.status(201).json(item);
+});
+
+router.put("/email/senders/:id", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const { name, email, isDefault } = req.body as { name?: string; email?: string; isDefault?: boolean };
+  if (!name || !email) {
+    res.status(400).json({ error: "Name and email are required" });
+    return;
+  }
+  if (isDefault) {
+    await db.update(emailSendersTable).set({ isDefault: false }).where(eq(emailSendersTable.isDefault, true));
+  }
+  const [updated] = await db.update(emailSendersTable)
+    .set({ name, email, isDefault: isDefault ?? false })
+    .where(eq(emailSendersTable.id, id))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "Sender not found" }); return; }
+  res.json(updated);
+});
+
+router.delete("/email/senders/:id", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  await db.delete(emailSendersTable).where(eq(emailSendersTable.id, id));
+  res.json({ message: "Deleted" });
+});
+
+// ── TEMPLATES ──────────────────────────────────────────────────────────────
+
+router.get("/email/templates", requireAdmin, async (_req, res) => {
+  const items = await db.select().from(emailTemplatesTable).orderBy(desc(emailTemplatesTable.updatedAt));
+  res.json(items);
+});
+
+router.get("/email/templates/:id", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const [item] = await db.select().from(emailTemplatesTable).where(eq(emailTemplatesTable.id, id));
+  if (!item) { res.status(404).json({ error: "Template not found" }); return; }
+  res.json(item);
+});
+
+router.post("/email/templates", requireAdmin, async (req, res) => {
+  const { name, subject, previewText, htmlBody, jsonBlocks, isSystem } = req.body as {
+    name?: string; subject?: string; previewText?: string; htmlBody?: string; jsonBlocks?: string; isSystem?: boolean;
+  };
+  if (!name) { res.status(400).json({ error: "Name is required" }); return; }
+  const [item] = await db.insert(emailTemplatesTable).values({
+    name,
+    subject: subject ?? "",
+    previewText: previewText ?? "",
+    htmlBody: htmlBody ?? "",
+    jsonBlocks: jsonBlocks ?? "[]",
+    isSystem: isSystem ?? false,
+  }).returning();
+  res.status(201).json(item);
+});
+
+router.put("/email/templates/:id", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const { name, subject, previewText, htmlBody, jsonBlocks } = req.body as {
+    name?: string; subject?: string; previewText?: string; htmlBody?: string; jsonBlocks?: string;
+  };
+  if (!name) { res.status(400).json({ error: "Name is required" }); return; }
+  const [updated] = await db.update(emailTemplatesTable)
+    .set({ name, subject: subject ?? "", previewText: previewText ?? "", htmlBody: htmlBody ?? "", jsonBlocks: jsonBlocks ?? "[]", updatedAt: new Date() })
+    .where(eq(emailTemplatesTable.id, id))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "Template not found" }); return; }
+  res.json(updated);
+});
+
+router.delete("/email/templates/:id", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  await db.delete(emailTemplatesTable).where(eq(emailTemplatesTable.id, id));
+  res.json({ message: "Deleted" });
+});
+
+router.post("/email/templates/:id/duplicate", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const [original] = await db.select().from(emailTemplatesTable).where(eq(emailTemplatesTable.id, id));
+  if (!original) { res.status(404).json({ error: "Template not found" }); return; }
+  const [item] = await db.insert(emailTemplatesTable).values({
+    name: `${original.name} (Copy)`,
+    subject: original.subject,
+    previewText: original.previewText,
+    htmlBody: original.htmlBody,
+    jsonBlocks: original.jsonBlocks,
+    isSystem: false,
+  }).returning();
+  res.status(201).json(item);
+});
+
+// ── CONTACTS ───────────────────────────────────────────────────────────────
+
+router.get("/email/contacts", requireAdmin, async (req, res) => {
+  const listName = (req.query.list as string) || undefined;
+  const conditions = listName ? [eq(emailContactsTable.listName, listName)] : [];
+  const items = await db.select().from(emailContactsTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(desc(emailContactsTable.createdAt));
+  res.json(items);
+});
+
+router.post("/email/contacts", requireAdmin, async (req, res) => {
+  const { email, name, tags, listName, source } = req.body as {
+    email?: string; name?: string; tags?: string; listName?: string; source?: string;
+  };
+  if (!email) { res.status(400).json({ error: "Email is required" }); return; }
+  const [item] = await db.insert(emailContactsTable).values({
+    email,
+    name: name ?? "",
+    tags: tags ?? "",
+    listName: listName ?? "default",
+    source: source ?? "manual",
+  }).returning();
+  res.status(201).json(item);
+});
+
+router.post("/email/contacts/bulk", requireAdmin, async (req, res) => {
+  const { contacts, listName, source } = req.body as {
+    contacts: Array<{ email: string; name?: string }>;
+    listName?: string;
+    source?: string;
+  };
+  if (!contacts || !Array.isArray(contacts) || contacts.length === 0) {
+    res.status(400).json({ error: "Contacts array is required" });
+    return;
+  }
+  const values = contacts.map((c) => ({
+    email: c.email,
+    name: c.name ?? "",
+    tags: "",
+    listName: listName ?? "default",
+    source: source ?? "csv",
+  }));
+  const items = await db.insert(emailContactsTable).values(values).onConflictDoNothing().returning();
+  res.status(201).json({ imported: items.length });
+});
+
+router.post("/email/contacts/import-leads", requireAdmin, async (req, res) => {
+  const { listName } = req.body as { listName?: string };
+  const leads = await db.select().from(leadsTable);
+  const emailLeads = leads.filter((l) => l.email);
+  if (emailLeads.length === 0) { res.json({ imported: 0 }); return; }
+  const values = emailLeads.map((l) => ({
+    email: l.email!,
+    name: l.name ?? "",
+    tags: "lead",
+    listName: listName ?? "leads",
+    source: "leads" as const,
+  }));
+  const items = await db.insert(emailContactsTable).values(values).onConflictDoNothing().returning();
+  res.json({ imported: items.length });
+});
+
+router.post("/email/contacts/import-site-contacts", requireAdmin, async (req, res) => {
+  const { listName } = req.body as { listName?: string };
+  const siteContacts = await db.select().from(contactsTable);
+  if (siteContacts.length === 0) { res.json({ imported: 0 }); return; }
+  const values = siteContacts.map((c) => ({
+    email: c.email,
+    name: c.name,
+    tags: "contact",
+    listName: listName ?? "contacts",
+    source: "contacts" as const,
+  }));
+  const items = await db.insert(emailContactsTable).values(values).onConflictDoNothing().returning();
+  res.json({ imported: items.length });
+});
+
+router.put("/email/contacts/:id", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const { email, name, tags, listName, unsubscribed } = req.body as {
+    email?: string; name?: string; tags?: string; listName?: string; unsubscribed?: boolean;
+  };
+  const [updated] = await db.update(emailContactsTable)
+    .set({
+      ...(email !== undefined ? { email } : {}),
+      ...(name !== undefined ? { name } : {}),
+      ...(tags !== undefined ? { tags } : {}),
+      ...(listName !== undefined ? { listName } : {}),
+      ...(unsubscribed !== undefined ? { unsubscribed } : {}),
+    })
+    .where(eq(emailContactsTable.id, id))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "Contact not found" }); return; }
+  res.json(updated);
+});
+
+router.delete("/email/contacts/:id", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  await db.delete(emailContactsTable).where(eq(emailContactsTable.id, id));
+  res.json({ message: "Deleted" });
+});
+
+router.post("/email/contacts/bulk-delete", requireAdmin, async (req, res) => {
+  const { ids } = req.body as { ids?: number[] };
+  if (!ids || !Array.isArray(ids)) { res.status(400).json({ error: "ids array required" }); return; }
+  await db.delete(emailContactsTable).where(inArray(emailContactsTable.id, ids));
+  res.json({ message: "Deleted", count: ids.length });
+});
+
+// ── CAMPAIGNS ──────────────────────────────────────────────────────────────
+
+router.get("/email/campaigns", requireAdmin, async (_req, res) => {
+  const items = await db.select().from(emailCampaignsTable).orderBy(desc(emailCampaignsTable.createdAt));
+  res.json(items);
+});
+
+router.get("/email/campaigns/:id", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const [item] = await db.select().from(emailCampaignsTable).where(eq(emailCampaignsTable.id, id));
+  if (!item) { res.status(404).json({ error: "Campaign not found" }); return; }
+  res.json(item);
+});
+
+router.post("/email/campaigns", requireAdmin, async (req, res) => {
+  const { name, subject, previewText, templateId, senderId, htmlContent, recipientListName, status } = req.body as {
+    name?: string; subject?: string; previewText?: string; templateId?: number; senderId?: number;
+    htmlContent?: string; recipientListName?: string; status?: string;
+  };
+  if (!name || !subject) { res.status(400).json({ error: "Name and subject are required" }); return; }
+
+  let count = 0;
+  const listForCount = recipientListName ?? "default";
+  const countResult = await db.select({ count: sql<number>`count(*)` }).from(emailContactsTable)
+    .where(and(eq(emailContactsTable.listName, listForCount), eq(emailContactsTable.unsubscribed, false)));
+  count = Number(countResult[0]?.count ?? 0);
+
+  const [item] = await db.insert(emailCampaignsTable).values({
+    name,
+    subject,
+    previewText: previewText ?? "",
+    templateId: templateId ?? null,
+    senderId: senderId ?? null,
+    htmlContent: htmlContent ?? "",
+    recipientListName: recipientListName ?? "default",
+    recipientCount: count,
+    status: status ?? "draft",
+  }).returning();
+  res.status(201).json(item);
+});
+
+router.put("/email/campaigns/:id", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const { name, subject, previewText, templateId, senderId, htmlContent, recipientListName, status, scheduledAt } = req.body as {
+    name?: string; subject?: string; previewText?: string; templateId?: number; senderId?: number;
+    htmlContent?: string; recipientListName?: string; status?: string; scheduledAt?: string;
+  };
+
+  let recipientCount: number | undefined;
+  if (recipientListName) {
+    const countResult = await db.select({ count: sql<number>`count(*)` }).from(emailContactsTable)
+      .where(and(eq(emailContactsTable.listName, recipientListName), eq(emailContactsTable.unsubscribed, false)));
+    recipientCount = Number(countResult[0]?.count ?? 0);
+  }
+
+  const [updated] = await db.update(emailCampaignsTable)
+    .set({
+      ...(name !== undefined ? { name } : {}),
+      ...(subject !== undefined ? { subject } : {}),
+      ...(previewText !== undefined ? { previewText } : {}),
+      ...(templateId !== undefined ? { templateId } : {}),
+      ...(senderId !== undefined ? { senderId } : {}),
+      ...(htmlContent !== undefined ? { htmlContent } : {}),
+      ...(recipientListName !== undefined ? { recipientListName } : {}),
+      ...(recipientCount !== undefined ? { recipientCount } : {}),
+      ...(status !== undefined ? { status } : {}),
+      ...(scheduledAt !== undefined ? { scheduledAt: scheduledAt ? new Date(scheduledAt) : null } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(emailCampaignsTable.id, id))
+    .returning();
+  if (!updated) { res.status(404).json({ error: "Campaign not found" }); return; }
+  res.json(updated);
+});
+
+router.delete("/email/campaigns/:id", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  await db.delete(emailCampaignsTable).where(eq(emailCampaignsTable.id, id));
+  res.json({ message: "Deleted" });
+});
+
+router.post("/email/campaigns/:id/duplicate", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const [original] = await db.select().from(emailCampaignsTable).where(eq(emailCampaignsTable.id, id));
+  if (!original) { res.status(404).json({ error: "Campaign not found" }); return; }
+  const [item] = await db.insert(emailCampaignsTable).values({
+    name: `${original.name} (Copy)`,
+    subject: original.subject,
+    previewText: original.previewText,
+    templateId: original.templateId,
+    senderId: original.senderId,
+    htmlContent: original.htmlContent,
+    recipientListName: original.recipientListName,
+    recipientCount: original.recipientCount,
+    status: "draft",
+  }).returning();
+  res.status(201).json(item);
+});
+
+router.post("/email/campaigns/:id/send", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const [campaign] = await db.select().from(emailCampaignsTable).where(eq(emailCampaignsTable.id, id));
+  if (!campaign) { res.status(404).json({ error: "Campaign not found" }); return; }
+  if (campaign.status === "sent") { res.status(400).json({ error: "Campaign already sent" }); return; }
+
+  const recipients = await db.select().from(emailContactsTable)
+    .where(and(
+      eq(emailContactsTable.listName, campaign.recipientListName),
+      eq(emailContactsTable.unsubscribed, false),
+    ));
+
+  if (recipients.length === 0) { res.status(400).json({ error: "No recipients in this list" }); return; }
+
+  for (const recipient of recipients) {
+    await db.insert(emailEventsTable).values({
+      campaignId: campaign.id,
+      contactEmail: recipient.email,
+      eventType: "sent",
+      metadata: JSON.stringify({ name: recipient.name }),
+    });
+  }
+
+  await db.update(emailCampaignsTable)
+    .set({ status: "sent", sentAt: new Date(), recipientCount: recipients.length, updatedAt: new Date() })
+    .where(eq(emailCampaignsTable.id, id));
+
+  res.json({ message: "Campaign sent", recipientCount: recipients.length });
+});
+
+// ── EVENTS / REPORTS ───────────────────────────────────────────────────────
+
+router.get("/email/campaigns/:id/report", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const [campaign] = await db.select().from(emailCampaignsTable).where(eq(emailCampaignsTable.id, id));
+  if (!campaign) { res.status(404).json({ error: "Campaign not found" }); return; }
+
+  const events = await db.select().from(emailEventsTable)
+    .where(eq(emailEventsTable.campaignId, id))
+    .orderBy(desc(emailEventsTable.occurredAt));
+
+  const sent = events.filter((e) => e.eventType === "sent").length;
+  const delivered = events.filter((e) => e.eventType === "delivered").length;
+  const opened = events.filter((e) => e.eventType === "opened").length;
+  const clicked = events.filter((e) => e.eventType === "clicked").length;
+  const bounced = events.filter((e) => e.eventType === "bounced").length;
+  const unsubscribed = events.filter((e) => e.eventType === "unsubscribed").length;
+
+  res.json({
+    campaign,
+    stats: { sent, delivered, opened, clicked, bounced, unsubscribed },
+    events,
+  });
+});
+
+// ── DASHBOARD STATS ────────────────────────────────────────────────────────
+
+router.get("/email/stats", requireAdmin, async (_req, res) => {
+  const campaignsResult = await db.select({ count: sql<number>`count(*)` }).from(emailCampaignsTable);
+  const sentCampaigns = await db.select({ count: sql<number>`count(*)` }).from(emailCampaignsTable)
+    .where(eq(emailCampaignsTable.status, "sent"));
+  const contactsResult = await db.select({ count: sql<number>`count(*)` }).from(emailContactsTable)
+    .where(eq(emailContactsTable.unsubscribed, false));
+  const templatesResult = await db.select({ count: sql<number>`count(*)` }).from(emailTemplatesTable);
+
+  const sentEvents = await db.select({ count: sql<number>`count(*)` }).from(emailEventsTable)
+    .where(eq(emailEventsTable.eventType, "sent"));
+  const openedEvents = await db.select({ count: sql<number>`count(*)` }).from(emailEventsTable)
+    .where(eq(emailEventsTable.eventType, "opened"));
+  const clickedEvents = await db.select({ count: sql<number>`count(*)` }).from(emailEventsTable)
+    .where(eq(emailEventsTable.eventType, "clicked"));
+  const bouncedEvents = await db.select({ count: sql<number>`count(*)` }).from(emailEventsTable)
+    .where(eq(emailEventsTable.eventType, "bounced"));
+
+  const recentCampaigns = await db.select().from(emailCampaignsTable)
+    .orderBy(desc(emailCampaignsTable.createdAt))
+    .limit(5);
+
+  res.json({
+    totalCampaigns: Number(campaignsResult[0]?.count ?? 0),
+    sentCampaigns: Number(sentCampaigns[0]?.count ?? 0),
+    totalContacts: Number(contactsResult[0]?.count ?? 0),
+    totalTemplates: Number(templatesResult[0]?.count ?? 0),
+    totalSent: Number(sentEvents[0]?.count ?? 0),
+    totalOpened: Number(openedEvents[0]?.count ?? 0),
+    totalClicked: Number(clickedEvents[0]?.count ?? 0),
+    totalBounced: Number(bouncedEvents[0]?.count ?? 0),
+    recentCampaigns,
+  });
+});
+
+// ── WEBHOOK (for future Resend integration) ────────────────────────────────
+
+router.post("/email/webhook", async (req, res) => {
+  const { type, data } = req.body as { type?: string; data?: { email_id?: string; to?: string } };
+  if (!type) { res.status(400).json({ error: "Event type required" }); return; }
+  res.json({ received: true });
+});
+
+// ── CONTACT LISTS (distinct list names) ────────────────────────────────────
+
+router.get("/email/lists", requireAdmin, async (_req, res) => {
+  const result = await db.select({
+    listName: emailContactsTable.listName,
+    count: sql<number>`count(*)`,
+  })
+  .from(emailContactsTable)
+  .groupBy(emailContactsTable.listName)
+  .orderBy(asc(emailContactsTable.listName));
+  res.json(result);
+});
+
+export default router;

@@ -37,6 +37,7 @@ const navLinks = [
   { path: "/bug-reports", label: "Bug Management", icon: Bug },
   { path: "/website-analytics", label: "Website Analytics", icon: BarChart2 },
   { path: "/content-planner",    label: "Content Planner",     icon: CalendarDays },
+  { path: "/email-marketing",   label: "Email Marketing",     icon: Mail },
   { path: "/marketing-reports",  label: "Marketing Reports",   icon: Megaphone },
   { path: "/push-notifications", label: "Push Notifications",  icon: Bell },
   { path: "/email-subscribers",  label: "Email Subscribers",   icon: Mail },

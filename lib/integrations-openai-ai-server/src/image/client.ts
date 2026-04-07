@@ -6,17 +6,18 @@ const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ?? "https://api.open
 const apiKey  = process.env.AI_INTEGRATIONS_OPENAI_API_KEY  ?? process.env.OPENAI_API_KEY;
 
 if (!apiKey) {
-  throw new Error(
-    "No OpenAI API key found. Set OPENAI_API_KEY (standard) or AI_INTEGRATIONS_OPENAI_API_KEY (Replit integration).",
+  console.warn(
+    "[openai-image] No OpenAI API key found. Set OPENAI_API_KEY or AI_INTEGRATIONS_OPENAI_API_KEY. Image generation will be unavailable.",
   );
 }
 
-export const openai = new OpenAI({ apiKey, baseURL });
+export const openai = apiKey ? new OpenAI({ apiKey, baseURL }) : null;
 
 export async function generateImageBuffer(
   prompt: string,
   size: "1024x1024" | "512x512" | "256x256" = "1024x1024"
 ): Promise<Buffer> {
+  if (!openai) throw new Error("OpenAI client not configured. Set OPENAI_API_KEY.");
   const response = await openai.images.generate({
     model: "gpt-image-1",
     prompt,
@@ -39,6 +40,7 @@ export async function editImages(
     )
   );
 
+  if (!openai) throw new Error("OpenAI client not configured. Set OPENAI_API_KEY.");
   const response = await openai.images.edit({
     model: "gpt-image-1",
     image: images,

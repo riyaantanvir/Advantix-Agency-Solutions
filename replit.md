@@ -43,7 +43,7 @@ Full-stack pnpm monorepo for **Advantix Agency** (advantix.agency). A complete d
 | Artifact | Served At | Description |
 |----------|-----------|-------------|
 | `advantix-website` | `/` | Public marketing website — Home, Portfolio, Team, Contact, Blog, Tools (URL Shortener, Screen Recorder, War Update), user login/dashboard |
-| `advantix-admin` | `/admin/` | Protected admin dashboard — Contacts, Leads, Portfolio, Team, Blog, AI Management, Integrations, Tasks, Notifications, Bug Reports, Website Analytics, Marketing Reports, Push Notifications, Email Subscribers, Site Settings |
+| `advantix-admin` | `/admin/` | Protected admin dashboard — Contacts, Leads, Portfolio, Team, Blog, AI Management, Integrations, Tasks, Notifications, Bug Reports, Website Analytics, Marketing Reports, Push Notifications, Email Subscribers, Email Marketing, Site Settings, Content Planner |
 | `advantix-ai` | `/ai/` | Multi-model AI chat tool — streaming, GPT/Claude/Gemini auto-routing, landing page builder, memory system |
 | `api-server` | — | Express REST API backend (all `/api/*` routes, serves all frontends in production) |
 
@@ -303,6 +303,15 @@ All routes prefixed with `/api`.
 - `GET /api/admin/tasks`, `POST/PUT/PATCH/DELETE /api/admin/tasks/:id` — Task management
 - `GET/PUT /api/admin/notifications/settings` — Telegram notification config
 - `GET /api/admin/users`, `POST/DELETE /api/admin/users/:id` — Tool user management
+- Email Marketing (`/api/email/*`):
+  - `GET/POST /api/email/senders`, `PUT/DELETE /api/email/senders/:id` — Sender management
+  - `GET/POST /api/email/templates`, `PUT/DELETE /api/email/templates/:id`, `POST .../duplicate` — Template CRUD
+  - `GET/POST /api/email/contacts`, bulk, import-leads, import-site-contacts, `PUT/DELETE ./:id`, bulk-delete — Contact management
+  - `GET/POST /api/email/campaigns`, `PUT/DELETE ./:id`, `POST ./:id/send`, `POST ./:id/duplicate` — Campaign CRUD
+  - `GET /api/email/campaigns/:id/report` — Campaign performance report
+  - `GET /api/email/stats` — Dashboard stats
+  - `GET /api/email/lists` — Contact list summary
+  - `POST /api/email/webhook` — Resend webhook receiver (unauthenticated)
 
 ---
 

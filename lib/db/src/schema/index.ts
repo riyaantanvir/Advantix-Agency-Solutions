@@ -23,3 +23,8 @@ export * from "./blogPosts";
 export * from "./bugReports";
 export * from "./pageEvents";
 export * from "./contentPlans";
+export * from "./emailSenders";
+export * from "./emailTemplates";
+export * from "./emailContacts";
+export * from "./emailCampaigns";
+export * from "./emailEvents";
