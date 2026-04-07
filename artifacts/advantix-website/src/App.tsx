@@ -26,6 +26,8 @@ const WarUpdate = lazy(() => import("@/pages/WarUpdate"));
 const AccountSettings = lazy(() => import("@/pages/AccountSettings"));
 const Login = lazy(() => import("@/pages/Login"));
 const Redirect = lazy(() => import("@/pages/Redirect"));
+const Careers = lazy(() => import("@/pages/Careers"));
+const ContestDetail = lazy(() => import("@/pages/ContestDetail"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -74,6 +76,8 @@ function Router() {
               <Route path="/tools/screen-recorder" component={ScreenRecorder} />
               <Route path="/tools/war-update" component={WarUpdate} />
               <Route path="/tools/settings" component={AccountSettings} />
+              <Route path="/careers" component={Careers} />
+              <Route path="/contests/:id" component={ContestDetail} />
               <Route component={NotFound} />
             </Switch>
           </Suspense>

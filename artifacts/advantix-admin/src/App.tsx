@@ -34,6 +34,7 @@ const SiteSettings      = lazy(() => import("./pages/SiteSettings"));
 const ContentPlanner    = lazy(() => import("./pages/ContentPlanner"));
 const EmailMarketing    = lazy(() => import("./pages/EmailMarketing"));
 const InboxPage         = lazy(() => import("./pages/InboxPage"));
+const Contests          = lazy(() => import("./pages/Contests"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -225,6 +226,10 @@ function Router() {
       </Route>
       <Route path="/email-marketing">
         <ProtectedLayout><EmailMarketing /></ProtectedLayout>
+      </Route>
+
+      <Route path="/contests">
+        <ProtectedLayout><Contests /></ProtectedLayout>
       </Route>
 
       <Route>

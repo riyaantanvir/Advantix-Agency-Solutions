@@ -29,6 +29,7 @@ import {
   CalendarDays,
   ChevronDown,
   Inbox,
+  Trophy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -58,6 +59,7 @@ const navItems: NavItem[] = [
       { path: "/contacts", label: "Contacts", icon: Mail },
       { path: "/leads", label: "Leads", icon: TrendingUp },
       { path: "/user-management", label: "Users", icon: UserCog },
+      { path: "/contests", label: "Contests", icon: Trophy },
     ],
   },
   {

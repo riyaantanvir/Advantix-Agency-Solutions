@@ -29,3 +29,6 @@ export * from "./emailContacts";
 export * from "./emailCampaigns";
 export * from "./emailEvents";
 export * from "./inboxMessages";
+export * from "./contests";
+export * from "./contestParticipants";
+export * from "./contestSubmissions";

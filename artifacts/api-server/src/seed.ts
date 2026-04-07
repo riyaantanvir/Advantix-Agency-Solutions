@@ -595,6 +595,56 @@ export async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_inbox_messages_thread_id ON inbox_messages(thread_id)
   `);
 
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS contests (
+      id serial PRIMARY KEY,
+      title text NOT NULL,
+      description text NOT NULL,
+      type text NOT NULL DEFAULT 'logo',
+      instructions text,
+      rules text,
+      prize text,
+      cover_image_url text,
+      deadline timestamptz NOT NULL,
+      status text NOT NULL DEFAULT 'draft',
+      winner_submission_id text,
+      is_active boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS contest_participants (
+      id serial PRIMARY KEY,
+      contest_id integer NOT NULL,
+      name text NOT NULL,
+      email text NOT NULL,
+      phone text,
+      accepted_rules boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS contest_submissions (
+      id serial PRIMARY KEY,
+      contest_id integer NOT NULL,
+      participant_id integer NOT NULL,
+      file_url text NOT NULL,
+      file_name text,
+      description text,
+      submitted_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_contest_participants_contest ON contest_participants(contest_id)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_contest_submissions_contest ON contest_submissions(contest_id)
+  `);
+
   logger.info("Migrations applied");
 }
 

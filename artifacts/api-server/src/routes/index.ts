@@ -30,6 +30,7 @@ import reengagementRouter from "./reengagement.js";
 import contentPlansRouter from "./contentPlans.js";
 import emailMarketingRouter from "./emailMarketing.js";
 import inboxRouter from "./inbox.js";
+import contestsRouter from "./contests.js";
 
 const router: IRouter = Router();
 
@@ -64,5 +65,6 @@ router.use(reengagementRouter);
 router.use(contentPlansRouter);
 router.use(emailMarketingRouter);
 router.use(inboxRouter);
+router.use(contestsRouter);
 
 export default router;

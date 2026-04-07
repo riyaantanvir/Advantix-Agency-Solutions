@@ -146,6 +146,9 @@ The intent classifier in `advantixAi.ts` routes to the best model:
 - `blog_posts` — Blog articles (TipTap HTML content); `views` (INT) and `likes` (INT) columns added for engagement tracking
 - `integrations` — API keys / settings stored in DB (Telegram, OpenAI, etc.)
 - `tasks` — Admin task management
+- `contests` — Competition/contest listings (title, description, type, rules, prize, deadline, winner)
+- `contest_participants` — Contest signups (name, email, phone, accepted_rules)
+- `contest_submissions` — Submitted work files (file_url, participant_id, description)
 - `recording_sessions` / `recording_stats` — Screen recorder data
 - `short_redirect_logs` — URL click logs with geo/device data
 - `session` — express-session store (created by connect-pg-simple)
@@ -291,6 +294,19 @@ All routes prefixed with `/api`.
 - `POST /api/tools/urls` — Create short URL
 - `DELETE /api/tools/urls/:id` — Delete short URL
 - `GET /api/tools/recordings/stats` — Screen recording stats
+
+### Contests (Public + Admin)
+- `GET /api/contests` — List active contests (public)
+- `GET /api/contests/:id` — Single contest with submissions (public)
+- `POST /api/contests/:id/signup` — Participant signup (public)
+- `POST /api/contests/:id/submit` — Submit work with file upload (public, multer)
+- `GET /api/admin/contests` — List all contests (admin)
+- `GET /api/admin/contests/:id` — Contest detail with all submissions (admin)
+- `POST /api/admin/contests` — Create contest (admin)
+- `PUT /api/admin/contests/:id` — Update contest (admin)
+- `DELETE /api/admin/contests/:id` — Delete contest + all related data (admin)
+- `POST /api/admin/contests/:id/winner` — Select winner submission (admin)
+- `POST /api/admin/contests/upload-image` — Upload cover image (admin)
 
 ### Admin Only (`requireAdmin` middleware)
 - `POST /api/auth/logout` — Admin logout
