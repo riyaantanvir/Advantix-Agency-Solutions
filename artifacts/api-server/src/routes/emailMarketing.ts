@@ -563,9 +563,9 @@ router.post("/email/send-single", requireAdmin, async (req, res) => {
   };
 
   const trimmedTo = (to ?? "").trim();
-  const trimmedSubject = (subject ?? "").trim();
+  const rawSubject = (subject ?? "").trim();
 
-  if (!trimmedTo || !trimmedSubject) {
+  if (!trimmedTo || !rawSubject) {
     res.status(400).json({ error: "Recipient email and subject are required" });
     return;
   }
@@ -585,6 +585,10 @@ router.post("/email/send-single", requireAdmin, async (req, res) => {
     }
     senderInfo = { name: sender.name, email: sender.email };
   }
+
+  const trimmedSubject = rawSubject
+    .replace(/\{\{name\}\}/gi, toName ?? "")
+    .replace(/\{\{email\}\}/gi, trimmedTo);
 
   let finalHtml = htmlContent ?? "";
   if (templateId) {
