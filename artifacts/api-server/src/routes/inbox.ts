@@ -168,18 +168,47 @@ router.post("/inbox/webhook", async (req: Request, res: Response) => {
 
     const eventType = payload.type;
     console.log("[webhook] Event type:", eventType);
+    console.log("[webhook] Full payload keys:", JSON.stringify(Object.keys(payload)));
+    if (payload.data) {
+      console.log("[webhook] Data keys:", JSON.stringify(Object.keys(payload.data)));
+    }
 
     if (eventType === "email.received" || (!eventType && payload.from && payload.to)) {
       const data = eventType ? payload.data : payload;
-      const fromEmail = typeof data.from === "string" ? data.from : data.from?.address || data.from?.email || "";
-      const fromName = typeof data.from === "string" ? "" : data.from?.name || "";
-      const toRaw = data.to;
-      const toEmail = Array.isArray(toRaw) ? toRaw[0] : (typeof toRaw === "string" ? toRaw : toRaw?.address || toRaw?.email || "");
-      const subject = data.subject || "(No Subject)";
-      const bodyHtml = data.html || "";
-      const bodyText = data.text || "";
+      console.log("[webhook] Parsing inbound data, keys:", JSON.stringify(Object.keys(data || {})));
 
-      console.log("[webhook] Inbound email from:", fromEmail, "to:", toEmail, "subject:", subject);
+      const fromRaw = data.from;
+      let fromEmail = "";
+      let fromName = "";
+      if (typeof fromRaw === "string") {
+        const match = fromRaw.match(/^(.*?)\s*<(.+?)>$/);
+        if (match) {
+          fromName = match[1].trim().replace(/^["']|["']$/g, "");
+          fromEmail = match[2];
+        } else {
+          fromEmail = fromRaw;
+        }
+      } else if (fromRaw) {
+        fromEmail = fromRaw.address || fromRaw.email || "";
+        fromName = fromRaw.name || "";
+      }
+
+      const toRaw = data.to;
+      let toEmail = "";
+      if (Array.isArray(toRaw)) {
+        const first = toRaw[0];
+        toEmail = typeof first === "string" ? first : first?.address || first?.email || "";
+      } else if (typeof toRaw === "string") {
+        toEmail = toRaw;
+      } else if (toRaw) {
+        toEmail = toRaw.address || toRaw.email || "";
+      }
+
+      const subject = data.subject || "(No Subject)";
+      const bodyHtml = data.html || data.body?.html || data.htmlBody || "";
+      const bodyText = data.text || data.body?.text || data.textBody || data.plain || "";
+
+      console.log("[webhook] Inbound email from:", fromEmail, "name:", fromName, "to:", toEmail, "subject:", subject, "htmlLen:", bodyHtml.length, "textLen:", bodyText.length);
 
       if (fromEmail && toEmail) {
         const threadId = generateThreadId(fromEmail, toEmail);
