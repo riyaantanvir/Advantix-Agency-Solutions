@@ -11,6 +11,7 @@ import {
 } from "@workspace/db";
 import { eq, desc, asc, sql, and, inArray } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
+import { sendEmail, sendBulkEmails } from "../services/resendMailer.js";
 
 const router: IRouter = Router();
 
@@ -354,6 +355,31 @@ router.post("/email/campaigns/:id/send", requireAdmin, async (req, res) => {
 
   if (recipients.length === 0) { res.status(400).json({ error: "No recipients in this list" }); return; }
 
+  let senderFrom = "Advantix <onboarding@resend.dev>";
+  if (campaign.senderId) {
+    const [sender] = await db.select().from(emailSendersTable).where(eq(emailSendersTable.id, campaign.senderId));
+    if (sender) senderFrom = `${sender.name} <${sender.email}>`;
+  }
+
+  let templateHtml = campaign.htmlContent ?? "";
+  if (campaign.templateId && !templateHtml) {
+    const [tmpl] = await db.select().from(emailTemplatesTable).where(eq(emailTemplatesTable.id, campaign.templateId));
+    if (tmpl?.htmlBody) templateHtml = tmpl.htmlBody;
+  }
+
+  const emailsToSend = recipients.map((r) => ({
+    to: r.email,
+    from: senderFrom,
+    subject: (campaign.subject ?? "")
+      .replace(/\{\{name\}\}/gi, r.name ?? "")
+      .replace(/\{\{email\}\}/gi, r.email),
+    html: (templateHtml || `<p>${campaign.subject}</p>`)
+      .replace(/\{\{name\}\}/gi, r.name ?? "")
+      .replace(/\{\{email\}\}/gi, r.email),
+  }));
+
+  const bulkResult = await sendBulkEmails(emailsToSend);
+
   for (const recipient of recipients) {
     await db.insert(emailEventsTable).values({
       campaignId: campaign.id,
@@ -367,7 +393,13 @@ router.post("/email/campaigns/:id/send", requireAdmin, async (req, res) => {
     .set({ status: "sent", sentAt: new Date(), recipientCount: recipients.length, updatedAt: new Date() })
     .where(eq(emailCampaignsTable.id, id));
 
-  res.json({ message: "Campaign sent", recipientCount: recipients.length });
+  res.json({
+    message: `Campaign sent: ${bulkResult.sent} delivered, ${bulkResult.failed} failed`,
+    recipientCount: recipients.length,
+    delivered: bulkResult.sent,
+    failed: bulkResult.failed,
+    errors: bulkResult.errors.length > 0 ? bulkResult.errors : undefined,
+  });
 });
 
 // ── EVENTS / REPORTS ───────────────────────────────────────────────────────
@@ -481,6 +513,22 @@ router.post("/email/send-single", requireAdmin, async (req, res) => {
       .replace(/\{\{email\}\}/gi, trimmedTo);
   }
 
+  const fromAddress = senderInfo
+    ? `${senderInfo.name} <${senderInfo.email}>`
+    : "Advantix <onboarding@resend.dev>";
+
+  const mailResult = await sendEmail({
+    to: trimmedTo,
+    from: fromAddress,
+    subject: trimmedSubject,
+    html: finalHtml || `<p>${trimmedSubject}</p>`,
+  });
+
+  if (!mailResult.success) {
+    res.status(502).json({ error: `Email delivery failed: ${mailResult.error}` });
+    return;
+  }
+
   const [singleCampaign] = await db.insert(emailCampaignsTable).values({
     name: `Single: ${trimmedSubject.slice(0, 60)}`,
     subject: trimmedSubject,
@@ -502,6 +550,7 @@ router.post("/email/send-single", requireAdmin, async (req, res) => {
       name: toName ?? "",
       singleEmail: true,
       sender: senderInfo,
+      resendId: mailResult.resendId,
     }),
   });
 
@@ -510,6 +559,7 @@ router.post("/email/send-single", requireAdmin, async (req, res) => {
     campaignId: singleCampaign.id,
     to: trimmedTo,
     subject: trimmedSubject,
+    resendId: mailResult.resendId,
   });
 });
 
