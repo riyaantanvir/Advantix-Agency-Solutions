@@ -1,0 +1,72 @@
+Email Marketing Module — Full Plan
+Email Service
+The tracking requirements (open rate, bounce, click) cannot be done with raw SMTP alone — they require a dedicated email platform. The recommendation is Resend, which:
+* Sends from your verified company domain/email address (multiple supported)
+* Provides real-time delivery webhooks (bounced, delivered, opened, clicked, unsubscribed)
+* Has a modern TypeScript SDK and React-based template engine
+* Free tier: 3,000 emails/month to start; scales easily
+
+New Admin Sidebar Section: "Email Marketing"
+Six sub-pages:
+Page	Purpose
+Dashboard	Overview stats — total sent, delivered, opens, bounces, clicks
+Campaigns	Create, schedule, send, view status of email campaigns
+Templates	Visual template editor — create, save, and reuse branded templates
+Contacts	Recipient lists — CSV import, pull from existing leads/contacts on your site
+Senders	Add and manage multiple company email addresses
+Reports	Per-campaign drill-down — individual recipient status, open times, etc.
+Database Tables (New)
+	
+	
+	
+	
+	
+	
+Campaign Flow (How It Works)
+1. Create campaign → pick or build a template, set subject line, pick sender email
+2. Choose recipients → select from existing leads, contacts on site, or upload CSV
+3. Preview & send → preview the email, then send immediately or schedule
+4. Tracking fires automatically → Resend webhooks update each recipient's status in real time
+5. View reports → live stats per campaign (opens, bounces, clicks, unsubscribes)
+
+Template Editor
+* Visual block-based editor: header, body text, image, button, footer, divider blocks
+* Editable colors, fonts, logo
+* Subject line and preview text fields
+* Save as reusable template
+* Preview in browser before sending
+
+Contact Management
+* CSV import with column mapping (name, email, custom fields)
+* Leads integration — one-click pull from existing leads table
+* Contacts integration — one-click pull from existing contacts table
+* Unsubscribe list — automatically excluded from future sends
+* Newsletter list — opt-in segment for newsletter campaigns
+
+Sender Management
+* Add multiple company email addresses
+* Each sender goes through domain/email verification on Resend
+* Status shown (Verified / Pending)
+* Set a default sender
+
+Tracking & Reporting (Accurate)
+	
+	
+	
+	
+	
+	
+	
+All events stored per-recipient in email_events table, with timestamps. Campaign-level stats computed from events in real time.
+
+Implementation Order (if approved)
+1. DB migrations + seed (5 new tables)
+2. API routes (campaigns, templates, senders, contacts, webhook receiver)
+3. Resend integration setup + env key
+4. Sidebar nav entry + page routing
+5. Senders page (add company emails)
+6. Templates page (editor)
+7. Contacts page (CSV import + leads pull)
+8. Campaigns page (create, send, list)
+9. Reports page (per-campaign analytics)
+10. Dashboard overview stats
