@@ -67,6 +67,11 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  // Columns added after initial release — safe to re-run via IF NOT EXISTS
+  await db.execute(sql`ALTER TABLE team_members ADD COLUMN IF NOT EXISTS badge text`);
+  await db.execute(sql`ALTER TABLE team_members ADD COLUMN IF NOT EXISTS tagline text`);
+  await db.execute(sql`ALTER TABLE team_members ADD COLUMN IF NOT EXISTS skills text[]`);
+
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS leads (
       id serial PRIMARY KEY,
