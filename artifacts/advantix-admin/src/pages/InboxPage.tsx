@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Inbox, Send, Loader2, ArrowLeft, Mail, MailOpen,
   RefreshCw, Trash2, Clock, ArrowUpRight, ArrowDownLeft,
-  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -57,15 +56,6 @@ export default function InboxPage() {
     refetchInterval: 30000,
   });
 
-  const seedMutation = useMutation({
-    mutationFn: () => apiFetch("/api/inbox/seed-from-campaigns", { method: "POST" }),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["inbox-threads"] });
-      toast({ title: "Synced", description: `${data.seeded} sent emails imported into inbox.` });
-    },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-  });
-
   if (selectedThread) {
     return (
       <ThreadView
@@ -84,27 +74,16 @@ export default function InboxPage() {
             <Inbox className="w-6 h-6 text-primary" />
             Inbox
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">View sent emails and client replies</p>
+          <p className="text-muted-foreground text-sm mt-1">Client replies and incoming messages</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => seedMutation.mutate()}
-            disabled={seedMutation.isPending}
-          >
-            {seedMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Download className="w-3.5 h-3.5 mr-1" />}
-            Sync Campaigns
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => queryClient.invalidateQueries({ queryKey: ["inbox-threads"] })}
-          >
-            <RefreshCw className="w-3.5 h-3.5 mr-1" />
-            Refresh
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => queryClient.invalidateQueries({ queryKey: ["inbox-threads"] })}
+        >
+          <RefreshCw className="w-3.5 h-3.5 mr-1" />
+          Refresh
+        </Button>
       </div>
 
       {isLoading ? (
@@ -114,18 +93,10 @@ export default function InboxPage() {
       ) : threads.length === 0 ? (
         <div className="bg-card rounded-xl border border-border p-16 text-center">
           <Inbox className="w-12 h-12 mx-auto text-muted-foreground/30 mb-4" />
-          <h3 className="text-lg font-medium text-muted-foreground mb-2">No Messages Yet</h3>
-          <p className="text-sm text-muted-foreground/70 max-w-md mx-auto mb-4">
-            Click "Sync Campaigns" to import your sent campaign emails into the inbox.
+          <h3 className="text-lg font-medium text-muted-foreground mb-2">No Replies Yet</h3>
+          <p className="text-sm text-muted-foreground/70 max-w-md mx-auto">
+            When a client replies to your email or sends a message to any @advantix.digital address, it will appear here automatically.
           </p>
-          <Button
-            variant="outline"
-            onClick={() => seedMutation.mutate()}
-            disabled={seedMutation.isPending}
-          >
-            {seedMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Download className="w-4 h-4 mr-2" />}
-            Sync Campaigns
-          </Button>
         </div>
       ) : (
         <div className="bg-card rounded-xl border border-border overflow-hidden">

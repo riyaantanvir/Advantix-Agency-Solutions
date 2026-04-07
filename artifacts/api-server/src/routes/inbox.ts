@@ -16,20 +16,23 @@ function generateThreadId(email1: string, email2: string): string {
 
 router.get("/inbox/threads", requireAdmin, async (_req: Request, res: Response) => {
   const threads = await db.execute(sql`
-    SELECT DISTINCT ON (thread_id)
-      thread_id,
-      id,
-      direction,
-      from_email,
-      from_name,
-      to_email,
-      subject,
-      body_text,
-      is_read,
-      received_at,
-      created_at
-    FROM inbox_messages
-    ORDER BY thread_id, received_at DESC
+    SELECT DISTINCT ON (m.thread_id)
+      m.thread_id,
+      m.id,
+      m.direction,
+      m.from_email,
+      m.from_name,
+      m.to_email,
+      m.subject,
+      m.body_text,
+      m.is_read,
+      m.received_at,
+      m.created_at
+    FROM inbox_messages m
+    WHERE m.thread_id IN (
+      SELECT thread_id FROM inbox_messages WHERE direction = 'inbound'
+    )
+    ORDER BY m.thread_id, m.received_at DESC
   `);
 
   const threadList = (threads.rows as any[]).map(r => ({
