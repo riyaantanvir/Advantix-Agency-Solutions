@@ -315,7 +315,8 @@ All routes prefixed with `/api`.
   - `GET /api/email/stats` — Dashboard stats
   - `GET /api/email/lists` — Contact list summary
   - `POST /api/email/webhook` — Resend webhook receiver (unauthenticated)
-  - **NOTE**: Email sending is currently log-only (records campaigns/events in DB). User dismissed Resend integration; needs either Resend API key set as `RESEND_API_KEY` secret, or another email provider, to enable actual delivery.
+  - **Resend integration active**: API key stored in `integrations` DB table (name=`RESEND_API_KEY`). Verified domain: `advantix.digital`. Default sender: `noreply@advantix.digital`. Both single-send and campaign-send use real Resend delivery.
+  - 8 ready-made templates seeded: Welcome New Client, Project Update, Invoice Reminder, Monthly Newsletter, Project Completion, Feedback Request, Special Offer, New Service Announcement
 
 ---
 

@@ -355,7 +355,7 @@ router.post("/email/campaigns/:id/send", requireAdmin, async (req, res) => {
 
   if (recipients.length === 0) { res.status(400).json({ error: "No recipients in this list" }); return; }
 
-  let senderFrom = "Advantix <onboarding@resend.dev>";
+  let senderFrom = "Advantix <noreply@advantix.digital>";
   if (campaign.senderId) {
     const [sender] = await db.select().from(emailSendersTable).where(eq(emailSendersTable.id, campaign.senderId));
     if (sender) senderFrom = `${sender.name} <${sender.email}>`;
@@ -515,7 +515,7 @@ router.post("/email/send-single", requireAdmin, async (req, res) => {
 
   const fromAddress = senderInfo
     ? `${senderInfo.name} <${senderInfo.email}>`
-    : "Advantix <onboarding@resend.dev>";
+    : "Advantix <noreply@advantix.digital>";
 
   const mailResult = await sendEmail({
     to: trimmedTo,
