@@ -29,6 +29,7 @@ import pushNotificationsRouter from "./pushNotifications.js";
 import reengagementRouter from "./reengagement.js";
 import contentPlansRouter from "./contentPlans.js";
 import emailMarketingRouter from "./emailMarketing.js";
+import inboxRouter from "./inbox.js";
 
 const router: IRouter = Router();
 
@@ -62,5 +63,6 @@ router.use(pushNotificationsRouter);
 router.use(reengagementRouter);
 router.use(contentPlansRouter);
 router.use(emailMarketingRouter);
+router.use(inboxRouter);
 
 export default router;

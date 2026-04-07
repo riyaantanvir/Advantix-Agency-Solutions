@@ -28,3 +28,4 @@ export * from "./emailTemplates";
 export * from "./emailContacts";
 export * from "./emailCampaigns";
 export * from "./emailEvents";
+export * from "./inboxMessages";
