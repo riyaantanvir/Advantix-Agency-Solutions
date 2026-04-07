@@ -1315,6 +1315,8 @@ function ReportsTab() {
         </div>
       ) : (
         <div className="space-y-3">
+          {selectedId && <CampaignReportInline campaignId={selectedId} />}
+
           <div className="bg-card rounded-xl border border-border overflow-hidden">
             <table className="w-full text-sm">
               <thead>
@@ -1363,8 +1365,6 @@ function ReportsTab() {
               </div>
             </div>
           )}
-
-          {selectedId && <CampaignReportInline campaignId={selectedId} />}
         </div>
       )}
     </div>
