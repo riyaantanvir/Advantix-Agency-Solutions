@@ -33,8 +33,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers: { "Content-Type": "application/json", ...options.headers },
     ...options,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Request failed");
+  const text = await res.text();
+  let data: Record<string, unknown> = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("Server returned an invalid response");
+  }
+  if (!res.ok) throw new Error((data.error as string) ?? "Request failed");
   return data as T;
 }
 

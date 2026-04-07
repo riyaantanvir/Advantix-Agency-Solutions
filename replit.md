@@ -222,9 +222,11 @@ This app uses **Express 5**, NOT Express 4. Express 5 has breaking changes:
 
 ### Session Cookie
 - Stored in PostgreSQL via `connect-pg-simple`
-- `sameSite: "lax"`, `httpOnly: true`
-- In production: `secure: true` (trust proxy is set to 1)
+- In production (DO): `sameSite: "lax"`, `secure: true`, `httpOnly: true`
+- In Replit dev: `sameSite: "none"`, `secure: true`, `httpOnly: true` (required for Replit's iframe preview which embeds the app cross-site)
+- `trust proxy` is set to 1
 - `SESSION_SECRET` is auto-generated if not set (with a warning — sessions won't persist across restarts)
+- `customFetch` (api-client-react) uses `credentials: "include"` to ensure cookies are sent in all contexts
 
 ### esbuild (api-server)
 - `@google/*` is NOT in the external list — `@google/genai` gets bundled

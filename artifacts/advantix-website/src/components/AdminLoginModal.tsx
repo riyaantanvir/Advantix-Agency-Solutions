@@ -19,8 +19,14 @@ async function adminLogin(username: string, password: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Invalid credentials");
+  const text = await res.text();
+  let data: Record<string, unknown> = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("Server returned an invalid response");
+  }
+  if (!res.ok) throw new Error((data.error as string) ?? "Invalid credentials");
   return data;
 }
 

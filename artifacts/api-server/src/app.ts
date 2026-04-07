@@ -96,6 +96,8 @@ app.use(
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
+const isReplit = !isProd && Boolean(process.env.REPLIT_DOMAINS);
+
 app.use(
   session({
     store: new PgSession({ pool }),
@@ -103,9 +105,9 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: isProd,
+      secure: isProd || isReplit,
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: isReplit ? "none" as const : "lax" as const,
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   }),
