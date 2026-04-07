@@ -50,7 +50,7 @@ router.get("/inbox/threads", requireAdmin, async (_req: Request, res: Response) 
 });
 
 router.get("/inbox/threads/:threadId", requireAdmin, async (req: Request, res: Response) => {
-  const { threadId } = req.params;
+  const threadId = String(req.params.threadId);
   const messages = await db
     .select()
     .from(inboxMessagesTable)
@@ -200,7 +200,7 @@ router.post("/inbox/seed-from-campaigns", requireAdmin, async (_req: Request, re
 });
 
 router.delete("/inbox/threads/:threadId", requireAdmin, async (req: Request, res: Response) => {
-  const { threadId } = req.params;
+  const threadId = String(req.params.threadId);
   await db.delete(inboxMessagesTable).where(eq(inboxMessagesTable.threadId, threadId));
   res.json({ message: "Thread deleted" });
 });
