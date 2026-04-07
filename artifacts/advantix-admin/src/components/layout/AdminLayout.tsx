@@ -28,6 +28,7 @@ import {
   Settings,
   CalendarDays,
   ChevronDown,
+  Inbox,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -64,6 +65,7 @@ const navItems: NavItem[] = [
     icon: Megaphone,
     children: [
       { path: "/email-marketing", label: "Email Marketing", icon: Mail },
+      { path: "/inbox", label: "Inbox", icon: Inbox },
       { path: "/push-notifications", label: "Push Notifications", icon: Bell },
       { path: "/email-subscribers", label: "Email Subscribers", icon: Mail },
       { path: "/content-planner", label: "Content Planner", icon: CalendarDays },
