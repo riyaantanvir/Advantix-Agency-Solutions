@@ -500,6 +500,79 @@ export async function runMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS email_senders (
+      id serial PRIMARY KEY,
+      name text NOT NULL,
+      email text NOT NULL UNIQUE,
+      resend_domain_id text,
+      status text NOT NULL DEFAULT 'pending',
+      is_default boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS email_templates (
+      id serial PRIMARY KEY,
+      name text NOT NULL,
+      subject text NOT NULL DEFAULT '',
+      preview_text text NOT NULL DEFAULT '',
+      html_body text NOT NULL DEFAULT '',
+      json_blocks text NOT NULL DEFAULT '[]',
+      is_system boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS email_contacts (
+      id serial PRIMARY KEY,
+      email text NOT NULL,
+      name text NOT NULL DEFAULT '',
+      tags text NOT NULL DEFAULT '',
+      list_name text NOT NULL DEFAULT 'default',
+      source text NOT NULL DEFAULT 'manual',
+      unsubscribed boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS email_contacts_email_list_idx ON email_contacts(email, list_name)
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS email_campaigns (
+      id serial PRIMARY KEY,
+      name text NOT NULL,
+      subject text NOT NULL,
+      preview_text text NOT NULL DEFAULT '',
+      template_id integer REFERENCES email_templates(id) ON DELETE SET NULL,
+      sender_id integer REFERENCES email_senders(id) ON DELETE SET NULL,
+      html_content text NOT NULL DEFAULT '',
+      recipient_list_name text NOT NULL DEFAULT 'default',
+      recipient_count integer NOT NULL DEFAULT 0,
+      status text NOT NULL DEFAULT 'draft',
+      scheduled_at timestamptz,
+      sent_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS email_events (
+      id serial PRIMARY KEY,
+      campaign_id integer REFERENCES email_campaigns(id) ON DELETE CASCADE,
+      contact_email text NOT NULL,
+      event_type text NOT NULL,
+      metadata text NOT NULL DEFAULT '{}',
+      occurred_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS inbox_messages (
       id serial PRIMARY KEY,
       thread_id text NOT NULL,
