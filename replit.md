@@ -1,8 +1,8 @@
-# Advantix Agency Workspace
+# Advantix Digital Workspace
 
 ## Overview
 
-Full-stack pnpm monorepo for **Advantix Agency** (advantix.agency). A complete digital agency platform with:
+Full-stack pnpm monorepo for **Advantix Digital** (advantix.digital). A complete digital agency platform with:
 - Public marketing website
 - Admin dashboard
 - Multi-model AI chat tool

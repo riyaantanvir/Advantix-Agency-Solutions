@@ -1,7 +1,7 @@
 import { Helmet } from "react-helmet-async";
 
-const SITE_NAME = "Advantix Agency";
-const SITE_URL = "https://advantix.agency";
+const SITE_NAME = "Advantix Digital";
+const SITE_URL = "https://advantix.digital";
 const DEFAULT_OG_IMAGE = `${SITE_URL}/images/og-image.png`;
 
 interface SEOProps {

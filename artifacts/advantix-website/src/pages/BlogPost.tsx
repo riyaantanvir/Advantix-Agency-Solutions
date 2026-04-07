@@ -322,26 +322,26 @@ export default function BlogPost() {
   }
 
   const tags = post.tags ? post.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
-  const canonicalUrl = `https://advantix.agency/blog/${post.slug}`;
+  const canonicalUrl = `https://advantix.digital/blog/${post.slug}`;
 
   const blogPostStructuredData = [
     {
       "@context": "https://schema.org", "@type": "BlogPosting",
       "headline": post.seoTitle ?? post.title,
       "description": post.seoDescription ?? post.excerpt ?? undefined,
-      "image": post.coverImageUrl ?? "https://advantix.agency/images/og-image.png",
+      "image": post.coverImageUrl ?? "https://advantix.digital/images/og-image.png",
       "url": canonicalUrl,
       "datePublished": post.publishedAt ?? undefined,
       "dateModified": post.publishedAt ?? undefined,
-      "author": { "@type": "Organization", "name": post.author, "url": "https://advantix.agency" },
-      "publisher": { "@type": "Organization", "name": "Advantix Agency", "url": "https://advantix.agency", "logo": { "@type": "ImageObject", "url": "https://advantix.agency/images/logo-icon.svg" } },
+      "author": { "@type": "Organization", "name": post.author, "url": "https://advantix.digital" },
+      "publisher": { "@type": "Organization", "name": "Advantix Digital", "url": "https://advantix.digital", "logo": { "@type": "ImageObject", "url": "https://advantix.digital/images/logo-icon.svg" } },
       "keywords": tags.join(", "), "articleSection": post.category, "inLanguage": "en-US",
     },
     {
       "@context": "https://schema.org", "@type": "BreadcrumbList",
       "itemListElement": [
-        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://advantix.agency/" },
-        { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://advantix.agency/blog" },
+        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://advantix.digital/" },
+        { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://advantix.digital/blog" },
         { "@type": "ListItem", "position": 3, "name": post.title, "item": canonicalUrl },
       ],
     },
@@ -353,7 +353,7 @@ export default function BlogPost() {
 
       <SEO
         title={post.seoTitle ?? post.title}
-        description={post.seoDescription ?? post.excerpt ?? `Read "${post.title}" on the Advantix Agency blog.`}
+        description={post.seoDescription ?? post.excerpt ?? `Read "${post.title}" on the Advantix Digital blog.`}
         keywords={tags.length > 0 ? tags.join(", ") : `${post.category}, advantix blog, digital agency`}
         ogType="article"
         ogImage={post.coverImageUrl ?? undefined}

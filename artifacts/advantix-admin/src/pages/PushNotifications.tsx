@@ -130,7 +130,7 @@ export default function PushNotifications() {
               value={body}
               onChange={e => setBody(e.target.value)}
               rows={3}
-              placeholder="Click to read the latest insights from Advantix Agency..."
+              placeholder="Click to read the latest insights from Advantix Digital..."
               className="w-full px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none"
             />
           </div>

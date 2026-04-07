@@ -198,14 +198,14 @@ export default function Contact() {
   const contactStructuredData = {
     "@context": "https://schema.org",
     "@type": "ContactPage",
-    "name": "Contact Advantix Agency",
-    "url": "https://advantix.agency/contact",
-    "description": "Get in touch with Advantix Agency for web development, marketing, and automation services.",
+    "name": "Contact Advantix Digital",
+    "url": "https://advantix.digital/contact",
+    "description": "Get in touch with Advantix Digital for web development, marketing, and automation services.",
     "mainEntity": {
       "@type": "Organization",
-      "name": "Advantix Agency",
-      "url": "https://advantix.agency",
-      "email": "hello@advantix.agency",
+      "name": "Advantix Digital",
+      "url": "https://advantix.digital",
+      "email": "hello@advantix.digital",
       "address": {
         "@type": "PostalAddress",
         "addressCountry": "BD",
@@ -217,8 +217,8 @@ export default function Contact() {
   return (
     <div className="pt-28 pb-24 min-h-screen bg-background">
       <SEO
-        title="Contact Us — Get a Free Quote from Advantix Agency"
-        description="Ready to grow your business? Contact Advantix Agency for a free consultation. We offer web development, CRM, automation, and marketing services. Based in Bangladesh, working worldwide."
+        title="Contact Us — Get a Free Quote from Advantix Digital"
+        description="Ready to grow your business? Contact Advantix Digital for a free consultation. We offer web development, CRM, automation, and marketing services. Based in Bangladesh, working worldwide."
         keywords="contact advantix agency, hire digital agency bangladesh, web development quote, free consultation, hire web developer, digital marketing agency contact"
         canonical="/contact"
         structuredData={contactStructuredData}
@@ -257,7 +257,7 @@ export default function Contact() {
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-muted-foreground mb-0.5">Email Us</p>
-                      <a href="mailto:hello@advantix.agency" className="text-base hover:text-primary transition-colors">hello@advantix.agency</a>
+                      <a href="mailto:hello@advantix.digital" className="text-base hover:text-primary transition-colors">hello@advantix.digital</a>
                     </div>
                   </div>
                   <div className="flex items-start gap-4 group">

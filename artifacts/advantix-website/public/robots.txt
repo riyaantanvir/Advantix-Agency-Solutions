@@ -7,4 +7,4 @@ Disallow: /tools/settings
 Disallow: /s/
 Disallow: /login
 
-Sitemap: https://advantix.agency/sitemap.xml
+Sitemap: https://advantix.digital/sitemap.xml

@@ -28,7 +28,7 @@ async function initVapid() {
     await setSetting("vapid_public_key",  publicKey);
     await setSetting("vapid_private_key", privateKey);
   }
-  webpush.setVapidDetails("mailto:hello@advantix.agency", publicKey, privateKey);
+  webpush.setVapidDetails("mailto:hello@advantix.digital", publicKey, privateKey);
   return publicKey;
 }
 
@@ -84,7 +84,7 @@ router.post("/admin/push/send", requireAdmin, async (req, res) => {
   const publicKey  = await getSetting("vapid_public_key");
   if (!privateKey || !publicKey) { res.status(503).json({ error: "VAPID not initialised" }); return; }
 
-  webpush.setVapidDetails("mailto:hello@advantix.agency", publicKey, privateKey);
+  webpush.setVapidDetails("mailto:hello@advantix.digital", publicKey, privateKey);
 
   const subs = await db.execute(sql`SELECT endpoint, p256dh, auth FROM push_subscriptions`);
   const payload = JSON.stringify({ title, body, url: url ?? "/" });

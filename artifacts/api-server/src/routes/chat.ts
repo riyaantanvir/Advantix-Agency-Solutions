@@ -17,9 +17,9 @@ async function getOpenAI() {
   }
 }
 
-const SYSTEM_PROMPT = `You are a helpful assistant for Advantix Agency (advantix.agency). 
+const SYSTEM_PROMPT = `You are a helpful assistant for Advantix Digital (advantix.digital). 
 
-Advantix Agency is a full-service digital agency based in Bangladesh that provides:
+Advantix Digital is a full-service digital agency based in Bangladesh that provides:
 - Custom CRM Development
 - Website Design & Development
 - Sales Page Design

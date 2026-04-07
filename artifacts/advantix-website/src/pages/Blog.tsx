@@ -53,21 +53,21 @@ export default function Blog() {
     {
       "@context": "https://schema.org",
       "@type": "Blog",
-      "name": "Advantix Agency Blog",
-      "url": "https://advantix.agency/blog",
-      "description": "Tips, insights, and case studies on web development, digital marketing, automation, and business growth from the Advantix Agency team.",
+      "name": "Advantix Digital Blog",
+      "url": "https://advantix.digital/blog",
+      "description": "Tips, insights, and case studies on web development, digital marketing, automation, and business growth from the Advantix Digital team.",
       "publisher": {
         "@type": "Organization",
-        "name": "Advantix Agency",
-        "url": "https://advantix.agency",
+        "name": "Advantix Digital",
+        "url": "https://advantix.digital",
       },
     },
     {
       "@context": "https://schema.org",
       "@type": "BreadcrumbList",
       "itemListElement": [
-        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://advantix.agency/" },
-        { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://advantix.agency/blog" },
+        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://advantix.digital/" },
+        { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://advantix.digital/blog" },
       ],
     },
   ];
@@ -76,7 +76,7 @@ export default function Blog() {
     <div className="min-h-screen bg-background">
       <SEO
         title="Blog — Web Dev, Marketing & Automation Tips"
-        description="Read the latest articles from Advantix Agency on web development, CRM, digital marketing, automation, and business growth strategies. Expert insights from our team in Bangladesh."
+        description="Read the latest articles from Advantix Digital on web development, CRM, digital marketing, automation, and business growth strategies. Expert insights from our team in Bangladesh."
         keywords="digital agency blog, web development tips, marketing strategies, automation tutorials, CRM setup guide, ecommerce tips, bangladesh tech blog, advantix blog"
         canonical="/blog"
         structuredData={blogStructuredData}

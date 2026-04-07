@@ -1,4 +1,4 @@
-// PM2 Ecosystem Config — Advantix Agency
+// PM2 Ecosystem Config — Advantix Digital
 // Usage: pm2 start ecosystem.config.cjs
 // Docs:  https://pm2.keymetrics.io/docs/usage/application-declaration/
 

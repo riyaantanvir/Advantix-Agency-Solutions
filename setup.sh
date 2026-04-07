@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# Advantix Agency — Deploy Script
+# Advantix Digital — Deploy Script
 # Run this after "git pull" on your Digital Ocean droplet
 #
 # First time:    bash setup.sh --init
@@ -20,7 +20,7 @@ INIT_MODE=false
 
 echo ""
 echo -e "${CYAN}============================================================${NC}"
-echo -e "${CYAN}   Advantix Agency — Deploy Script${NC}"
+echo -e "${CYAN}   Advantix Digital — Deploy Script${NC}"
 echo -e "${CYAN}============================================================${NC}"
 echo ""
 

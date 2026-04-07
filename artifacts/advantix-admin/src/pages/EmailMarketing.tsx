@@ -1259,11 +1259,11 @@ function SendersTab() {
           <form onSubmit={(e) => { e.preventDefault(); saveMutation.mutate(); }} className="space-y-4">
             <div>
               <label className="text-sm font-medium">Sender Name</label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder="Advantix Agency" />
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required placeholder="Advantix Digital" />
             </div>
             <div>
               <label className="text-sm font-medium">Email Address</label>
-              <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required type="email" placeholder="hello@advantix.agency" />
+              <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required type="email" placeholder="hello@advantix.digital" />
             </div>
             <div className="flex items-center gap-2">
               <input type="checkbox" id="isDefault" checked={form.isDefault} onChange={(e) => setForm({ ...form, isDefault: e.target.checked })} className="rounded" />

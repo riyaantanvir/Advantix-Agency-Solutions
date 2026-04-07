@@ -61,7 +61,7 @@ export function Footer() {
             <ul className="space-y-4 text-sm text-muted-foreground">
               <li className="flex items-start gap-3">
                 <Mail className="w-5 h-5 text-primary shrink-0" />
-                <span>hello@advantix.agency</span>
+                <span>hello@advantix.digital</span>
               </li>
               <li className="flex items-start gap-3">
                 <MapPin className="w-5 h-5 text-primary shrink-0" />
@@ -73,7 +73,7 @@ export function Footer() {
         </div>
         
         <div className="pt-8 border-t border-border/50 text-center text-sm text-muted-foreground">
-          <p>© {new Date().getFullYear()} Advantix Agency. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Advantix Digital. All rights reserved.</p>
         </div>
       </div>
     </footer>

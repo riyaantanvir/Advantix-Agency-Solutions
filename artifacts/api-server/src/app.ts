@@ -209,10 +209,10 @@ if (isProd) {
         if (!row) { next(); return; }
 
         const postTitle   = row.seo_title ?? row.title;
-        const postDesc    = row.seo_description ?? row.excerpt ?? `Read "${row.title}" on the Advantix Agency blog.`;
-        const postImage   = row.cover_image_url ?? "https://advantix.agency/images/og-image.png";
-        const postUrl     = `https://advantix.agency/blog/${slug}`;
-        const fullTitle   = `${postTitle} | Advantix Agency`;
+        const postDesc    = row.seo_description ?? row.excerpt ?? `Read "${row.title}" on the Advantix Digital blog.`;
+        const postImage   = row.cover_image_url ?? "https://advantix.digital/images/og-image.png";
+        const postUrl     = `https://advantix.digital/blog/${slug}`;
+        const fullTitle   = `${postTitle} | Advantix Digital`;
 
         const template = fs.readFileSync(path.join(websiteDir, "index.html"), "utf-8");
         const injected  = injectBlogOg(template, {

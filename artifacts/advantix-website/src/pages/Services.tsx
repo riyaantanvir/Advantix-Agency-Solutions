@@ -36,9 +36,9 @@ export default function Services() {
   const servicesStructuredData = {
     "@context": "https://schema.org",
     "@type": "ItemList",
-    "name": "Advantix Agency Services",
-    "description": "Full range of digital services by Advantix Agency",
-    "url": "https://advantix.agency/services",
+    "name": "Advantix Digital Services",
+    "description": "Full range of digital services by Advantix Digital",
+    "url": "https://advantix.digital/services",
     "itemListElement": activeServices.map((s, i) => ({
       "@type": "ListItem",
       "position": i + 1,
@@ -48,11 +48,11 @@ export default function Services() {
         "description": s.description,
         "provider": {
           "@type": "Organization",
-          "name": "Advantix Agency",
-          "url": "https://advantix.agency",
+          "name": "Advantix Digital",
+          "url": "https://advantix.digital",
         },
         "areaServed": "Worldwide",
-        "url": "https://advantix.agency/services",
+        "url": "https://advantix.digital/services",
       },
     })),
   };
@@ -61,7 +61,7 @@ export default function Services() {
     <div className="min-h-screen bg-background">
       <SEO
         title="Our Services — Web Dev, CRM, Automation, Marketing"
-        description="Explore all services by Advantix Agency: custom website development, CRM integration, ecommerce, Python automation bots, Facebook marketing, graphics design, and more. Based in Bangladesh, serving global clients."
+        description="Explore all services by Advantix Digital: custom website development, CRM integration, ecommerce, Python automation bots, Facebook marketing, graphics design, and more. Based in Bangladesh, serving global clients."
         keywords="web development services, CRM integration service, ecommerce development, python automation, facebook marketing agency, social media management, graphics design, lead generation, advantix services"
         canonical="/services"
         structuredData={servicesStructuredData}

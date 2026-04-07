@@ -650,7 +650,7 @@ function UtmBuilderModal({ open, onClose }: { open: boolean; onClose: () => void
           <div className="space-y-3">
             <div>
               <Label className="mb-1.5 block text-sm">Website URL <span className="text-destructive">*</span></Label>
-              <Input placeholder="https://advantix.agency/services" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} className="font-mono text-sm" />
+              <Input placeholder="https://advantix.digital/services" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} className="font-mono text-sm" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

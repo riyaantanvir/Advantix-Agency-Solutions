@@ -1,10 +1,10 @@
-/* Advantix Agency – Service Worker (Push Notifications) */
+/* Advantix Digital – Service Worker (Push Notifications) */
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
 
 self.addEventListener("push", e => {
-  let data = { title: "Advantix Agency", body: "You have a new message!", url: "/" };
+  let data = { title: "Advantix Digital", body: "You have a new message!", url: "/" };
   try { data = { ...data, ...e.data.json() }; } catch {}
 
   e.waitUntil(

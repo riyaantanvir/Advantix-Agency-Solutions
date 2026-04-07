@@ -21,8 +21,8 @@ export default function Team() {
   const teamStructuredData = {
     "@context": "https://schema.org",
     "@type": "Organization",
-    "name": "Advantix Agency",
-    "url": "https://advantix.agency",
+    "name": "Advantix Digital",
+    "url": "https://advantix.digital",
     "employee": (teamMembers ?? []).map((m) => ({
       "@type": "Person",
       "name": m.name,
@@ -33,8 +33,8 @@ export default function Team() {
       "sameAs": m.linkedinUrl ? [m.linkedinUrl] : undefined,
       "worksFor": {
         "@type": "Organization",
-        "name": "Advantix Agency",
-        "url": "https://advantix.agency",
+        "name": "Advantix Digital",
+        "url": "https://advantix.digital",
       },
     })),
   };
@@ -42,8 +42,8 @@ export default function Team() {
   return (
     <div className="min-h-screen bg-[#07080c]">
       <SEO
-        title="Meet Our Team — The Experts Behind Advantix Agency"
-        description="Get to know the talented professionals at Advantix Agency. Our team of web developers, designers, marketers, and automation experts are based in Bangladesh and serve clients worldwide."
+        title="Meet Our Team — The Experts Behind Advantix Digital"
+        description="Get to know the talented professionals at Advantix Digital. Our team of web developers, designers, marketers, and automation experts are based in Bangladesh and serve clients worldwide."
         keywords="advantix team, digital agency team bangladesh, web developers bangladesh, UI designers, marketing experts, python developers, social media managers"
         canonical="/team"
         structuredData={teamStructuredData}

@@ -27,9 +27,9 @@ export default function Portfolio() {
   const portfolioStructuredData = {
     "@context": "https://schema.org",
     "@type": "ItemList",
-    "name": "Advantix Agency Portfolio",
-    "description": "Selected work and case studies by Advantix Agency",
-    "url": "https://advantix.agency/portfolio",
+    "name": "Advantix Digital Portfolio",
+    "description": "Selected work and case studies by Advantix Digital",
+    "url": "https://advantix.digital/portfolio",
     "itemListElement": (filteredItems ?? []).slice(0, 10).map((item, i) => ({
       "@type": "ListItem",
       "position": i + 1,
@@ -40,7 +40,7 @@ export default function Portfolio() {
         "image": item.imageUrl ?? undefined,
         "creator": {
           "@type": "Organization",
-          "name": "Advantix Agency",
+          "name": "Advantix Digital",
         },
       },
     })),
@@ -50,7 +50,7 @@ export default function Portfolio() {
     <div className="pt-32 pb-24 min-h-screen bg-background">
       <SEO
         title="Portfolio — Our Work & Case Studies"
-        description="Browse Advantix Agency's portfolio of completed projects — custom websites, marketing campaigns, CRM systems, automation bots, and more. See how we deliver excellence for our clients worldwide."
+        description="Browse Advantix Digital's portfolio of completed projects — custom websites, marketing campaigns, CRM systems, automation bots, and more. See how we deliver excellence for our clients worldwide."
         keywords="advantix portfolio, web design portfolio, digital marketing case studies, CRM project examples, ecommerce website, bangladesh agency portfolio"
         canonical="/portfolio"
         structuredData={portfolioStructuredData}

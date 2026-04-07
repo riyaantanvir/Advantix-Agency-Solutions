@@ -173,24 +173,24 @@ export default function Home() {
     {
       "@context": "https://schema.org",
       "@type": "WebPage",
-      "@id": "https://advantix.agency/#webpage",
-      "url": "https://advantix.agency/",
-      "name": "Advantix Agency — Digital Agency in Bangladesh",
+      "@id": "https://advantix.digital/#webpage",
+      "url": "https://advantix.digital/",
+      "name": "Advantix Digital — Digital Agency in Bangladesh",
       "description": "Full-service digital agency in Bangladesh: websites, CRM, automation, and marketing.",
-      "isPartOf": { "@id": "https://advantix.agency/#website" },
-      "about": { "@id": "https://advantix.agency/#organization" },
+      "isPartOf": { "@id": "https://advantix.digital/#website" },
+      "about": { "@id": "https://advantix.digital/#organization" },
     },
     {
       "@context": "https://schema.org",
       "@type": "ItemList",
-      "name": "Advantix Agency Services",
-      "url": "https://advantix.agency/services",
+      "name": "Advantix Digital Services",
+      "url": "https://advantix.digital/services",
       "itemListElement": services.slice(0, 8).map((s, i) => ({
         "@type": "ListItem",
         "position": i + 1,
         "name": s.name,
         "description": s.description,
-        "url": "https://advantix.agency/services",
+        "url": "https://advantix.digital/services",
       })),
     },
   ];
@@ -199,7 +199,7 @@ export default function Home() {
     <div className="w-full">
       <SEO
         title="Digital Agency in Bangladesh | Web Dev, CRM, Automation & Marketing"
-        description="Advantix Agency — full-service digital agency in Bangladesh. We build custom websites, CRM systems, automation bots, and run Facebook marketing campaigns that grow your business globally."
+        description="Advantix Digital — full-service digital agency in Bangladesh. We build custom websites, CRM systems, automation bots, and run Facebook marketing campaigns that grow your business globally."
         keywords="digital agency bangladesh, web development company bangladesh, CRM integration, sales page design, ecommerce development, python bot automation, facebook marketing, social media management, advantix agency"
         canonical="/"
         structuredData={homeStructuredData}
@@ -242,7 +242,7 @@ export default function Home() {
             className="inline-flex items-center gap-3 bg-primary/10 border border-primary/25 text-primary rounded-full px-6 py-2.5 text-sm md:text-base font-mono font-bold tracking-[0.18em] uppercase mb-8"
           >
             <span className="w-2 h-2 rounded-full bg-primary inline-block shrink-0 animate-pulse" />
-            advantix.agency
+            advantix.digital
           </motion.div>
 
           <h1 className="text-5xl md:text-7xl lg:text-8xl font-display font-extrabold tracking-tight mb-6 leading-[1.05]">
