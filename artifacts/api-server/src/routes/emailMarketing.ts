@@ -431,6 +431,88 @@ router.get("/email/stats", requireAdmin, async (_req, res) => {
   });
 });
 
+// ── SEND SINGLE EMAIL ─────────────────────────────────────────────────────
+
+router.post("/email/send-single", requireAdmin, async (req, res) => {
+  const { to, toName, subject, htmlContent, senderId, templateId } = req.body as {
+    to?: string; toName?: string; subject?: string; htmlContent?: string;
+    senderId?: number; templateId?: number;
+  };
+
+  const trimmedTo = (to ?? "").trim();
+  const trimmedSubject = (subject ?? "").trim();
+
+  if (!trimmedTo || !trimmedSubject) {
+    res.status(400).json({ error: "Recipient email and subject are required" });
+    return;
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(trimmedTo)) {
+    res.status(400).json({ error: "Invalid recipient email address" });
+    return;
+  }
+
+  let senderInfo: { name: string; email: string } | null = null;
+  if (senderId) {
+    const [sender] = await db.select().from(emailSendersTable).where(eq(emailSendersTable.id, senderId));
+    if (!sender) {
+      res.status(400).json({ error: "Sender not found" });
+      return;
+    }
+    senderInfo = { name: sender.name, email: sender.email };
+  }
+
+  let finalHtml = htmlContent ?? "";
+  if (templateId) {
+    const [template] = await db.select().from(emailTemplatesTable).where(eq(emailTemplatesTable.id, templateId));
+    if (!template) {
+      res.status(400).json({ error: "Template not found" });
+      return;
+    }
+    if (template.htmlBody) {
+      finalHtml = template.htmlBody
+        .replace(/\{\{name\}\}/gi, toName ?? "")
+        .replace(/\{\{email\}\}/gi, trimmedTo);
+    }
+  } else if (finalHtml) {
+    finalHtml = finalHtml
+      .replace(/\{\{name\}\}/gi, toName ?? "")
+      .replace(/\{\{email\}\}/gi, trimmedTo);
+  }
+
+  const [singleCampaign] = await db.insert(emailCampaignsTable).values({
+    name: `Single: ${trimmedSubject.slice(0, 60)}`,
+    subject: trimmedSubject,
+    previewText: "",
+    templateId: templateId ?? null,
+    senderId: senderId ?? null,
+    htmlContent: finalHtml,
+    recipientListName: "__single__",
+    recipientCount: 1,
+    status: "sent",
+    sentAt: new Date(),
+  }).returning();
+
+  await db.insert(emailEventsTable).values({
+    campaignId: singleCampaign.id,
+    contactEmail: trimmedTo,
+    eventType: "sent",
+    metadata: JSON.stringify({
+      name: toName ?? "",
+      singleEmail: true,
+      sender: senderInfo,
+    }),
+  });
+
+  res.json({
+    message: "Email sent",
+    campaignId: singleCampaign.id,
+    to: trimmedTo,
+    subject: trimmedSubject,
+  });
+});
+
 // ── WEBHOOK (for future Resend integration) ────────────────────────────────
 
 router.post("/email/webhook", async (req, res) => {

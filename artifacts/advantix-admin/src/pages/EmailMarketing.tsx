@@ -5,6 +5,7 @@ import {
   Plus, Trash2, Copy, Search, Upload, Download, Loader2,
   ArrowRight, Eye, CheckCircle2, XCircle, MousePointerClick,
   MailOpen, AlertTriangle, UserMinus, Pencil, Star, X,
+  PenLine,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,7 @@ type CampaignReport = { campaign: Campaign; stats: { sent: number; delivered: nu
 
 const TABS = [
   { id: "dashboard", label: "Dashboard", icon: BarChart3 },
+  { id: "compose", label: "Compose", icon: PenLine },
   { id: "campaigns", label: "Campaigns", icon: Send },
   { id: "templates", label: "Templates", icon: FileText },
   { id: "contacts", label: "Contacts", icon: Users },
@@ -76,6 +78,7 @@ export default function EmailMarketing() {
       </div>
 
       {activeTab === "dashboard" && <DashboardTab />}
+      {activeTab === "compose" && <ComposeTab />}
       {activeTab === "campaigns" && <CampaignsTab />}
       {activeTab === "templates" && <TemplatesTab />}
       {activeTab === "contacts" && <ContactsTab />}
@@ -152,6 +155,266 @@ function DashboardTab() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ComposeTab() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [form, setForm] = useState({
+    to: "",
+    toName: "",
+    subject: "",
+    senderId: "",
+    templateId: "",
+    htmlContent: "",
+  });
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const { data: senders = [] } = useQuery<Sender[]>({
+    queryKey: ["email-senders"],
+    queryFn: () => apiFetch("/api/email/senders"),
+  });
+
+  const { data: templates = [] } = useQuery<Template[]>({
+    queryKey: ["email-templates"],
+    queryFn: () => apiFetch("/api/email/templates"),
+  });
+
+  const { data: contacts = [] } = useQuery<EmailContact[]>({
+    queryKey: ["email-contacts"],
+    queryFn: () => apiFetch("/api/email/contacts"),
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: async () => {
+      return apiFetch("/api/email/send-single", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: form.to.trim(),
+          toName: form.toName.trim() || undefined,
+          subject: form.subject,
+          htmlContent: form.htmlContent,
+          senderId: form.senderId ? Number(form.senderId) : undefined,
+          templateId: form.templateId ? Number(form.templateId) : undefined,
+        }),
+      });
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["email-campaigns"] });
+      qc.invalidateQueries({ queryKey: ["email-stats"] });
+      toast({ title: "Email sent!", description: `Sent to ${data.to}` });
+      setForm({ to: "", toName: "", subject: "", senderId: "", templateId: "", htmlContent: "" });
+    },
+    onError: (err: Error) => toast({ variant: "destructive", title: "Send failed", description: err.message }),
+  });
+
+  function handleTemplateChange(value: string) {
+    const tmpl = templates.find((t) => t.id === Number(value));
+    setForm({
+      ...form,
+      templateId: value,
+      subject: tmpl?.subject || form.subject,
+      htmlContent: tmpl?.htmlBody || form.htmlContent,
+    });
+  }
+
+  const previewHtml = form.htmlContent
+    .replace(/\{\{name\}\}/gi, form.toName || "Recipient")
+    .replace(/\{\{email\}\}/gi, form.to || "recipient@example.com");
+
+  const uniqueEmails = useMemo(() => {
+    const seen = new Set<string>();
+    return contacts.filter((c) => {
+      if (c.unsubscribed || seen.has(c.email)) return false;
+      seen.add(c.email);
+      return true;
+    });
+  }, [contacts]);
+
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const filteredContacts = useMemo(() => {
+    if (!form.to) return uniqueEmails.slice(0, 8);
+    const q = form.to.toLowerCase();
+    return uniqueEmails.filter((c) => c.email.toLowerCase().includes(q) || c.name?.toLowerCase().includes(q)).slice(0, 8);
+  }, [form.to, uniqueEmails]);
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <PenLine className="w-5 h-5 text-primary" /> Compose Email
+          </h2>
+          <p className="text-sm text-muted-foreground mt-0.5">Send a single email to any recipient</p>
+        </div>
+      </div>
+
+      <form
+        onSubmit={(e) => { e.preventDefault(); sendMutation.mutate(); }}
+        className="bg-card rounded-xl border border-border p-6 space-y-5"
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="relative">
+            <label className="text-sm font-medium mb-1.5 block">Recipient Email *</label>
+            <Input
+              type="email"
+              placeholder="recipient@example.com"
+              value={form.to}
+              onChange={(e) => setForm({ ...form, to: e.target.value })}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              required
+            />
+            {showSuggestions && filteredContacts.length > 0 && (
+              <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {filteredContacts.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted/50 transition-colors flex items-center justify-between"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setForm({ ...form, to: c.email, toName: c.name || form.toName });
+                      setShowSuggestions(false);
+                    }}
+                  >
+                    <span className="font-medium truncate">{c.email}</span>
+                    {c.name && <span className="text-xs text-muted-foreground ml-2 shrink-0">{c.name}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Recipient Name</label>
+            <Input
+              placeholder="John Doe"
+              value={form.toName}
+              onChange={(e) => setForm({ ...form, toName: e.target.value })}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium mb-1.5 block">Subject *</label>
+          <Input
+            placeholder="Your email subject line"
+            value={form.subject}
+            onChange={(e) => setForm({ ...form, subject: e.target.value })}
+            required
+          />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">From (Sender)</label>
+            <select
+              value={form.senderId}
+              onChange={(e) => setForm({ ...form, senderId: e.target.value })}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="">Select sender...</option>
+              {senders.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.email}){s.isDefault ? " ★" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Use Template</label>
+            <select
+              value={form.templateId}
+              onChange={(e) => handleTemplateChange(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="">No template (custom HTML)</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-medium">Email Body (HTML)</label>
+            {form.htmlContent && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setPreviewOpen(true)}
+                className="h-7 text-xs"
+              >
+                <Eye className="w-3.5 h-3.5 mr-1" /> Preview
+              </Button>
+            )}
+          </div>
+          <textarea
+            value={form.htmlContent}
+            onChange={(e) => setForm({ ...form, htmlContent: e.target.value })}
+            rows={10}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y"
+            placeholder={"<h1>Hello {{name}},</h1>\n<p>Your email content here...</p>\n<p>Best regards,<br/>Advantix Team</p>"}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Use <code className="bg-muted px-1 rounded">{"{{name}}"}</code> and <code className="bg-muted px-1 rounded">{"{{email}}"}</code> for personalization
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-border">
+          <p className="text-xs text-muted-foreground">
+            {form.to && form.subject ? "Ready to send" : "Fill in required fields"}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setForm({ to: "", toName: "", subject: "", senderId: "", templateId: "", htmlContent: "" })}
+            >
+              Clear
+            </Button>
+            <Button
+              type="submit"
+              disabled={sendMutation.isPending || !form.to || !form.subject}
+              className="min-w-[120px]"
+            >
+              {sendMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Sending...</>
+              ) : (
+                <><Send className="w-4 h-4 mr-2" />Send Email</>
+              )}
+            </Button>
+          </div>
+        </div>
+      </form>
+
+      <Dialog open={previewOpen} onOpenChange={(o) => { if (!o) setPreviewOpen(false); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Email Preview</DialogTitle>
+          </DialogHeader>
+          <div className="border rounded-lg overflow-auto max-h-[60vh] bg-white">
+            <iframe
+              srcDoc={previewHtml || "<p style='padding:20px;color:#888;'>No content to preview</p>"}
+              className="w-full min-h-[400px] border-0"
+              title="Email Preview"
+              sandbox=""
+            />
+          </div>
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p><strong>To:</strong> {form.toName ? `${form.toName} <${form.to}>` : form.to || "—"}</p>
+            <p><strong>Subject:</strong> {form.subject || "—"}</p>
+            {form.senderId && senders.find((s) => s.id === Number(form.senderId)) && (
+              <p><strong>From:</strong> {senders.find((s) => s.id === Number(form.senderId))!.name} ({senders.find((s) => s.id === Number(form.senderId))!.email})</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -311,6 +311,7 @@ All routes prefixed with `/api`.
   - `GET/POST /api/email/contacts`, bulk, import-leads, import-site-contacts, `PUT/DELETE ./:id`, bulk-delete — Contact management
   - `GET/POST /api/email/campaigns`, `PUT/DELETE ./:id`, `POST ./:id/send`, `POST ./:id/duplicate` — Campaign CRUD
   - `GET /api/email/campaigns/:id/report` — Campaign performance report
+  - `POST /api/email/send-single` — Send single email (to, toName, subject, htmlContent, senderId, templateId)
   - `GET /api/email/stats` — Dashboard stats
   - `GET /api/email/lists` — Contact list summary
   - `POST /api/email/webhook` — Resend webhook receiver (unauthenticated)
