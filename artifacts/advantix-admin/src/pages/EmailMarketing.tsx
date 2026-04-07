@@ -1285,6 +1285,8 @@ function SendersTab() {
 
 function ReportsTab() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
+  const perPage = 10;
 
   const { data: campaigns = [], isLoading } = useQuery<Campaign[]>({
     queryKey: ["email-campaigns"],
@@ -1292,35 +1294,75 @@ function ReportsTab() {
   });
 
   const sentCampaigns = campaigns.filter((c) => c.status === "sent");
+  const totalPages = Math.ceil(sentCampaigns.length / perPage);
+  const paginated = sentCampaigns.slice(page * perPage, (page + 1) * perPage);
 
   if (isLoading) return <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Campaign Reports</h2>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Campaign Reports</h2>
+        {sentCampaigns.length > 0 && (
+          <span className="text-xs text-muted-foreground">{sentCampaigns.length} campaigns</span>
+        )}
+      </div>
 
       {sentCampaigns.length === 0 ? (
         <div className="bg-card rounded-xl border border-border p-12 text-center">
           <BarChart3 className="w-10 h-10 mx-auto text-muted-foreground/50 mb-3" />
-          <p className="text-muted-foreground">No sent campaigns yet. Send a campaign to see reports here.</p>
+          <p className="text-muted-foreground">No sent campaigns yet.</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="bg-card rounded-xl border border-border divide-y divide-border">
-            {sentCampaigns.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setSelectedId(c.id === selectedId ? null : c.id)}
-                className="w-full p-4 flex items-center justify-between hover:bg-muted/20 transition-colors text-left"
-              >
-                <div>
-                  <p className="font-medium">{c.name}</p>
-                  <p className="text-sm text-muted-foreground">{c.subject} &middot; {c.recipientCount} recipients &middot; {c.sentAt ? new Date(c.sentAt).toLocaleDateString() : ""}</p>
-                </div>
-                <BarChart3 className="w-4 h-4 text-muted-foreground" />
-              </button>
-            ))}
+        <div className="space-y-3">
+          <div className="bg-card rounded-xl border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase tracking-wider">
+                  <th className="px-3 py-2 font-medium">Campaign</th>
+                  <th className="px-3 py-2 font-medium text-center hidden sm:table-cell">Recipients</th>
+                  <th className="px-3 py-2 font-medium text-center hidden md:table-cell">Status</th>
+                  <th className="px-3 py-2 font-medium text-right hidden sm:table-cell">Date</th>
+                  <th className="px-3 py-2 font-medium w-8"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {paginated.map((c) => (
+                  <tr
+                    key={c.id}
+                    onClick={() => setSelectedId(c.id === selectedId ? null : c.id)}
+                    className={`cursor-pointer transition-colors hover:bg-muted/20 ${selectedId === c.id ? "bg-muted/30" : ""}`}
+                  >
+                    <td className="px-3 py-2">
+                      <p className="font-medium text-sm truncate max-w-[300px]">{c.subject}</p>
+                    </td>
+                    <td className="px-3 py-2 text-center text-muted-foreground hidden sm:table-cell">{c.recipientCount}</td>
+                    <td className="px-3 py-2 text-center hidden md:table-cell">
+                      <Badge variant="outline" className="text-xs bg-green-500/10 text-green-500 border-green-500/20">sent</Badge>
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs text-muted-foreground hidden sm:table-cell">
+                      {c.sentAt ? new Date(c.sentAt).toLocaleDateString() : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <BarChart3 className={`w-3.5 h-3.5 transition-colors ${selectedId === c.id ? "text-primary" : "text-muted-foreground/40"}`} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs text-muted-foreground">
+                {page * perPage + 1}–{Math.min((page + 1) * perPage, sentCampaigns.length)} of {sentCampaigns.length}
+              </span>
+              <div className="flex gap-1">
+                <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)} className="h-7 px-2 text-xs">Prev</Button>
+                <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)} className="h-7 px-2 text-xs">Next</Button>
+              </div>
+            </div>
+          )}
 
           {selectedId && <CampaignReportInline campaignId={selectedId} />}
         </div>
@@ -1335,55 +1377,43 @@ function CampaignReportInline({ campaignId }: { campaignId: number }) {
     queryFn: () => apiFetch(`/api/email/campaigns/${campaignId}/report`),
   });
 
-  if (isLoading) return <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+  if (isLoading) return <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>;
   if (!data) return null;
 
+  const statItems = [
+    { label: "Sent", value: data.stats.sent, color: "text-blue-400" },
+    { label: "Delivered", value: data.stats.delivered, color: "text-green-400" },
+    { label: "Opened", value: data.stats.opened, color: "text-emerald-400" },
+    { label: "Clicked", value: data.stats.clicked, color: "text-purple-400" },
+    { label: "Bounced", value: data.stats.bounced, color: "text-red-400" },
+    { label: "Unsub", value: data.stats.unsubscribed, color: "text-amber-400" },
+  ];
+
   return (
-    <div className="bg-card rounded-xl border border-border p-5 space-y-5">
-      <div>
-        <h3 className="font-semibold text-lg">{data.campaign.name}</h3>
-        <p className="text-sm text-muted-foreground">{data.campaign.subject}</p>
+    <div className="bg-card rounded-xl border border-border p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="font-medium text-sm">{data.campaign.subject}</p>
+        <span className="text-xs text-muted-foreground">{data.campaign.sentAt ? new Date(data.campaign.sentAt).toLocaleString() : ""}</span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="text-center p-3 bg-blue-500/10 rounded-lg">
-          <p className="text-xl font-bold text-blue-500">{data.stats.sent}</p>
-          <p className="text-xs text-muted-foreground">Sent</p>
-        </div>
-        <div className="text-center p-3 bg-green-500/10 rounded-lg">
-          <p className="text-xl font-bold text-green-500">{data.stats.delivered}</p>
-          <p className="text-xs text-muted-foreground">Delivered</p>
-        </div>
-        <div className="text-center p-3 bg-emerald-500/10 rounded-lg">
-          <p className="text-xl font-bold text-emerald-500">{data.stats.opened}</p>
-          <p className="text-xs text-muted-foreground">Opened</p>
-        </div>
-        <div className="text-center p-3 bg-purple-500/10 rounded-lg">
-          <p className="text-xl font-bold text-purple-500">{data.stats.clicked}</p>
-          <p className="text-xs text-muted-foreground">Clicked</p>
-        </div>
-        <div className="text-center p-3 bg-red-500/10 rounded-lg">
-          <p className="text-xl font-bold text-red-500">{data.stats.bounced}</p>
-          <p className="text-xs text-muted-foreground">Bounced</p>
-        </div>
-        <div className="text-center p-3 bg-amber-500/10 rounded-lg">
-          <p className="text-xl font-bold text-amber-500">{data.stats.unsubscribed}</p>
-          <p className="text-xs text-muted-foreground">Unsubscribed</p>
-        </div>
+      <div className="flex gap-4 flex-wrap">
+        {statItems.map((s) => (
+          <div key={s.label} className="flex items-baseline gap-1.5">
+            <span className={`text-lg font-bold ${s.color}`}>{s.value}</span>
+            <span className="text-xs text-muted-foreground">{s.label}</span>
+          </div>
+        ))}
       </div>
       {data.events.length > 0 && (
-        <div>
-          <h4 className="font-medium mb-2">Event Log ({data.events.length})</h4>
-          <div className="max-h-60 overflow-y-auto border rounded-lg divide-y divide-border text-sm">
-            {data.events.slice(0, 50).map((ev) => (
-              <div key={ev.id} className="px-3 py-2 flex items-center justify-between">
-                <span className="font-mono text-xs">{ev.contactEmail}</span>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">{ev.eventType}</Badge>
-                  <span className="text-xs text-muted-foreground">{new Date(ev.occurredAt).toLocaleString()}</span>
-                </div>
+        <div className="max-h-40 overflow-y-auto border rounded-lg divide-y divide-border text-xs">
+          {data.events.slice(0, 50).map((ev) => (
+            <div key={ev.id} className="px-3 py-1.5 flex items-center justify-between">
+              <span className="font-mono text-muted-foreground">{ev.contactEmail}</span>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0">{ev.eventType}</Badge>
+                <span className="text-muted-foreground">{new Date(ev.occurredAt).toLocaleString()}</span>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
