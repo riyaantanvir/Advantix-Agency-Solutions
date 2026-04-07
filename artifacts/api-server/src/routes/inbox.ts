@@ -205,6 +205,37 @@ router.delete("/inbox/threads/:threadId", requireAdmin, async (req: Request, res
   res.json({ message: "Thread deleted" });
 });
 
+router.post("/inbox/add-reply", requireAdmin, async (req: Request, res: Response) => {
+  const { threadId, fromEmail, fromName, toEmail, subject, body } = req.body as {
+    threadId: string;
+    fromEmail: string;
+    fromName?: string;
+    toEmail: string;
+    subject: string;
+    body: string;
+  };
+
+  if (!threadId || !fromEmail || !toEmail || !subject || !body) {
+    res.status(400).json({ error: "threadId, fromEmail, toEmail, subject, and body are required" });
+    return;
+  }
+
+  const [msg] = await db.insert(inboxMessagesTable).values({
+    threadId,
+    direction: "inbound",
+    fromEmail,
+    fromName: fromName || "",
+    toEmail,
+    subject,
+    bodyHtml: body.replace(/\n/g, "<br>"),
+    bodyText: body,
+    isRead: false,
+    receivedAt: new Date(),
+  }).returning();
+
+  res.json(msg);
+});
+
 router.patch("/inbox/messages/:id/read", requireAdmin, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id), 10);
   const { isRead } = req.body as { isRead: boolean };

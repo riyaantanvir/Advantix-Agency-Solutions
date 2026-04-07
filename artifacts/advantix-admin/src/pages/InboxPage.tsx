@@ -187,6 +187,9 @@ function ThreadView({ threadId, threads, onBack }: { threadId: string; threads: 
   const { toast } = useToast();
   const [replyBody, setReplyBody] = useState("");
   const [replying, setReplying] = useState(false);
+  const [showAddReply, setShowAddReply] = useState(false);
+  const [clientReplyBody, setClientReplyBody] = useState("");
+  const [addingReply, setAddingReply] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { data: messages = [], isLoading } = useQuery<InboxMsg[]>({
@@ -241,6 +244,35 @@ function ThreadView({ threadId, threads, onBack }: { threadId: string; threads: 
     }
   }
 
+  async function handleAddClientReply() {
+    if (!clientReplyBody.trim()) return;
+    setAddingReply(true);
+    try {
+      const outbound = messages.find(m => m.direction === "outbound");
+      await apiFetch("/api/inbox/add-reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId,
+          fromEmail: clientEmail,
+          fromName: clientName,
+          toEmail: outbound?.fromEmail || "noreply@advantix.digital",
+          subject: lastSubject.startsWith("Re:") ? lastSubject : `Re: ${lastSubject}`,
+          body: clientReplyBody,
+        }),
+      });
+      setClientReplyBody("");
+      setShowAddReply(false);
+      queryClient.invalidateQueries({ queryKey: ["inbox-thread", threadId] });
+      queryClient.invalidateQueries({ queryKey: ["inbox-threads"] });
+      toast({ title: "Client reply logged" });
+    } catch (err: any) {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setAddingReply(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -256,14 +288,24 @@ function ThreadView({ threadId, threads, onBack }: { threadId: string; threads: 
             </div>
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => deleteMutation.mutate()}
-          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-        >
-          <Trash2 className="w-4 h-4" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowAddReply(true)}
+          >
+            <ArrowDownLeft className="w-3.5 h-3.5 mr-1" />
+            Log Client Reply
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => deleteMutation.mutate()}
+            className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -323,6 +365,37 @@ function ThreadView({ threadId, threads, onBack }: { threadId: string; threads: 
             </div>
           ))}
           <div ref={messagesEndRef} />
+        </div>
+      )}
+
+      {showAddReply && (
+        <div className="bg-blue-500/5 rounded-xl border border-blue-500/20 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-blue-400">
+              <ArrowDownLeft className="w-3.5 h-3.5" />
+              <span>Log a reply received from {clientEmail}</span>
+            </div>
+            <button onClick={() => { setShowAddReply(false); setClientReplyBody(""); }} className="text-muted-foreground hover:text-foreground text-xs">Cancel</button>
+          </div>
+          <textarea
+            value={clientReplyBody}
+            onChange={(e) => setClientReplyBody(e.target.value)}
+            placeholder="Paste the client's reply here..."
+            rows={4}
+            className="w-full rounded-lg border border-blue-500/20 bg-background text-foreground text-sm p-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+          />
+          <div className="flex justify-end">
+            <Button
+              onClick={handleAddClientReply}
+              disabled={!clientReplyBody.trim() || addingReply}
+              size="sm"
+              variant="outline"
+              className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+            >
+              {addingReply ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <ArrowDownLeft className="w-3.5 h-3.5 mr-1" />}
+              Save Client Reply
+            </Button>
+          </div>
         </div>
       )}
 
