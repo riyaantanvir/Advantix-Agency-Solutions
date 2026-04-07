@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "Advantix Agency Website"
+title = "Advantix Website"
 version = "1.0.0"
 id = "artifacts/advantix-website"
 router = "path"

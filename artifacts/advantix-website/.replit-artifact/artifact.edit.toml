@@ -1,0 +1,19 @@
+kind = "web"
+previewPath = "/"
+title = "Advantix Website"
+version = "1.0.0"
+
+[[services]]
+localPort = 3000
+name = "web"
+paths = ["/"]
+
+[services.env]
+PORT = "3000"
+BASE_PATH = "/"
+
+[services.development]
+run = "pnpm --filter @workspace/advantix-website run dev"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/advantix-website", "run", "build"]
