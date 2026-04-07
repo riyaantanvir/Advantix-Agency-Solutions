@@ -47,6 +47,7 @@ const PRESETS = [
   { name: "STRIPE_SECRET_KEY", label: "Stripe Secret Key", category: "Payment", description: "Stripe secret key for payment processing" },
   { name: "SENDGRID_API_KEY", label: "SendGrid API Key", category: "Email", description: "API key for SendGrid email delivery" },
   { name: "RESEND_API_KEY", label: "Resend API Key", category: "Email", description: "API key for Resend transactional email" },
+  { name: "RESEND_WEBHOOK_SECRET", label: "Resend Webhook Secret", category: "Email", description: "Signing secret for verifying Resend webhook payloads (found in Resend → Webhooks)" },
   { name: "CLOUDINARY_API_KEY", label: "Cloudinary API Key", category: "Storage", description: "API key for Cloudinary image/video storage" },
   { name: "SLACK_WEBHOOK_URL", label: "Slack Webhook URL", category: "Communication", description: "Slack incoming webhook URL for notifications" },
   { name: "CUSTOM", label: "Custom Integration", category: "Other", description: "" },

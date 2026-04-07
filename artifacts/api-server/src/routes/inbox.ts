@@ -1,10 +1,11 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "@workspace/db";
-import { inboxMessagesTable, emailContactsTable, emailCampaignsTable, emailEventsTable } from "@workspace/db/schema";
+import { inboxMessagesTable, emailContactsTable, emailCampaignsTable, emailEventsTable, integrationsTable } from "@workspace/db/schema";
 import { eq, desc, and, sql, or } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 import { sendEmail } from "../services/resendMailer.js";
 import crypto from "crypto";
+import { Webhook } from "svix";
 
 const router = Router();
 
@@ -124,37 +125,75 @@ router.post("/inbox/reply", requireAdmin, async (req: Request, res: Response) =>
   res.json(msg);
 });
 
+async function getWebhookSecret(): Promise<string | null> {
+  const [row] = await db.select().from(integrationsTable).where(eq(integrationsTable.name, "RESEND_WEBHOOK_SECRET"));
+  return row?.value || null;
+}
+
 router.post("/inbox/webhook", async (req: Request, res: Response) => {
-  const payload = req.body;
+  try {
+    const secret = await getWebhookSecret();
 
-  if (!payload || !payload.from || !payload.to) {
+    if (secret) {
+      const svixId = req.headers["svix-id"] as string;
+      const svixTimestamp = req.headers["svix-timestamp"] as string;
+      const svixSignature = req.headers["svix-signature"] as string;
+
+      if (svixId && svixTimestamp && svixSignature) {
+        try {
+          const wh = new Webhook(secret);
+          wh.verify(JSON.stringify(req.body), {
+            "svix-id": svixId,
+            "svix-timestamp": svixTimestamp,
+            "svix-signature": svixSignature,
+          });
+        } catch {
+          res.status(400).json({ error: "Invalid webhook signature" });
+          return;
+        }
+      }
+    }
+
+    const payload = req.body;
+    if (!payload) {
+      res.status(200).json({ ok: true });
+      return;
+    }
+
+    const eventType = payload.type;
+
+    if (eventType === "email.received" || (!eventType && payload.from && payload.to)) {
+      const data = eventType ? payload.data : payload;
+      const fromEmail = typeof data.from === "string" ? data.from : data.from?.address || data.from?.email || "";
+      const fromName = typeof data.from === "string" ? "" : data.from?.name || "";
+      const toRaw = data.to;
+      const toEmail = Array.isArray(toRaw) ? toRaw[0] : (typeof toRaw === "string" ? toRaw : toRaw?.address || toRaw?.email || "");
+      const subject = data.subject || "(No Subject)";
+      const bodyHtml = data.html || "";
+      const bodyText = data.text || "";
+
+      if (fromEmail && toEmail) {
+        const threadId = generateThreadId(fromEmail, toEmail);
+        await db.insert(inboxMessagesTable).values({
+          threadId,
+          direction: "inbound",
+          fromEmail,
+          fromName,
+          toEmail,
+          subject,
+          bodyHtml,
+          bodyText,
+          isRead: false,
+          receivedAt: new Date(),
+        });
+      }
+    }
+
     res.status(200).json({ ok: true });
-    return;
+  } catch (err: any) {
+    console.error("Webhook error:", err?.message);
+    res.status(200).json({ ok: true });
   }
-
-  const fromEmail = typeof payload.from === "string" ? payload.from : payload.from?.address || "";
-  const fromName = typeof payload.from === "string" ? "" : payload.from?.name || "";
-  const toEmail = Array.isArray(payload.to) ? payload.to[0] : payload.to;
-  const subject = payload.subject || "(No Subject)";
-  const bodyHtml = payload.html || "";
-  const bodyText = payload.text || "";
-
-  const threadId = generateThreadId(fromEmail, toEmail);
-
-  await db.insert(inboxMessagesTable).values({
-    threadId,
-    direction: "inbound",
-    fromEmail,
-    fromName,
-    toEmail,
-    subject,
-    bodyHtml,
-    bodyText,
-    isRead: false,
-    receivedAt: new Date(),
-  });
-
-  res.status(200).json({ ok: true });
 });
 
 router.post("/inbox/seed-from-campaigns", requireAdmin, async (_req: Request, res: Response) => {
