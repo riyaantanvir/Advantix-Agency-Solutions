@@ -201,11 +201,10 @@ function ThreadView({ threadId, threads, onBack }: { threadId: string; threads: 
   }, [messages]);
 
   const thread = threads.find(t => t.threadId === threadId);
-  const clientEmail = messages.find(m => m.direction === "inbound")?.fromEmail
-    || messages.find(m => m.direction === "outbound")?.toEmail
-    || thread?.toEmail || "";
-  const clientName = messages.find(m => m.direction === "inbound")?.fromName
-    || thread?.fromName || "";
+  const inboundMsg = messages.find(m => m.direction === "inbound");
+  const outboundMsg = messages.find(m => m.direction === "outbound");
+  const clientEmail = inboundMsg?.fromEmail || outboundMsg?.toEmail || thread?.toEmail || "";
+  const clientName = inboundMsg?.fromName || "";
   const lastSubject = messages[messages.length - 1]?.subject || thread?.subject || "";
 
   const deleteMutation = useMutation({
@@ -253,7 +252,7 @@ function ThreadView({ threadId, threads, onBack }: { threadId: string; threads: 
             <h2 className="text-lg font-semibold">{lastSubject || "Conversation"}</h2>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Mail className="w-3.5 h-3.5" />
-              <span>{clientName ? `${clientName} (${clientEmail})` : clientEmail}</span>
+              <span>{clientEmail}{clientName ? ` (${clientName})` : ""}</span>
             </div>
           </div>
         </div>
@@ -330,7 +329,7 @@ function ThreadView({ threadId, threads, onBack }: { threadId: string; threads: 
       <div className="bg-card rounded-xl border border-border p-4 space-y-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Send className="w-3.5 h-3.5" />
-          <span>Reply to {clientName || clientEmail}</span>
+          <span>Reply to {clientEmail}{clientName ? ` (${clientName})` : ""}</span>
         </div>
         <textarea
           value={replyBody}
