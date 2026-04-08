@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
+import { BlogImportExport } from "@/components/BlogImportExport";
 
 type BlogPost = {
   id: number;
@@ -92,16 +93,19 @@ export default function Blog() {
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Blog</h1>
           <p className="text-muted-foreground text-sm mt-0.5">Create and manage blog posts</p>
         </div>
-        <Link href="/blog/new">
-          <Button className="gap-2">
-            <Plus size={16} /> New Post
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <BlogImportExport />
+          <Link href="/blog/new">
+            <Button className="gap-2">
+              <Plus size={16} /> New Post
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Stats */}
