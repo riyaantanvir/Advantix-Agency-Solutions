@@ -188,71 +188,83 @@ router.get("/admin/blog/export", requireAdmin, async (_req, res) => {
 
 /* ── Import: POST /api/admin/blog/import — must be before /:id ── */
 router.post("/admin/blog/import", requireAdmin, async (req, res) => {
-  const body = req.body as { posts?: unknown[] };
-  if (!Array.isArray(body.posts) || body.posts.length === 0) {
-    res.status(400).json({ error: "Expected { posts: [...] } with at least one post." });
-    return;
-  }
-
-  const results: { title: string; slug: string; action: "created" | "skipped"; reason?: string }[] = [];
-
-  for (const raw of body.posts) {
-    const p = raw as Record<string, unknown>;
-    if (!p.title || typeof p.title !== "string") {
-      results.push({ title: "(unknown)", slug: "", action: "skipped", reason: "Missing title" });
-      continue;
+  try {
+    const body = req.body as { posts?: unknown[] };
+    if (!Array.isArray(body.posts) || body.posts.length === 0) {
+      res.status(400).json({ error: "Expected { posts: [...] } with at least one post." });
+      return;
     }
 
-    let coverImageUrl = typeof p.coverImageUrl === "string" ? p.coverImageUrl : null;
+    const results: { title: string; slug: string; action: "created" | "skipped"; reason?: string }[] = [];
 
-    if (typeof p.coverImageData === "string" && typeof p.coverImageMime === "string") {
+    for (const raw of body.posts) {
+      const p = raw as Record<string, unknown>;
+      if (!p.title || typeof p.title !== "string") {
+        results.push({ title: "(unknown)", slug: "", action: "skipped", reason: "Missing title" });
+        continue;
+      }
+
       try {
-        const ext = (p.coverImageMime as string).split("/")[1] ?? "jpg";
-        const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-        const filepath = path.resolve(uploadsDir, filename);
-        fs.writeFileSync(filepath, Buffer.from(p.coverImageData as string, "base64"));
-        coverImageUrl = `/api/uploads/blog/${filename}`;
-      } catch {
-        // keep original URL if decode fails
+        let coverImageUrl = typeof p.coverImageUrl === "string" ? p.coverImageUrl : null;
+
+        if (typeof p.coverImageData === "string" && typeof p.coverImageMime === "string") {
+          try {
+            const ext = (p.coverImageMime as string).split("/")[1] ?? "jpg";
+            const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+            const filepath = path.resolve(uploadsDir, filename);
+            fs.writeFileSync(filepath, Buffer.from(p.coverImageData as string, "base64"));
+            coverImageUrl = `/api/uploads/blog/${filename}`;
+          } catch {
+            /* keep original URL if image decode/write fails */
+          }
+        }
+
+        const baseSlug = slugify(p.title);
+        let slug = typeof p.slug === "string" ? slugify(p.slug) || baseSlug : baseSlug;
+        let attempt = 0;
+        while (true) {
+          const existing = await db.select({ id: blogPostsTable.id }).from(blogPostsTable).where(eq(blogPostsTable.slug, slug));
+          if (!existing.length) break;
+          attempt++;
+          slug = `${baseSlug}-${attempt}`;
+        }
+
+        const safeStatus = p.status === "published" ? "published" : "draft";
+        const content = typeof p.content === "string" ? p.content : "";
+
+        await db.insert(blogPostsTable).values({
+          title: p.title,
+          slug,
+          excerpt: typeof p.excerpt === "string" ? p.excerpt : null,
+          content,
+          coverImageUrl,
+          author: typeof p.author === "string" ? p.author : "Advantix Team",
+          category: typeof p.category === "string" ? p.category : "General",
+          tags: typeof p.tags === "string" ? p.tags : null,
+          status: safeStatus,
+          readingTime: estimateReadingTime(content),
+          seoTitle: typeof p.seoTitle === "string" ? p.seoTitle : null,
+          seoDescription: typeof p.seoDescription === "string" ? p.seoDescription : null,
+          featured: Boolean(p.featured),
+          publishedAt: safeStatus === "published"
+            ? (p.publishedAt ? new Date(p.publishedAt as string) : new Date())
+            : null,
+        });
+
+        results.push({ title: p.title, slug, action: "created" });
+      } catch (postErr) {
+        results.push({ title: p.title as string, slug: "", action: "skipped", reason: postErr instanceof Error ? postErr.message : "Insert failed" });
       }
     }
 
-    const baseSlug = slugify(p.title as string);
-    let slug = typeof p.slug === "string" ? slugify(p.slug) || baseSlug : baseSlug;
-    let attempt = 0;
-    while (true) {
-      const existing = await db.select({ id: blogPostsTable.id }).from(blogPostsTable).where(eq(blogPostsTable.slug, slug));
-      if (!existing.length) break;
-      attempt++;
-      slug = `${baseSlug}-${attempt}`;
-    }
-
-    const safeStatus = p.status === "published" ? "published" : "draft";
-    const content = typeof p.content === "string" ? p.content : "";
-
-    await db.insert(blogPostsTable).values({
-      title: p.title as string,
-      slug,
-      excerpt: typeof p.excerpt === "string" ? p.excerpt : null,
-      content,
-      coverImageUrl,
-      author: typeof p.author === "string" ? p.author : "Advantix Team",
-      category: typeof p.category === "string" ? p.category : "General",
-      tags: typeof p.tags === "string" ? p.tags : null,
-      status: safeStatus,
-      readingTime: estimateReadingTime(content),
-      seoTitle: typeof p.seoTitle === "string" ? p.seoTitle : null,
-      seoDescription: typeof p.seoDescription === "string" ? p.seoDescription : null,
-      featured: Boolean(p.featured),
-      publishedAt: safeStatus === "published"
-        ? (p.publishedAt ? new Date(p.publishedAt as string) : new Date())
-        : null,
+    res.json({
+      imported: results.filter((r) => r.action === "created").length,
+      skipped: results.filter((r) => r.action === "skipped").length,
+      results,
     });
-
-    results.push({ title: p.title as string, slug, action: "created" });
+  } catch (err) {
+    res.status(500).json({ error: "Import failed", detail: err instanceof Error ? err.message : String(err) });
   }
-
-  res.json({ imported: results.filter((r) => r.action === "created").length, skipped: results.filter((r) => r.action === "skipped").length, results });
 });
 
 router.get("/admin/blog/:id", requireAdmin, async (req, res) => {
