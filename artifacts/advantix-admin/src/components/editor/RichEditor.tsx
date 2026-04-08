@@ -17,6 +17,7 @@ import {
   List, ListOrdered, Quote, Code, Minus,
   Heading1, Heading2, Heading3, Link2, ImageIcon,
   Highlighter, Undo, Redo, X, Upload, Loader2,
+  Code2, Eye, EyeOff, FileText,
 } from "lucide-react";
 
 interface RichEditorProps {
@@ -70,7 +71,6 @@ function ResizableImageView({ node, selected, updateAttributes }: NodeViewProps)
           }}
         />
 
-        {/* Size controls — shown when selected */}
         {selected && (
           <div
             className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-card/95 backdrop-blur-sm border border-border rounded-lg px-2 py-1 shadow-lg z-20"
@@ -312,11 +312,35 @@ function PasteOverlay({ show }: { show: boolean }) {
   );
 }
 
+/* ── HTML Preview Panel ──────────────────────────────────────────────────── */
+function HtmlPreview({ html, minHeight }: { html: string; minHeight: number }) {
+  return (
+    <div
+      className="prose prose-invert max-w-none px-6 py-5 overflow-auto
+        prose-headings:font-bold
+        prose-a:text-primary prose-a:no-underline hover:prose-a:underline
+        prose-blockquote:border-l-primary prose-blockquote:text-muted-foreground
+        prose-code:bg-secondary prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-primary prose-code:before:content-none prose-code:after:content-none
+        prose-pre:bg-secondary prose-pre:border prose-pre:border-border
+        prose-img:rounded-xl prose-img:my-6
+        prose-strong:text-foreground
+        prose-li:text-muted-foreground
+        prose-p:text-muted-foreground prose-p:leading-relaxed"
+      style={{ minHeight }}
+      dangerouslySetInnerHTML={{ __html: html || "<p class='text-muted-foreground/40 italic'>Nothing to preview yet…</p>" }}
+    />
+  );
+}
+
 /* ── Main Editor ─────────────────────────────────────────────────────────── */
 export default function RichEditor({ content, onChange, placeholder, minHeight = 400 }: RichEditorProps) {
+  const [mode, setMode] = useState<"visual" | "html">("visual");
+  const [showPreview, setShowPreview] = useState(false);
+  const [htmlDraft, setHtmlDraft] = useState(content);
   const [showImageDialog, setShowImageDialog] = useState(false);
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const [pasteUploading, setPasteUploading] = useState(false);
+  const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const editor = useEditor({
     extensions: [
@@ -351,6 +375,34 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
       editor.commands.setContent(content, false);
     }
   }, [content]);
+
+  /* Keep htmlDraft in sync when visual editor changes */
+  useEffect(() => {
+    if (mode === "visual") {
+      setHtmlDraft(content);
+    }
+  }, [content, mode]);
+
+  /* ── Mode switching ──────────────────────────────────────────────────── */
+  function switchToHtml() {
+    if (!editor) return;
+    setHtmlDraft(editor.getHTML());
+    setMode("html");
+    setShowPreview(false);
+  }
+
+  function switchToVisual() {
+    if (!editor) return;
+    editor.commands.setContent(htmlDraft, false);
+    onChange(htmlDraft);
+    setMode("visual");
+    setShowPreview(false);
+  }
+
+  function handleHtmlChange(val: string) {
+    setHtmlDraft(val);
+    onChange(val);
+  }
 
   /* ── Attach paste/drop listener directly to the editor DOM ─── */
   useEffect(() => {
@@ -403,102 +455,205 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
 
   return (
     <div className="border border-border rounded-xl overflow-hidden bg-card relative">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-0.5 p-2 border-b border-border bg-secondary/20 sticky top-0 z-10">
-        <ToolbarButton title="Undo" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>
-          <Undo size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Redo" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}>
-          <Redo size={15} />
-        </ToolbarButton>
 
-        <Divider />
+      {/* ── Mode Toggle Bar ─────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border bg-secondary/30">
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={switchToVisual}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+              mode === "visual"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+            }`}
+          >
+            <FileText size={12} />
+            Visual
+          </button>
+          <button
+            type="button"
+            onClick={switchToHtml}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+              mode === "html"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+            }`}
+          >
+            <Code2 size={12} />
+            HTML
+          </button>
+        </div>
 
-        <ToolbarButton title="Heading 1" active={editor.isActive("heading", { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
-          <Heading1 size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Heading 2" active={editor.isActive("heading", { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
-          <Heading2 size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Heading 3" active={editor.isActive("heading", { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
-          <Heading3 size={15} />
-        </ToolbarButton>
-
-        <Divider />
-
-        <ToolbarButton title="Bold" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}>
-          <Bold size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Italic" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}>
-          <Italic size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Underline" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}>
-          <UnderlineIcon size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Strikethrough" active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()}>
-          <Strikethrough size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Highlight" active={editor.isActive("highlight")} onClick={() => editor.chain().focus().toggleHighlight().run()}>
-          <Highlighter size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Inline code" active={editor.isActive("code")} onClick={() => editor.chain().focus().toggleCode().run()}>
-          <Code size={15} />
-        </ToolbarButton>
-
-        <Divider />
-
-        <ToolbarButton title="Align left" active={editor.isActive({ textAlign: "left" })} onClick={() => editor.chain().focus().setTextAlign("left").run()}>
-          <AlignLeft size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Align center" active={editor.isActive({ textAlign: "center" })} onClick={() => editor.chain().focus().setTextAlign("center").run()}>
-          <AlignCenter size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Align right" active={editor.isActive({ textAlign: "right" })} onClick={() => editor.chain().focus().setTextAlign("right").run()}>
-          <AlignRight size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Justify" active={editor.isActive({ textAlign: "justify" })} onClick={() => editor.chain().focus().setTextAlign("justify").run()}>
-          <AlignJustify size={15} />
-        </ToolbarButton>
-
-        <Divider />
-
-        <ToolbarButton title="Bullet list" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()}>
-          <List size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Ordered list" active={editor.isActive("orderedList")} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
-          <ListOrdered size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Blockquote" active={editor.isActive("blockquote")} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
-          <Quote size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Code block" active={editor.isActive("codeBlock")} onClick={() => editor.chain().focus().toggleCodeBlock().run()}>
-          <Code size={15} className="opacity-70" />
-        </ToolbarButton>
-        <ToolbarButton title="Horizontal rule" onClick={() => editor.chain().focus().setHorizontalRule().run()}>
-          <Minus size={15} />
-        </ToolbarButton>
-
-        <Divider />
-
-        <ToolbarButton title="Insert link" active={editor.isActive("link")} onClick={() => setShowLinkDialog(true)}>
-          <Link2 size={15} />
-        </ToolbarButton>
-        <ToolbarButton title="Insert image" onClick={() => setShowImageDialog(true)}>
-          <ImageIcon size={15} />
-        </ToolbarButton>
+        {/* Preview toggle — only visible in HTML mode */}
+        {mode === "html" && (
+          <button
+            type="button"
+            onClick={() => setShowPreview((v) => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+              showPreview
+                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+            }`}
+          >
+            {showPreview ? <EyeOff size={12} /> : <Eye size={12} />}
+            {showPreview ? "Hide Preview" : "Preview"}
+          </button>
+        )}
       </div>
 
-      {/* Editor area */}
-      <EditorContent editor={editor} />
+      {/* ── Visual Mode: Toolbar ─────────────────────────────────────────── */}
+      {mode === "visual" && (
+        <div className="flex flex-wrap items-center gap-0.5 p-2 border-b border-border bg-secondary/20 sticky top-0 z-10">
+          <ToolbarButton title="Undo" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>
+            <Undo size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Redo" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}>
+            <Redo size={15} />
+          </ToolbarButton>
 
-      {/* Footer */}
+          <Divider />
+
+          <ToolbarButton title="Heading 1" active={editor.isActive("heading", { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
+            <Heading1 size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Heading 2" active={editor.isActive("heading", { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+            <Heading2 size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Heading 3" active={editor.isActive("heading", { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+            <Heading3 size={15} />
+          </ToolbarButton>
+
+          <Divider />
+
+          <ToolbarButton title="Bold" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}>
+            <Bold size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Italic" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}>
+            <Italic size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Underline" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}>
+            <UnderlineIcon size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Strikethrough" active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()}>
+            <Strikethrough size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Highlight" active={editor.isActive("highlight")} onClick={() => editor.chain().focus().toggleHighlight().run()}>
+            <Highlighter size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Inline code" active={editor.isActive("code")} onClick={() => editor.chain().focus().toggleCode().run()}>
+            <Code size={15} />
+          </ToolbarButton>
+
+          <Divider />
+
+          <ToolbarButton title="Align left" active={editor.isActive({ textAlign: "left" })} onClick={() => editor.chain().focus().setTextAlign("left").run()}>
+            <AlignLeft size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Align center" active={editor.isActive({ textAlign: "center" })} onClick={() => editor.chain().focus().setTextAlign("center").run()}>
+            <AlignCenter size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Align right" active={editor.isActive({ textAlign: "right" })} onClick={() => editor.chain().focus().setTextAlign("right").run()}>
+            <AlignRight size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Justify" active={editor.isActive({ textAlign: "justify" })} onClick={() => editor.chain().focus().setTextAlign("justify").run()}>
+            <AlignJustify size={15} />
+          </ToolbarButton>
+
+          <Divider />
+
+          <ToolbarButton title="Bullet list" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()}>
+            <List size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Ordered list" active={editor.isActive("orderedList")} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+            <ListOrdered size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Blockquote" active={editor.isActive("blockquote")} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
+            <Quote size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Code block" active={editor.isActive("codeBlock")} onClick={() => editor.chain().focus().toggleCodeBlock().run()}>
+            <Code size={15} className="opacity-70" />
+          </ToolbarButton>
+          <ToolbarButton title="Horizontal rule" onClick={() => editor.chain().focus().setHorizontalRule().run()}>
+            <Minus size={15} />
+          </ToolbarButton>
+
+          <Divider />
+
+          <ToolbarButton title="Insert link" active={editor.isActive("link")} onClick={() => setShowLinkDialog(true)}>
+            <Link2 size={15} />
+          </ToolbarButton>
+          <ToolbarButton title="Insert image" onClick={() => setShowImageDialog(true)}>
+            <ImageIcon size={15} />
+          </ToolbarButton>
+        </div>
+      )}
+
+      {/* ── Visual Mode: Editor area ─────────────────────────────────────── */}
+      {mode === "visual" && (
+        <>
+          <EditorContent editor={editor} />
+          <PasteOverlay show={pasteUploading} />
+        </>
+      )}
+
+      {/* ── HTML Mode: Editor + optional preview ────────────────────────── */}
+      {mode === "html" && (
+        <div className={showPreview ? "grid grid-cols-2 divide-x divide-border" : ""}>
+          {/* Raw HTML textarea */}
+          <div className="relative">
+            <div className="absolute top-2 left-3 text-[10px] font-mono text-muted-foreground/50 pointer-events-none select-none z-10">
+              HTML source
+            </div>
+            <textarea
+              ref={htmlTextareaRef}
+              value={htmlDraft}
+              onChange={(e) => handleHtmlChange(e.target.value)}
+              spellCheck={false}
+              className="w-full bg-[#0d1117] text-[#e6edf3] font-mono text-sm px-4 pt-7 pb-4 resize-none focus:outline-none leading-relaxed"
+              style={{ minHeight: minHeight, tabSize: 2 }}
+              onKeyDown={(e) => {
+                if (e.key === "Tab") {
+                  e.preventDefault();
+                  const el = e.currentTarget;
+                  const start = el.selectionStart;
+                  const end = el.selectionEnd;
+                  const newVal = el.value.substring(0, start) + "  " + el.value.substring(end);
+                  handleHtmlChange(newVal);
+                  requestAnimationFrame(() => {
+                    el.selectionStart = el.selectionEnd = start + 2;
+                  });
+                }
+              }}
+            />
+          </div>
+
+          {/* Live preview panel */}
+          {showPreview && (
+            <div className="overflow-auto bg-card/50">
+              <div className="px-3 py-2 border-b border-border bg-secondary/20 text-[10px] text-muted-foreground/60 font-medium uppercase tracking-wider">
+                Preview
+              </div>
+              <HtmlPreview html={htmlDraft} minHeight={minHeight} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Footer ──────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-2 border-t border-border bg-secondary/10 text-xs text-muted-foreground">
-        <span>{words} {words === 1 ? "word" : "words"} · {chars} characters</span>
-        <span className="text-muted-foreground/60">Ctrl+B Bold · Ctrl+I Italic · Ctrl+Z Undo</span>
+        {mode === "visual" ? (
+          <>
+            <span>{words} {words === 1 ? "word" : "words"} · {chars} characters</span>
+            <span className="text-muted-foreground/60">Ctrl+B Bold · Ctrl+I Italic · Ctrl+Z Undo</span>
+          </>
+        ) : (
+          <>
+            <span>{htmlDraft.length} characters of HTML</span>
+            <span className="text-muted-foreground/60">Tab key inserts 2 spaces</span>
+          </>
+        )}
       </div>
-
-      {/* Paste upload indicator */}
-      <PasteOverlay show={pasteUploading} />
 
       {showImageDialog && editor && <ImageDialog editor={editor} onClose={() => setShowImageDialog(false)} />}
       {showLinkDialog && editor && <LinkDialog editor={editor} onClose={() => setShowLinkDialog(false)} />}
