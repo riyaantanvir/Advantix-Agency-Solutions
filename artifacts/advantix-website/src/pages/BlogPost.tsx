@@ -427,11 +427,12 @@ export default function BlogPost() {
               prose-blockquote:border-l-primary prose-blockquote:text-muted-foreground
               prose-code:bg-secondary prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-primary prose-code:before:content-none prose-code:after:content-none
               prose-pre:bg-secondary prose-pre:border prose-pre:border-border
-              prose-img:rounded-xl prose-img:my-6
+              prose-img:rounded-xl prose-img:my-6 prose-img:block prose-img:mx-auto prose-img:max-w-full prose-img:h-auto
               prose-hr:border-border
               prose-strong:text-foreground
               prose-li:text-muted-foreground
-              prose-p:text-muted-foreground prose-p:leading-relaxed"
+              prose-p:text-muted-foreground prose-p:leading-relaxed
+              [&_img]:block [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-xl [&_img]:my-6 [&_img]:mx-auto"
             dangerouslySetInnerHTML={{ __html: post.content }}
           />
         </motion.div>
