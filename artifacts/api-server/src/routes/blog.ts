@@ -131,51 +131,59 @@ router.get("/admin/blog", requireAdmin, async (_req, res) => {
 
 /* ── Export: GET /api/admin/blog/export — must be before /:id ── */
 router.get("/admin/blog/export", requireAdmin, async (_req, res) => {
-  const posts = await db
-    .select()
-    .from(blogPostsTable)
-    .orderBy(desc(blogPostsTable.createdAt));
+  try {
+    const posts = await db
+      .select()
+      .from(blogPostsTable)
+      .orderBy(desc(blogPostsTable.createdAt));
 
-  const exported = posts.map((post) => {
-    let coverImageData: string | null = null;
-    let coverImageMime: string | null = null;
+    const exported = posts.map((post) => {
+      let coverImageData: string | null = null;
+      let coverImageMime: string | null = null;
 
-    if (post.coverImageUrl?.startsWith("/api/uploads/blog/")) {
-      const filename = post.coverImageUrl.replace("/api/uploads/blog/", "");
-      const filepath = path.resolve(uploadsDir, filename);
-      if (fs.existsSync(filepath)) {
-        const buf = fs.readFileSync(filepath);
-        coverImageData = buf.toString("base64");
-        const ext = path.extname(filename).slice(1).toLowerCase();
-        coverImageMime = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
+      if (post.coverImageUrl?.startsWith("/api/uploads/blog/")) {
+        try {
+          const filename = post.coverImageUrl.replace("/api/uploads/blog/", "");
+          const filepath = path.resolve(uploadsDir, filename);
+          if (fs.existsSync(filepath)) {
+            const buf = fs.readFileSync(filepath);
+            coverImageData = buf.toString("base64");
+            const ext = path.extname(filename).slice(1).toLowerCase();
+            coverImageMime = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
+          }
+        } catch {
+          /* skip image embedding if file read fails */
+        }
       }
-    }
 
-    return {
-      title: post.title,
-      slug: post.slug,
-      excerpt: post.excerpt,
-      content: post.content,
-      coverImageUrl: post.coverImageUrl,
-      coverImageData,
-      coverImageMime,
-      author: post.author,
-      category: post.category,
-      tags: post.tags,
-      status: post.status,
-      featured: post.featured,
-      seoTitle: post.seoTitle,
-      seoDescription: post.seoDescription,
-      publishedAt: post.publishedAt,
-      views: post.views,
-      likes: post.likes,
-    };
-  });
+      return {
+        title: post.title,
+        slug: post.slug,
+        excerpt: post.excerpt,
+        content: post.content,
+        coverImageUrl: post.coverImageUrl,
+        coverImageData,
+        coverImageMime,
+        author: post.author,
+        category: post.category,
+        tags: post.tags,
+        status: post.status,
+        featured: post.featured,
+        seoTitle: post.seoTitle,
+        seoDescription: post.seoDescription,
+        publishedAt: post.publishedAt,
+        views: post.views,
+        likes: post.likes,
+      };
+    });
 
-  const payload = JSON.stringify({ version: "1.0", exportedAt: new Date().toISOString(), posts: exported }, null, 2);
-  res.setHeader("Content-Disposition", `attachment; filename="blog-export-${Date.now()}.json"`);
-  res.setHeader("Content-Type", "application/json");
-  res.send(payload);
+    const payload = JSON.stringify({ version: "1.0", exportedAt: new Date().toISOString(), posts: exported }, null, 2);
+    res.setHeader("Content-Disposition", `attachment; filename="blog-export-${Date.now()}.json"`);
+    res.setHeader("Content-Type", "application/json");
+    res.send(payload);
+  } catch (err) {
+    res.status(500).json({ error: "Export failed", detail: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 /* ── Import: POST /api/admin/blog/import — must be before /:id ── */
