@@ -35,8 +35,8 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=3000 BASE_PATH=/ pnpm --filter @workspace/advantix-website run dev"
-waitForPort = 3000
+args = "PORT=8080 NODE_ENV=development node --enable-source-maps artifacts/api-server/dist/index.mjs & PORT=18880 BASE_PATH=/ pnpm --filter @workspace/advantix-website run dev"
+waitForPort = 18880
 
 [agent]
 stack = "PNPM_WORKSPACE"
