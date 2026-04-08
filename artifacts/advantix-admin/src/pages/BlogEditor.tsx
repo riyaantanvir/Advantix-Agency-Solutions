@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import {
   Save, ArrowLeft, Eye, Globe, FileX, Loader2,
   Settings, ChevronDown, ChevronUp, Star, StarOff,
-  Upload, X, ImagePlus,
+  Upload, X, ImagePlus, Link2, Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +58,101 @@ async function apiFetch(url: string, opts?: RequestInit) {
   return res.json();
 }
 
+/* ── Cover Image Panel (inline popover) ─────────────────────────────────── */
+function CoverImagePanel({
+  onUpload, onUrl, onClose, uploading,
+}: {
+  onUpload: (file: File) => void;
+  onUrl: (url: string) => void;
+  onClose: () => void;
+  uploading: boolean;
+}) {
+  const [tab, setTab] = useState<"upload" | "url">("upload");
+  const [urlVal, setUrlVal] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <div className="absolute top-10 left-0 z-30 bg-card border border-border rounded-xl shadow-2xl w-80">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+        <div className="flex gap-1">
+          {(["upload", "url"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                tab === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+              }`}
+            >
+              {t === "upload" ? "Upload" : "Image URL"}
+            </button>
+          ))}
+        </div>
+        <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded">
+          <X size={14} />
+        </button>
+      </div>
+
+      <div className="p-3">
+        {tab === "upload" ? (
+          <>
+            <div
+              onClick={() => fileRef.current?.click()}
+              className="border-2 border-dashed border-border rounded-lg p-5 text-center cursor-pointer hover:border-primary/50 hover:bg-secondary/30 transition-colors"
+            >
+              {uploading ? (
+                <div className="flex flex-col items-center gap-1.5 text-muted-foreground">
+                  <Loader2 size={20} className="animate-spin text-primary" />
+                  <span className="text-xs">Uploading…</span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-1.5 text-muted-foreground">
+                  <Upload size={20} className="text-muted-foreground/60" />
+                  <p className="text-xs font-medium text-foreground/70">Click to choose a file</p>
+                  <p className="text-[10px] text-muted-foreground/60">PNG, JPG, WebP, GIF</p>
+                </div>
+              )}
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) { onUpload(f); onClose(); }
+                e.target.value = "";
+              }}
+            />
+          </>
+        ) : (
+          <div className="space-y-2">
+            <input
+              autoFocus
+              type="url"
+              value={urlVal}
+              onChange={(e) => setUrlVal(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && urlVal.trim()) { onUrl(urlVal.trim()); onClose(); }
+              }}
+              placeholder="https://example.com/image.jpg"
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
+            <button
+              type="button"
+              disabled={!urlVal.trim()}
+              onClick={() => { if (urlVal.trim()) { onUrl(urlVal.trim()); onClose(); } }}
+              className="w-full py-2 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 font-medium"
+            >
+              Set as Cover
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function BlogEditor() {
   const [, navigate] = useLocation();
   const [matchEdit, paramsEdit] = useRoute("/blog/:id/edit");
@@ -70,8 +164,9 @@ export default function BlogEditor() {
   const [showSeo, setShowSeo] = useState(false);
   const [saved, setSaved] = useState(false);
   const [coverUploading, setCoverUploading] = useState(false);
-  const [coverDragging, setCoverDragging] = useState(false);
+  const [showCoverPanel, setShowCoverPanel] = useState(false);
   const coverFileInputRef = useRef<HTMLInputElement>(null);
+  const coverPanelRef = useRef<HTMLDivElement>(null);
 
   const uploadCoverFile = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -216,7 +311,7 @@ export default function BlogEditor() {
               <Eye size={17} />
             </a>
           )}
-          {saved && <span className="text-xs text-green-400">Saved ✓</span>}
+          {saved && <span className="text-xs text-green-400 flex items-center gap-1"><Check size={12} /> Saved</span>}
           {form.status !== "published" ? (
             <>
               <Button variant="outline" size="sm" onClick={() => handleSave("draft")} disabled={isPending} className="gap-2">
@@ -244,6 +339,78 @@ export default function BlogEditor() {
 
       {/* Main content */}
       <div className="flex-1 overflow-auto">
+
+        {/* ── Cover Image Hero ─────────────────────────────────────────── */}
+        {form.coverImageUrl ? (
+          /* Image set → full-width hero */
+          <div className="relative w-full h-64 group overflow-hidden bg-secondary">
+            <img
+              src={form.coverImageUrl}
+              alt="Cover"
+              className="w-full h-full object-cover"
+            />
+            {/* Gradient overlay + controls on hover */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-6 py-4 translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-200">
+              <span className="text-white/80 text-xs font-medium">Cover image</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => coverFileInputRef.current?.click()}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-medium transition-colors backdrop-blur-sm border border-white/20"
+                >
+                  <Upload size={12} /> Replace
+                </button>
+                <button
+                  type="button"
+                  onClick={() => update("coverImageUrl", "")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/60 hover:bg-red-500/80 text-white text-xs font-medium transition-colors backdrop-blur-sm"
+                >
+                  <X size={12} /> Remove
+                </button>
+              </div>
+            </div>
+            <input
+              ref={coverFileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) uploadCoverFile(f);
+                e.target.value = "";
+              }}
+            />
+          </div>
+        ) : (
+          /* No image → compact button bar */
+          <div className="w-full border-b border-border/50 bg-secondary/10 px-6 py-2.5 flex items-center gap-3">
+            <div className="relative" ref={coverPanelRef}>
+              <button
+                type="button"
+                onClick={() => setShowCoverPanel((v) => !v)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {coverUploading ? (
+                  <Loader2 size={14} className="animate-spin text-primary" />
+                ) : (
+                  <ImagePlus size={14} />
+                )}
+                {coverUploading ? "Uploading…" : "Add cover image"}
+              </button>
+
+              {showCoverPanel && (
+                <CoverImagePanel
+                  uploading={coverUploading}
+                  onUpload={(f) => { uploadCoverFile(f); }}
+                  onUrl={(url) => update("coverImageUrl", url)}
+                  onClose={() => setShowCoverPanel(false)}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="max-w-5xl mx-auto px-6 py-6 space-y-6">
           {/* Title */}
           <div>
@@ -264,157 +431,55 @@ export default function BlogEditor() {
               onChange={(e) => update("excerpt", e.target.value)}
               placeholder="A short description of this post..."
               rows={2}
-              className="w-full px-3 py-2.5 rounded-xl border border-border bg-card text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none placeholder:text-muted-foreground/40"
+              className="w-full px-3 py-2.5 rounded-lg border border-border bg-card text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
             />
           </div>
 
-          {/* Rich text editor */}
+          {/* Content editor */}
           <div>
-            <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium block mb-2">Content</label>
+            <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium block mb-1.5">Content</label>
             <RichEditor
               content={form.content}
               onChange={(html) => update("content", html)}
-              placeholder="Start writing your blog post..."
-              minHeight={500}
             />
           </div>
 
-          {/* Sidebar meta */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Cover image */}
+          {/* Metadata */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium block mb-1.5">Cover Image</label>
-
-              {/* Hidden file input */}
-              <input
-                ref={coverFileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) uploadCoverFile(file);
-                  e.target.value = "";
-                }}
-              />
-
-              {form.coverImageUrl ? (
-                /* Preview with clear button */
-                <div className="relative rounded-xl overflow-hidden aspect-[2/1] bg-secondary">
-                  <img
-                    src={form.coverImageUrl}
-                    alt="Cover preview"
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                  <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity bg-black/50 flex items-center justify-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => coverFileInputRef.current?.click()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors backdrop-blur-sm"
-                    >
-                      <Upload size={13} /> Replace
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => update("coverImageUrl", "")}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/70 hover:bg-red-500/90 text-white text-xs font-medium transition-colors"
-                    >
-                      <X size={13} /> Remove
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                /* Drop / paste zone */
-                <div
-                  tabIndex={0}
-                  className={`relative rounded-xl border-2 border-dashed transition-colors cursor-pointer aspect-[2/1] flex flex-col items-center justify-center gap-2 outline-none
-                    ${coverDragging
-                      ? "border-primary bg-primary/10"
-                      : "border-border hover:border-primary/50 hover:bg-secondary/40 focus:border-primary/60"
-                    }`}
-                  onClick={() => coverFileInputRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); setCoverDragging(true); }}
-                  onDragLeave={() => setCoverDragging(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setCoverDragging(false);
-                    const file = e.dataTransfer.files?.[0];
-                    if (file) uploadCoverFile(file);
-                  }}
-                  onPaste={(e) => {
-                    const item = Array.from(e.clipboardData.items).find(
-                      (i) => i.type.startsWith("image/")
-                    );
-                    if (item) {
-                      const file = item.getAsFile();
-                      if (file) uploadCoverFile(file);
-                    }
-                  }}
-                >
-                  {coverUploading ? (
-                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                      <Loader2 size={24} className="animate-spin text-primary" />
-                      <span className="text-xs">Uploading…</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center gap-2 text-muted-foreground pointer-events-none select-none">
-                      <ImagePlus size={28} className="text-muted-foreground/50" />
-                      <div className="text-center">
-                        <p className="text-sm font-medium text-foreground/70">Paste • Drag & drop • Click to upload</p>
-                        <p className="text-xs mt-0.5">PNG, JPG, WebP, GIF supported</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* URL input fallback */}
-              <div className="mt-2">
-                <Input
-                  value={form.coverImageUrl}
-                  onChange={(e) => update("coverImageUrl", e.target.value)}
-                  placeholder="Or paste an image URL…"
-                  className="text-xs"
-                />
-              </div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium block mb-1.5">Category</label>
+              <select
+                value={form.category}
+                onChange={(e) => update("category", e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-card text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
-
-            {/* Category + Author */}
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium block mb-1.5">Category</label>
-                <select
-                  value={form.category}
-                  onChange={(e) => update("category", e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-border bg-card text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                >
-                  {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium block mb-1.5">Author</label>
-                <Input value={form.author} onChange={(e) => update("author", e.target.value)} placeholder="Author name" />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium block mb-1.5">Tags (comma-separated)</label>
-                <Input value={form.tags} onChange={(e) => update("tags", e.target.value)} placeholder="e.g. design, branding, tips" />
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <button
-                  type="button"
-                  onClick={() => update("featured", !form.featured)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                    form.featured
-                      ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-400"
-                      : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
-                  }`}
-                >
-                  {form.featured ? <Star size={14} fill="currentColor" /> : <StarOff size={14} />}
-                  {form.featured ? "Featured Post" : "Mark as Featured"}
-                </button>
-              </label>
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium block mb-1.5">Author</label>
+              <Input value={form.author} onChange={(e) => update("author", e.target.value)} placeholder="Author name" />
             </div>
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wide font-medium block mb-1.5">Tags (comma-separated)</label>
+              <Input value={form.tags} onChange={(e) => update("tags", e.target.value)} placeholder="e.g. design, branding, tips" />
+            </div>
+          </div>
+
+          {/* Featured toggle */}
+          <div>
+            <button
+              type="button"
+              onClick={() => update("featured", !form.featured)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                form.featured
+                  ? "bg-yellow-500/15 border-yellow-500/30 text-yellow-400"
+                  : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+              }`}
+            >
+              {form.featured ? <Star size={14} fill="currentColor" /> : <StarOff size={14} />}
+              {form.featured ? "Featured Post" : "Mark as Featured"}
+            </button>
           </div>
 
           {/* SEO section */}
