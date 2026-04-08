@@ -208,10 +208,15 @@ if (isProd) {
 
         if (!row) { next(); return; }
 
+        const SITE_ORIGIN = process.env.SITE_URL ?? "https://advantix.digital";
         const postTitle   = row.seo_title ?? row.title;
         const postDesc    = row.seo_description ?? row.excerpt ?? `Read "${row.title}" on the Advantix Digital blog.`;
-        const postImage   = row.cover_image_url ?? "https://advantix.digital/images/og-image.png";
-        const postUrl     = `https://advantix.digital/blog/${slug}`;
+        const rawCover    = row.cover_image_url ?? "";
+        // Make sure og:image is always an absolute URL — uploaded files are stored as /api/uploads/...
+        const postImage   = rawCover
+          ? rawCover.startsWith("http") ? rawCover : `${SITE_ORIGIN}${rawCover.startsWith("/") ? "" : "/"}${rawCover}`
+          : `${SITE_ORIGIN}/images/og-image.png`;
+        const postUrl     = `${SITE_ORIGIN}/blog/${slug}`;
         const fullTitle   = `${postTitle} | Advantix Digital`;
 
         const template = fs.readFileSync(path.join(websiteDir, "index.html"), "utf-8");
