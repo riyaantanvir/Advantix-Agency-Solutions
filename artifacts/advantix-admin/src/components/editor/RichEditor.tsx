@@ -17,7 +17,7 @@ import {
   List, ListOrdered, Quote, Code, Minus,
   Heading1, Heading2, Heading3, Link2, ImageIcon,
   Highlighter, Undo, Redo, X, Upload, Loader2,
-  Code2, Eye, EyeOff, FileText,
+  Code2, Eye, EyeOff, FileText, Images, CheckCircle2,
 } from "lucide-react";
 
 interface RichEditorProps {
@@ -340,7 +340,43 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
   const [showImageDialog, setShowImageDialog] = useState(false);
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const [pasteUploading, setPasteUploading] = useState(false);
+  const [htmlImgUploads, setHtmlImgUploads] = useState<{ name: string; done: boolean }[]>([]);
+  const [htmlImgUploading, setHtmlImgUploading] = useState(false);
   const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const htmlImgInputRef = useRef<HTMLInputElement>(null);
+
+  function insertHtmlAtCursor(text: string) {
+    const el = htmlTextareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const newVal = el.value.substring(0, start) + text + el.value.substring(end);
+    handleHtmlChange(newVal);
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = start + text.length;
+      el.focus();
+    });
+  }
+
+  async function handleHtmlImageUpload(files: FileList) {
+    if (!files.length) return;
+    const fileArr = Array.from(files);
+    setHtmlImgUploading(true);
+    setHtmlImgUploads(fileArr.map((f) => ({ name: f.name, done: false })));
+    for (let i = 0; i < fileArr.length; i++) {
+      const file = fileArr[i];
+      try {
+        const url = await uploadImageFile(file);
+        insertHtmlAtCursor(`<img src="${url}" alt="${file.name.replace(/\.[^.]+$/, "")}" style="width: 100%; max-width: 100%;" />\n`);
+        setHtmlImgUploads((prev) => prev.map((u, idx) => idx === i ? { ...u, done: true } : u));
+      } catch {
+        /* skip failed file */
+      }
+    }
+    setHtmlImgUploading(false);
+    setTimeout(() => setHtmlImgUploads([]), 2500);
+    if (htmlImgInputRef.current) htmlImgInputRef.current.value = "";
+  }
 
   const editor = useEditor({
     extensions: [
@@ -485,22 +521,64 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
           </button>
         </div>
 
-        {/* Preview toggle — only visible in HTML mode */}
+        {/* HTML mode right-side controls */}
         {mode === "html" && (
-          <button
-            type="button"
-            onClick={() => setShowPreview((v) => !v)}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-              showPreview
-                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-            }`}
-          >
-            {showPreview ? <EyeOff size={12} /> : <Eye size={12} />}
-            {showPreview ? "Hide Preview" : "Preview"}
-          </button>
+          <div className="flex items-center gap-1.5">
+            {/* Multi-file image uploader */}
+            <input
+              ref={htmlImgInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => { if (e.target.files?.length) handleHtmlImageUpload(e.target.files); }}
+            />
+            <button
+              type="button"
+              disabled={htmlImgUploading}
+              onClick={() => htmlImgInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Upload images and insert <img> tags at cursor"
+            >
+              {htmlImgUploading ? <Loader2 size={12} className="animate-spin" /> : <Images size={12} />}
+              {htmlImgUploading ? "Uploading…" : "Upload Images"}
+            </button>
+
+            <div className="w-px h-4 bg-border" />
+
+            {/* Preview toggle */}
+            <button
+              type="button"
+              onClick={() => setShowPreview((v) => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                showPreview
+                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                  : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+              }`}
+            >
+              {showPreview ? <EyeOff size={12} /> : <Eye size={12} />}
+              {showPreview ? "Hide Preview" : "Preview"}
+            </button>
+          </div>
         )}
       </div>
+
+      {/* Upload progress toast — HTML mode */}
+      {htmlImgUploads.length > 0 && (
+        <div className="absolute top-12 right-3 z-30 bg-card border border-border rounded-xl shadow-xl px-4 py-3 min-w-[220px] space-y-1.5">
+          <p className="text-xs font-medium text-foreground mb-2">Uploading images…</p>
+          {htmlImgUploads.map((u, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs">
+              {u.done
+                ? <CheckCircle2 size={13} className="text-emerald-400 shrink-0" />
+                : <Loader2 size={13} className="animate-spin text-primary shrink-0" />}
+              <span className={`truncate max-w-[160px] ${u.done ? "text-muted-foreground line-through" : "text-foreground"}`}>
+                {u.name}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Visual Mode: Toolbar ─────────────────────────────────────────── */}
       {mode === "visual" && (
