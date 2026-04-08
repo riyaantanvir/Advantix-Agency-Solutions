@@ -17,7 +17,7 @@ import {
   List, ListOrdered, Quote, Code, Minus,
   Heading1, Heading2, Heading3, Link2, ImageIcon,
   Highlighter, Undo, Redo, X, Upload, Loader2,
-  Code2, Eye, EyeOff, FileText, Images, CheckCircle2,
+  Code2, Eye, EyeOff, FileText, Images, CheckCircle2, FileCode,
 } from "lucide-react";
 
 interface RichEditorProps {
@@ -344,6 +344,21 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
   const [htmlImgUploading, setHtmlImgUploading] = useState(false);
   const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
   const htmlImgInputRef = useRef<HTMLInputElement>(null);
+  const htmlFileInputRef = useRef<HTMLInputElement>(null);
+
+  function handleHtmlFileLoad(file: File) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      if (!text) return;
+      // Extract just the <body> content if it's a full HTML document
+      const bodyMatch = text.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      const extracted = bodyMatch ? bodyMatch[1].trim() : text;
+      handleHtmlChange(extracted);
+      onChange(extracted);
+    };
+    reader.readAsText(file);
+  }
 
   function insertHtmlAtCursor(text: string) {
     const el = htmlTextareaRef.current;
@@ -524,6 +539,30 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
         {/* HTML mode right-side controls */}
         {mode === "html" && (
           <div className="flex items-center gap-1.5">
+            {/* HTML file loader */}
+            <input
+              ref={htmlFileInputRef}
+              type="file"
+              accept=".html,.htm"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleHtmlFileLoad(f);
+                e.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => htmlFileInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors text-muted-foreground hover:text-foreground hover:bg-secondary"
+              title="Load content from an .html file"
+            >
+              <FileCode size={12} />
+              Load HTML
+            </button>
+
+            <div className="w-px h-4 bg-border" />
+
             {/* Multi-file image uploader */}
             <input
               ref={htmlImgInputRef}
