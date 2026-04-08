@@ -129,6 +129,124 @@ router.get("/admin/blog", requireAdmin, async (_req, res) => {
   res.json(posts);
 });
 
+/* ── Export: GET /api/admin/blog/export — must be before /:id ── */
+router.get("/admin/blog/export", requireAdmin, async (_req, res) => {
+  const posts = await db
+    .select()
+    .from(blogPostsTable)
+    .orderBy(desc(blogPostsTable.createdAt));
+
+  const exported = posts.map((post) => {
+    let coverImageData: string | null = null;
+    let coverImageMime: string | null = null;
+
+    if (post.coverImageUrl?.startsWith("/api/uploads/blog/")) {
+      const filename = post.coverImageUrl.replace("/api/uploads/blog/", "");
+      const filepath = path.resolve(uploadsDir, filename);
+      if (fs.existsSync(filepath)) {
+        const buf = fs.readFileSync(filepath);
+        coverImageData = buf.toString("base64");
+        const ext = path.extname(filename).slice(1).toLowerCase();
+        coverImageMime = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
+      }
+    }
+
+    return {
+      title: post.title,
+      slug: post.slug,
+      excerpt: post.excerpt,
+      content: post.content,
+      coverImageUrl: post.coverImageUrl,
+      coverImageData,
+      coverImageMime,
+      author: post.author,
+      category: post.category,
+      tags: post.tags,
+      status: post.status,
+      featured: post.featured,
+      seoTitle: post.seoTitle,
+      seoDescription: post.seoDescription,
+      publishedAt: post.publishedAt,
+      views: post.views,
+      likes: post.likes,
+    };
+  });
+
+  const payload = JSON.stringify({ version: "1.0", exportedAt: new Date().toISOString(), posts: exported }, null, 2);
+  res.setHeader("Content-Disposition", `attachment; filename="blog-export-${Date.now()}.json"`);
+  res.setHeader("Content-Type", "application/json");
+  res.send(payload);
+});
+
+/* ── Import: POST /api/admin/blog/import — must be before /:id ── */
+router.post("/admin/blog/import", requireAdmin, async (req, res) => {
+  const body = req.body as { posts?: unknown[] };
+  if (!Array.isArray(body.posts) || body.posts.length === 0) {
+    res.status(400).json({ error: "Expected { posts: [...] } with at least one post." });
+    return;
+  }
+
+  const results: { title: string; slug: string; action: "created" | "skipped"; reason?: string }[] = [];
+
+  for (const raw of body.posts) {
+    const p = raw as Record<string, unknown>;
+    if (!p.title || typeof p.title !== "string") {
+      results.push({ title: "(unknown)", slug: "", action: "skipped", reason: "Missing title" });
+      continue;
+    }
+
+    let coverImageUrl = typeof p.coverImageUrl === "string" ? p.coverImageUrl : null;
+
+    if (typeof p.coverImageData === "string" && typeof p.coverImageMime === "string") {
+      try {
+        const ext = (p.coverImageMime as string).split("/")[1] ?? "jpg";
+        const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const filepath = path.resolve(uploadsDir, filename);
+        fs.writeFileSync(filepath, Buffer.from(p.coverImageData as string, "base64"));
+        coverImageUrl = `/api/uploads/blog/${filename}`;
+      } catch {
+        // keep original URL if decode fails
+      }
+    }
+
+    const baseSlug = slugify(p.title as string);
+    let slug = typeof p.slug === "string" ? slugify(p.slug) || baseSlug : baseSlug;
+    let attempt = 0;
+    while (true) {
+      const existing = await db.select({ id: blogPostsTable.id }).from(blogPostsTable).where(eq(blogPostsTable.slug, slug));
+      if (!existing.length) break;
+      attempt++;
+      slug = `${baseSlug}-${attempt}`;
+    }
+
+    const safeStatus = p.status === "published" ? "published" : "draft";
+    const content = typeof p.content === "string" ? p.content : "";
+
+    await db.insert(blogPostsTable).values({
+      title: p.title as string,
+      slug,
+      excerpt: typeof p.excerpt === "string" ? p.excerpt : null,
+      content,
+      coverImageUrl,
+      author: typeof p.author === "string" ? p.author : "Advantix Team",
+      category: typeof p.category === "string" ? p.category : "General",
+      tags: typeof p.tags === "string" ? p.tags : null,
+      status: safeStatus,
+      readingTime: estimateReadingTime(content),
+      seoTitle: typeof p.seoTitle === "string" ? p.seoTitle : null,
+      seoDescription: typeof p.seoDescription === "string" ? p.seoDescription : null,
+      featured: Boolean(p.featured),
+      publishedAt: safeStatus === "published"
+        ? (p.publishedAt ? new Date(p.publishedAt as string) : new Date())
+        : null,
+    });
+
+    results.push({ title: p.title as string, slug, action: "created" });
+  }
+
+  res.json({ imported: results.filter((r) => r.action === "created").length, skipped: results.filter((r) => r.action === "skipped").length, results });
+});
+
 router.get("/admin/blog/:id", requireAdmin, async (req, res) => {
   const id = parseInt(String(req.params.id ?? "0"), 10);
   const [post] = await db.select().from(blogPostsTable).where(eq(blogPostsTable.id, id));
@@ -223,124 +341,6 @@ router.delete("/admin/blog/:id", requireAdmin, async (req, res) => {
   const id = parseInt(String(req.params.id ?? "0"), 10);
   await db.delete(blogPostsTable).where(eq(blogPostsTable.id, id));
   res.json({ message: "Deleted" });
-});
-
-/* ── Export: GET /api/admin/blog/export ─────────────────── */
-router.get("/admin/blog/export", requireAdmin, async (_req, res) => {
-  const posts = await db
-    .select()
-    .from(blogPostsTable)
-    .orderBy(desc(blogPostsTable.createdAt));
-
-  const exported = posts.map((post) => {
-    let coverImageData: string | null = null;
-    let coverImageMime: string | null = null;
-
-    if (post.coverImageUrl?.startsWith("/api/uploads/blog/")) {
-      const filename = post.coverImageUrl.replace("/api/uploads/blog/", "");
-      const filepath = path.resolve(uploadsDir, filename);
-      if (fs.existsSync(filepath)) {
-        const buf = fs.readFileSync(filepath);
-        coverImageData = buf.toString("base64");
-        const ext = path.extname(filename).slice(1).toLowerCase();
-        coverImageMime = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
-      }
-    }
-
-    return {
-      title: post.title,
-      slug: post.slug,
-      excerpt: post.excerpt,
-      content: post.content,
-      coverImageUrl: post.coverImageUrl,
-      coverImageData,
-      coverImageMime,
-      author: post.author,
-      category: post.category,
-      tags: post.tags,
-      status: post.status,
-      featured: post.featured,
-      seoTitle: post.seoTitle,
-      seoDescription: post.seoDescription,
-      publishedAt: post.publishedAt,
-      views: post.views,
-      likes: post.likes,
-    };
-  });
-
-  const payload = JSON.stringify({ version: "1.0", exportedAt: new Date().toISOString(), posts: exported }, null, 2);
-  res.setHeader("Content-Disposition", `attachment; filename="blog-export-${Date.now()}.json"`);
-  res.setHeader("Content-Type", "application/json");
-  res.send(payload);
-});
-
-/* ── Import: POST /api/admin/blog/import ────────────────── */
-router.post("/admin/blog/import", requireAdmin, async (req, res) => {
-  const body = req.body as { posts?: unknown[] };
-  if (!Array.isArray(body.posts) || body.posts.length === 0) {
-    res.status(400).json({ error: "Expected { posts: [...] } with at least one post." });
-    return;
-  }
-
-  const results: { title: string; slug: string; action: "created" | "skipped"; reason?: string }[] = [];
-
-  for (const raw of body.posts) {
-    const p = raw as Record<string, unknown>;
-    if (!p.title || typeof p.title !== "string") {
-      results.push({ title: "(unknown)", slug: "", action: "skipped", reason: "Missing title" });
-      continue;
-    }
-
-    let coverImageUrl = typeof p.coverImageUrl === "string" ? p.coverImageUrl : null;
-
-    if (typeof p.coverImageData === "string" && typeof p.coverImageMime === "string") {
-      try {
-        const ext = (p.coverImageMime as string).split("/")[1] ?? "jpg";
-        const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-        const filepath = path.resolve(uploadsDir, filename);
-        fs.writeFileSync(filepath, Buffer.from(p.coverImageData as string, "base64"));
-        coverImageUrl = `/api/uploads/blog/${filename}`;
-      } catch {
-        // keep original URL if decode fails
-      }
-    }
-
-    const baseSlug = slugify(p.title as string);
-    let slug = typeof p.slug === "string" ? slugify(p.slug) || baseSlug : baseSlug;
-    let attempt = 0;
-    while (true) {
-      const existing = await db.select({ id: blogPostsTable.id }).from(blogPostsTable).where(eq(blogPostsTable.slug, slug));
-      if (!existing.length) break;
-      attempt++;
-      slug = `${baseSlug}-${attempt}`;
-    }
-
-    const safeStatus = p.status === "published" ? "published" : "draft";
-    const content = typeof p.content === "string" ? p.content : "";
-
-    await db.insert(blogPostsTable).values({
-      title: p.title as string,
-      slug,
-      excerpt: typeof p.excerpt === "string" ? p.excerpt : null,
-      content,
-      coverImageUrl,
-      author: typeof p.author === "string" ? p.author : "Advantix Team",
-      category: typeof p.category === "string" ? p.category : "General",
-      tags: typeof p.tags === "string" ? p.tags : null,
-      status: safeStatus,
-      readingTime: estimateReadingTime(content),
-      seoTitle: typeof p.seoTitle === "string" ? p.seoTitle : null,
-      seoDescription: typeof p.seoDescription === "string" ? p.seoDescription : null,
-      featured: Boolean(p.featured),
-      publishedAt: safeStatus === "published"
-        ? (p.publishedAt ? new Date(p.publishedAt as string) : new Date())
-        : null,
-    });
-
-    results.push({ title: p.title as string, slug, action: "created" });
-  }
-
-  res.json({ imported: results.filter((r) => r.action === "created").length, skipped: results.filter((r) => r.action === "skipped").length, results });
 });
 
 export default router;

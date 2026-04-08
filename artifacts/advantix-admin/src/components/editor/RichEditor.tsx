@@ -345,6 +345,7 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
   const htmlTextareaRef = useRef<HTMLTextAreaElement>(null);
   const htmlImgInputRef = useRef<HTMLInputElement>(null);
   const htmlFileInputRef = useRef<HTMLInputElement>(null);
+  const savedCursorRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
 
   function handleHtmlFileLoad(file: File) {
     const reader = new FileReader();
@@ -360,13 +361,20 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
     reader.readAsText(file);
   }
 
+  function saveCursor() {
+    const el = htmlTextareaRef.current;
+    if (el) savedCursorRef.current = { start: el.selectionStart, end: el.selectionEnd };
+  }
+
   function insertHtmlAtCursor(text: string) {
     const el = htmlTextareaRef.current;
     if (!el) return;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
+    const hasFocus = document.activeElement === el;
+    const start = hasFocus ? el.selectionStart : savedCursorRef.current.start;
+    const end = hasFocus ? el.selectionEnd : savedCursorRef.current.end;
     const newVal = el.value.substring(0, start) + text + el.value.substring(end);
     handleHtmlChange(newVal);
+    savedCursorRef.current = { start: start + text.length, end: start + text.length };
     requestAnimationFrame(() => {
       el.selectionStart = el.selectionEnd = start + text.length;
       el.focus();
@@ -729,7 +737,12 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
               spellCheck={false}
               className="w-full bg-[#0d1117] text-[#e6edf3] font-mono text-sm px-4 pt-7 pb-4 resize-none focus:outline-none leading-relaxed"
               style={{ minHeight: minHeight, tabSize: 2 }}
+              onKeyUp={saveCursor}
+              onClick={saveCursor}
+              onSelect={saveCursor}
+              onBlur={saveCursor}
               onKeyDown={(e) => {
+                saveCursor();
                 if (e.key === "Tab") {
                   e.preventDefault();
                   const el = e.currentTarget;
@@ -737,6 +750,7 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
                   const end = el.selectionEnd;
                   const newVal = el.value.substring(0, start) + "  " + el.value.substring(end);
                   handleHtmlChange(newVal);
+                  savedCursorRef.current = { start: start + 2, end: start + 2 };
                   requestAnimationFrame(() => {
                     el.selectionStart = el.selectionEnd = start + 2;
                   });
