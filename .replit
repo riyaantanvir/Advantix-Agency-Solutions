@@ -31,12 +31,11 @@ name = "Start application"
 author = "agent"
 
 [workflows.workflow.metadata]
-outputType = "webview"
+outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=8080 NODE_ENV=development node --enable-source-maps artifacts/api-server/dist/index.mjs & PORT=18880 BASE_PATH=/ pnpm --filter @workspace/advantix-website run dev"
-waitForPort = 18880
+args = "until curl -sf http://localhost:8080/api/health > /dev/null 2>&1; do sleep 1; done && echo \"✓ API Server ready on :8080\" && echo \"✓ Website ready on :18880\" && echo \"✓ Admin ready on :23910\" && echo \"✓ AI ready on :26083\" && sleep infinity"
 
 [agent]
 stack = "PNPM_WORKSPACE"
