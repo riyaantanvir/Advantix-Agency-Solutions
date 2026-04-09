@@ -55,6 +55,14 @@ services:
         type: SECRET
       - key: GOOGLE_AI_API_KEY
         type: SECRET
+      # Set this to your actual deployed URL (e.g. https://your-app.ondigitalocean.app)
+      # Used for blog OG tags and email notification links
+      - key: SITE_URL
+        value: "https://advantixdigital.com"
+      # Optional: restrict CORS to specific origins (comma-separated)
+      # Leave blank to allow all origins
+      - key: ALLOWED_ORIGINS
+        value: ""
 
 databases:
   - name: db
