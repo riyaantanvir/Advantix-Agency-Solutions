@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useLogout } from "@workspace/api-client-react";
-import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -109,23 +109,6 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: newsletterSettings } = useQuery<{ enabled: boolean }>({
-    queryKey: ["newsletter-settings"],
-    queryFn: () => fetch("/api/settings/newsletter", { credentials: "include" }).then(r => r.json()),
-    staleTime: 60_000,
-  });
-
-  const visibleNavItems: NavItem[] = navItems.map(item => {
-    if (isGroup(item) && item.label === "Marketing") {
-      return {
-        ...item,
-        children: item.children.filter(child =>
-          child.path !== "/email-subscribers" || (newsletterSettings?.enabled ?? true)
-        ),
-      };
-    }
-    return item;
-  });
 
   const initialOpen: Record<string, boolean> = {};
   navItems.forEach((item) => {
@@ -218,7 +201,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <nav className="flex-1 px-3 space-y-1 mt-2 overflow-y-auto">
-        {visibleNavItems.map((item) =>
+        {navItems.map((item) =>
           isGroup(item) ? renderGroup(item) : renderLink(item)
         )}
       </nav>
