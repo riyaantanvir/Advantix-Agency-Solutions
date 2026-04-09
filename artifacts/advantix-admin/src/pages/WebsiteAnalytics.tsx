@@ -38,6 +38,77 @@ function BarRow({ label, value, max, color = "bg-primary" }: { label: string; va
   );
 }
 
+const SOURCE_MAP: Record<string, { icon: string; label: string; color: string }> = {
+  "Direct":      { icon: "🔗", label: "Direct",      color: "bg-blue-500" },
+  "Internal":    { icon: "🏠", label: "Internal",     color: "bg-slate-500" },
+  "Google":      { icon: "🔍", label: "Google",       color: "bg-red-400" },
+  "Facebook":    { icon: "👥", label: "Facebook",     color: "bg-blue-600" },
+  "Instagram":   { icon: "📸", label: "Instagram",    color: "bg-pink-500" },
+  "Twitter / X": { icon: "🐦", label: "Twitter / X", color: "bg-sky-400" },
+  "LinkedIn":    { icon: "💼", label: "LinkedIn",     color: "bg-blue-700" },
+  "YouTube":     { icon: "▶️",  label: "YouTube",     color: "bg-red-500" },
+  "TikTok":      { icon: "🎵", label: "TikTok",      color: "bg-pink-400" },
+  "Pinterest":   { icon: "📌", label: "Pinterest",    color: "bg-red-600" },
+  "Reddit":      { icon: "🤖", label: "Reddit",      color: "bg-orange-500" },
+  "WhatsApp":    { icon: "💬", label: "WhatsApp",     color: "bg-green-500" },
+  "Telegram":    { icon: "✈️",  label: "Telegram",    color: "bg-sky-500" },
+  "Snapchat":    { icon: "👻", label: "Snapchat",     color: "bg-yellow-400" },
+  "Bing":        { icon: "🔍", label: "Bing",         color: "bg-teal-500" },
+  "Yahoo":       { icon: "🔍", label: "Yahoo",        color: "bg-purple-500" },
+  "DuckDuckGo":  { icon: "🦆", label: "DuckDuckGo",  color: "bg-orange-400" },
+  "Baidu":       { icon: "🔍", label: "Baidu",        color: "bg-blue-400" },
+  "Yandex":      { icon: "🔍", label: "Yandex",       color: "bg-red-500" },
+};
+
+function parseSourceFromRaw(raw: string): string {
+  if (!raw || raw === "Direct") return "Direct";
+  if (SOURCE_MAP[raw]) return raw;
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
+    if (host.includes("facebook.com") || host.includes("fb.com")) return "Facebook";
+    if (host.includes("instagram.com")) return "Instagram";
+    if (host.includes("twitter.com") || host.includes("x.com") || host.includes("t.co")) return "Twitter / X";
+    if (host.includes("linkedin.com")) return "LinkedIn";
+    if (host.includes("youtube.com") || host.includes("youtu.be")) return "YouTube";
+    if (host.includes("tiktok.com")) return "TikTok";
+    if (host.includes("pinterest.com")) return "Pinterest";
+    if (host.includes("reddit.com")) return "Reddit";
+    if (host.includes("whatsapp.com")) return "WhatsApp";
+    if (host.includes("telegram.org") || host.includes("t.me")) return "Telegram";
+    if (host.includes("snapchat.com")) return "Snapchat";
+    if (host.includes("google.")) return "Google";
+    if (host.includes("bing.com")) return "Bing";
+    if (host.includes("yahoo.com")) return "Yahoo";
+    if (host.includes("duckduckgo.com")) return "DuckDuckGo";
+    if (host.includes("baidu.com")) return "Baidu";
+    if (host.includes("yandex.")) return "Yandex";
+    if (host.includes("advantix.digital") || host.includes("replit")) return "Internal";
+    return host;
+  } catch {
+    return raw.length > 30 ? raw.slice(0, 30) + "…" : raw;
+  }
+}
+
+function SourceRow({ rawSource, value, max }: { rawSource: string; value: number; max: number }) {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  const key = parseSourceFromRaw(rawSource);
+  const info = SOURCE_MAP[key];
+  const icon = info?.icon ?? "🌐";
+  const label = info?.label ?? key;
+  const barColor = info?.color ?? "bg-green-500";
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-base w-5 shrink-0">{icon}</span>
+      <span className="text-sm font-medium w-28 shrink-0 truncate">{label}</span>
+      <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
+        <div className={`h-full ${barColor} rounded-full`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-sm font-semibold tabular-nums w-10 text-right">{value}</span>
+    </div>
+  );
+}
+
 function HourHeatmap({ byHour }: { byHour: Array<{ hour: number; pageviews: string }> }) {
   const map: Record<number, number> = {};
   byHour.forEach(r => { map[r.hour] = parseInt(r.pageviews); });
@@ -241,18 +312,27 @@ export default function WebsiteAnalytics() {
                   </Card>
                 )}
 
-                {(data.byReferrer ?? []).length > 0 && (
-                  <Card className="p-5">
-                    <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                      <TrendingUp className="w-4 h-4 text-green-400" /> Traffic Sources
-                    </h3>
-                    <div className="space-y-2">
-                      {(data.byReferrer ?? []).map(r => (
-                        <BarRow key={r.referrer} label={r.referrer} value={parseInt(r.sessions)} max={maxRef} color="bg-green-500" />
-                      ))}
-                    </div>
-                  </Card>
-                )}
+                {(data.byReferrer ?? []).length > 0 && (() => {
+                  const consolidated: Record<string, number> = {};
+                  (data.byReferrer ?? []).forEach(r => {
+                    const key = parseSourceFromRaw(r.referrer);
+                    consolidated[key] = (consolidated[key] ?? 0) + parseInt(r.sessions);
+                  });
+                  const sorted = Object.entries(consolidated).sort((a, b) => b[1] - a[1]);
+                  const maxSrc = Math.max(...sorted.map(([, v]) => v), 1);
+                  return (
+                    <Card className="p-5">
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-green-400" /> Traffic Sources
+                      </h3>
+                      <div className="space-y-2.5">
+                        {sorted.map(([src, count]) => (
+                          <SourceRow key={src} rawSource={src} value={count} max={maxSrc} />
+                        ))}
+                      </div>
+                    </Card>
+                  );
+                })()}
               </div>
             </div>
           )}

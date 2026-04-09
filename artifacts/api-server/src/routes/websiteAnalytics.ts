@@ -110,10 +110,20 @@ router.get("/analytics/website", requireAdmin, async (req, res) => {
       GROUP BY country ORDER BY sessions DESC LIMIT 10
     `),
     db.execute(sql`
-      SELECT COALESCE(referrer, 'Direct') AS referrer, COUNT(DISTINCT session_id) AS sessions
+      SELECT
+        CASE
+          WHEN referrer IS NULL OR referrer = '' THEN 'Direct'
+          ELSE referrer
+        END AS referrer,
+        COUNT(DISTINCT session_id) AS sessions
       FROM page_events WHERE event_type = 'pageview'
         AND created_at >= NOW() - ${days} * INTERVAL '1 day'
-      GROUP BY referrer ORDER BY sessions DESC LIMIT 10
+      GROUP BY
+        CASE
+          WHEN referrer IS NULL OR referrer = '' THEN 'Direct'
+          ELSE referrer
+        END
+      ORDER BY sessions DESC LIMIT 10
     `),
     db.execute(sql`
       SELECT COALESCE(browser, 'Unknown') AS browser, COUNT(DISTINCT session_id) AS sessions

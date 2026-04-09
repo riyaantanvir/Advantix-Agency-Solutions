@@ -9,6 +9,35 @@ function getSessionId(): string {
   return id;
 }
 
+function parseReferrerSource(rawReferrer: string): string {
+  if (!rawReferrer) return "Direct";
+  try {
+    const url = new URL(rawReferrer);
+    const host = url.hostname.replace(/^www\./, "").toLowerCase();
+    if (host === window.location.hostname || host === "localhost") return "Internal";
+    if (host.includes("facebook.com") || host.includes("fb.com") || host.includes("fb.me")) return "Facebook";
+    if (host.includes("instagram.com")) return "Instagram";
+    if (host.includes("twitter.com") || host.includes("x.com") || host.includes("t.co")) return "Twitter / X";
+    if (host.includes("linkedin.com")) return "LinkedIn";
+    if (host.includes("youtube.com") || host.includes("youtu.be")) return "YouTube";
+    if (host.includes("tiktok.com")) return "TikTok";
+    if (host.includes("pinterest.com")) return "Pinterest";
+    if (host.includes("reddit.com")) return "Reddit";
+    if (host.includes("whatsapp.com") || host.includes("whatsapp.net")) return "WhatsApp";
+    if (host.includes("telegram.org") || host.includes("t.me")) return "Telegram";
+    if (host.includes("snapchat.com")) return "Snapchat";
+    if (host.includes("google.") || host.startsWith("google")) return "Google";
+    if (host.includes("bing.com")) return "Bing";
+    if (host.includes("yahoo.com")) return "Yahoo";
+    if (host.includes("duckduckgo.com")) return "DuckDuckGo";
+    if (host.includes("baidu.com")) return "Baidu";
+    if (host.includes("yandex.")) return "Yandex";
+    return host;
+  } catch {
+    return rawReferrer.slice(0, 60);
+  }
+}
+
 function trackEvent(payload: Record<string, unknown>) {
   const body = JSON.stringify(payload);
   if (navigator.sendBeacon) {
@@ -29,7 +58,8 @@ export function setupPageTracking(pagePath: string, referrer: string) {
   let maxScrollDepth = 0;
   let exitSent = false;
 
-  trackEvent({ sessionId, eventType: "pageview", pagePath, referrer, scrollDepth: 0, timeOnPage: 0 });
+  const source = parseReferrerSource(referrer);
+  trackEvent({ sessionId, eventType: "pageview", pagePath, referrer: source, scrollDepth: 0, timeOnPage: 0 });
 
   const handleScroll = () => {
     const el = document.documentElement;
