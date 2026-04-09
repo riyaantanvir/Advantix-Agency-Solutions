@@ -2,10 +2,10 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
+import { sendBulkEmails } from "../services/resendMailer.js";
+import { buildBlogNotificationEmail } from "../services/blogEmailTemplate.js";
 
 const router: IRouter = Router();
-
-/* ── Email Subscribers ──────────────────────────────────── */
 
 /* ── Newsletter Settings helpers ─────────────────────────── */
 async function getNewsletterEnabled(): Promise<boolean> {
@@ -13,9 +13,29 @@ async function getNewsletterEnabled(): Promise<boolean> {
     SELECT value FROM site_settings WHERE key = 'newsletter_enabled'
   `);
   const rows = r.rows as { value: string }[];
-  if (rows.length === 0) return true; // default on
+  if (rows.length === 0) return true;
   return rows[0].value !== "false";
 }
+
+/* Helper: get sender address from integrations */
+async function getSenderAddress(): Promise<string> {
+  const r = await db.execute(sql`
+    SELECT value FROM integrations WHERE name = 'EMAIL_FROM_ADDRESS'
+  `);
+  const rows = r.rows as { value: string }[];
+  return rows[0]?.value ?? "Advantix Digital <noreply@advantixdigital.com>";
+}
+
+/* Helper: get site base URL */
+async function getSiteBaseUrl(): Promise<string> {
+  const r = await db.execute(sql`
+    SELECT value FROM site_settings WHERE key = 'site_base_url'
+  `);
+  const rows = r.rows as { value: string }[];
+  return rows[0]?.value ?? "https://advantixdigital.com";
+}
+
+/* ── Public subscribe (newsletter modal / form) ──────────── */
 
 /* POST /api/subscribe — public email capture */
 router.post("/subscribe", async (req, res) => {
@@ -48,20 +68,67 @@ router.post("/subscribe", async (req, res) => {
   }
 });
 
-/* GET /api/admin/subscribers */
+/* ── Admin Subscriber Management ─────────────────────────── */
+
+/* GET /api/admin/subscribers — list with source/active filter */
 router.get("/admin/subscribers", requireAdmin, async (req, res) => {
   const active = req.query.active;
-  const where = active === "false" ? sql`WHERE active = false` : active === "all" ? sql`` : sql`WHERE active = true`;
+  const source = req.query.source as string | undefined;
+
+  // Build WHERE conditions
+  const activeClause = active === "all"   ? sql``
+    : active === "false" ? sql`AND active = false`
+    : sql`AND active = true`;
+
+  const sourceClause = source ? sql`AND source = ${source}` : sql``;
+
   const r = await db.execute(sql`
     SELECT id, email, name, source, tags, active, subscribed_at
     FROM email_subscribers
-    ${where}
+    WHERE 1=1 ${activeClause} ${sourceClause}
     ORDER BY subscribed_at DESC
   `);
   res.json(r.rows);
 });
 
-/* DELETE /api/admin/subscribers/:id — unsubscribe */
+/* POST /api/admin/subscribers — manually add subscriber */
+router.post("/admin/subscribers", requireAdmin, async (req, res) => {
+  const { email, name, source } = req.body as {
+    email?: string; name?: string; source?: string;
+  };
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ error: "Valid email required" }); return;
+  }
+
+  const safeSource = source ?? "blog";
+  try {
+    const r = await db.execute(sql`
+      INSERT INTO email_subscribers (email, name, source, active)
+      VALUES (${email.toLowerCase().trim()}, ${name?.trim() ?? null}, ${safeSource}, true)
+      ON CONFLICT (email) DO UPDATE SET active = true, source = ${safeSource}
+      RETURNING id, email, name, source, active, subscribed_at
+    `);
+    res.json({ ok: true, subscriber: r.rows[0] });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ error: "Failed to add subscriber", detail: msg });
+  }
+});
+
+/* PATCH /api/admin/subscribers/:id/toggle — pause / unpause */
+router.patch("/admin/subscribers/:id/toggle", requireAdmin, async (req, res) => {
+  const id = parseInt(String(req.params.id ?? "0"), 10);
+  const r = await db.execute(sql`
+    UPDATE email_subscribers
+    SET active = NOT active
+    WHERE id = ${id}
+    RETURNING id, email, active
+  `);
+  if (!r.rows.length) { res.status(404).json({ error: "Subscriber not found" }); return; }
+  res.json({ ok: true, subscriber: r.rows[0] });
+});
+
+/* DELETE /api/admin/subscribers/:id — unsubscribe (soft) */
 router.delete("/admin/subscribers/:id", requireAdmin, async (req, res) => {
   const id = parseInt(String(req.params.id ?? "0"), 10);
   await db.execute(sql`UPDATE email_subscribers SET active = false WHERE id = ${id}`);
@@ -74,6 +141,102 @@ router.delete("/admin/subscribers/:id/hard", requireAdmin, async (req, res) => {
   await db.execute(sql`DELETE FROM email_subscribers WHERE id = ${id}`);
   res.json({ ok: true });
 });
+
+/* ── Blog Notification ───────────────────────────────────── */
+
+/* Core blog notification sender — called from blog route and force-send */
+export async function sendBlogNotificationToSubscribers(post: {
+  id: number;
+  title: string;
+  slug: string;
+  excerpt?: string | null;
+  coverImageUrl?: string | null;
+  author: string;
+  category: string;
+  readingTime?: string | null;
+}): Promise<{ sent: number; failed: number; skipped: number }> {
+  const r = await db.execute(sql`
+    SELECT id, email, name FROM email_subscribers
+    WHERE active = true AND source = 'blog'
+  `);
+  const subscribers = r.rows as { id: number; email: string; name: string | null }[];
+
+  if (subscribers.length === 0) return { sent: 0, failed: 0, skipped: 0 };
+
+  const baseUrl = await getSiteBaseUrl();
+  const from = await getSenderAddress();
+  const blogUrl = `${baseUrl}/blog/${post.slug}`;
+  const unsubUrl = `${baseUrl}/unsubscribe`;
+
+  const emails = subscribers.map(sub => ({
+    to: sub.email,
+    from,
+    subject: `📝 New Post: ${post.title}`,
+    html: buildBlogNotificationEmail({
+      subscriberName: sub.name,
+      blogTitle: post.title,
+      blogExcerpt: post.excerpt,
+      blogUrl,
+      coverImageUrl: post.coverImageUrl
+        ? post.coverImageUrl.startsWith("http")
+          ? post.coverImageUrl
+          : `${baseUrl}${post.coverImageUrl}`
+        : null,
+      author: post.author,
+      category: post.category,
+      readingTime: post.readingTime,
+      unsubscribeUrl: unsubUrl,
+    }),
+    listUnsubscribe: unsubUrl,
+  }));
+
+  const result = await sendBulkEmails(emails);
+  return { sent: result.sent, failed: result.failed, skipped: 0 };
+}
+
+/* POST /api/admin/blog-notify/:blogId — force send blog notification */
+router.post("/admin/blog-notify/:blogId", requireAdmin, async (req, res) => {
+  const blogId = parseInt(String(req.params.blogId ?? "0"), 10);
+
+  const r = await db.execute(sql`
+    SELECT id, title, slug, excerpt, cover_image_url, author, category, reading_time
+    FROM blog_posts WHERE id = ${blogId}
+  `);
+  const post = r.rows[0] as {
+    id: number; title: string; slug: string; excerpt: string | null;
+    cover_image_url: string | null; author: string; category: string;
+    reading_time: string | null;
+  } | undefined;
+
+  if (!post) { res.status(404).json({ error: "Blog post not found" }); return; }
+
+  const result = await sendBlogNotificationToSubscribers({
+    id: post.id,
+    title: post.title,
+    slug: post.slug,
+    excerpt: post.excerpt,
+    coverImageUrl: post.cover_image_url,
+    author: post.author,
+    category: post.category,
+    readingTime: post.reading_time,
+  });
+
+  res.json({ ok: true, ...result });
+});
+
+/* GET /api/admin/blog-notify/posts — published blog posts list for dropdown */
+router.get("/admin/blog-notify/posts", requireAdmin, async (_req, res) => {
+  const r = await db.execute(sql`
+    SELECT id, title, slug, published_at
+    FROM blog_posts
+    WHERE status = 'published'
+    ORDER BY published_at DESC
+    LIMIT 50
+  `);
+  res.json(r.rows);
+});
+
+/* ── Newsletter Toggle ───────────────────────────────────── */
 
 /* GET /api/settings/newsletter — public */
 router.get("/settings/newsletter", async (_req, res) => {

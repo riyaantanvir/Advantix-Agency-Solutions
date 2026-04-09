@@ -48,6 +48,13 @@ router.post("/tools/auth/register", async (req, res) => {
     req.session.toolUserEmail = user.email;
     req.session.toolUserName = user.name;
 
+    // Auto-subscribe new tool user to blog notifications (fire-and-forget)
+    db.execute(sql`
+      INSERT INTO email_subscribers (email, name, source, active)
+      VALUES (${user.email}, ${user.name}, 'blog', true)
+      ON CONFLICT (email) DO NOTHING
+    `).catch(() => {});
+
     res.json({ user: { id: user.id, name: user.name, email: user.email } });
   } catch (err) {
     res.status(500).json({ error: "Registration failed" });

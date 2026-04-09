@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, blogPostsTable } from "@workspace/db";
 import { eq, desc, and, ne, or, sql } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
+import { sendBlogNotificationToSubscribers } from "./reengagement.js";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -353,6 +354,20 @@ router.put("/admin/blog/:id", requireAdmin, async (req, res) => {
     publishedAt: nowPublished ? (wasPublished ? existing.publishedAt : new Date()) : null,
     updatedAt: new Date(),
   }).where(eq(blogPostsTable.id, id)).returning();
+
+  // Fire blog notification when a post goes from draft → published (fire-and-forget)
+  if (!wasPublished && nowPublished && updated) {
+    sendBlogNotificationToSubscribers({
+      id: updated.id,
+      title: updated.title,
+      slug: updated.slug,
+      excerpt: updated.excerpt,
+      coverImageUrl: updated.coverImageUrl,
+      author: updated.author,
+      category: updated.category,
+      readingTime: updated.readingTime,
+    }).catch(err => console.error("[blog-notify]", err));
+  }
 
   res.json(updated);
 });

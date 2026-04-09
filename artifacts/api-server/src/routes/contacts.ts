@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, contactsTable, adminsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 
 const router: IRouter = Router();
@@ -35,6 +35,13 @@ router.post("/contacts", async (req, res) => {
       message,
     })
     .returning();
+
+  // Auto-subscribe contact to blog notifications (fire-and-forget)
+  db.execute(sql`
+    INSERT INTO email_subscribers (email, name, source, active)
+    VALUES (${email.toLowerCase().trim()}, ${name.trim()}, 'blog', true)
+    ON CONFLICT (email) DO NOTHING
+  `).catch(() => {});
 
   res.status(201).json(contact);
 });
