@@ -126,7 +126,7 @@ export default function Portfolio() {
           <motion.div
             layout
             variants={grid}
-            initial="hidden"
+            initial={false}
             animate="show"
             className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
           >
