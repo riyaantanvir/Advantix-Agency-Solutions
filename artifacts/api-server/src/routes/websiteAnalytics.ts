@@ -48,8 +48,21 @@ router.post("/analytics/track", async (req, res) => {
 
 /* GET /api/analytics/website — admin only */
 router.get("/analytics/website", requireAdmin, async (req, res) => {
-  const days = parseInt(String(req.query.days ?? "30"));
-  const cacheKey = `analytics:website:${days}`;
+  const fromParam = req.query.from as string | undefined;
+  const toParam   = req.query.to   as string | undefined;
+  const days      = parseInt(String(req.query.days ?? "30"));
+
+  // Build WHERE time clause
+  let timeFilter: ReturnType<typeof sql>;
+  let cacheKey: string;
+  if (fromParam && toParam) {
+    timeFilter = sql`created_at >= ${fromParam}::date AND created_at < (${toParam}::date + INTERVAL '1 day')`;
+    cacheKey = `analytics:website:${fromParam}:${toParam}`;
+  } else {
+    timeFilter = sql`created_at >= NOW() - ${days} * INTERVAL '1 day'`;
+    cacheKey = `analytics:website:${days}`;
+  }
+
   const cached = cacheGet(cacheKey);
   if (cached) { res.json(cached); return; }
 
@@ -57,14 +70,12 @@ router.get("/analytics/website", requireAdmin, async (req, res) => {
     db.execute(sql`
       SELECT COUNT(DISTINCT session_id) AS sessions
       FROM page_events
-      WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      WHERE event_type = 'pageview' AND ${timeFilter}
     `),
     db.execute(sql`
       SELECT COUNT(*) AS pageviews
       FROM page_events
-      WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      WHERE event_type = 'pageview' AND ${timeFilter}
     `),
     db.execute(sql`
       SELECT COUNT(*) FILTER (WHERE pv_count = 1) AS bounced,
@@ -72,16 +83,14 @@ router.get("/analytics/website", requireAdmin, async (req, res) => {
       FROM (
         SELECT session_id, COUNT(*) AS pv_count
         FROM page_events
-        WHERE event_type = 'pageview'
-          AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+        WHERE event_type = 'pageview' AND ${timeFilter}
         GROUP BY session_id
       ) s
     `),
     db.execute(sql`
       SELECT ROUND(AVG(time_on_page)) AS avg_time_on_page
       FROM page_events
-      WHERE event_type = 'exit' AND time_on_page IS NOT NULL
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      WHERE event_type = 'exit' AND time_on_page IS NOT NULL AND ${timeFilter}
     `),
   ]);
 
@@ -90,8 +99,7 @@ router.get("/analytics/website", requireAdmin, async (req, res) => {
     db.execute(sql`
       SELECT to_char(created_at, 'YYYY-MM-DD') AS day, COUNT(*) AS pageviews,
              COUNT(DISTINCT session_id) AS sessions
-      FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      FROM page_events WHERE event_type = 'pageview' AND ${timeFilter}
       GROUP BY day ORDER BY day
     `),
     db.execute(sql`
@@ -99,14 +107,12 @@ router.get("/analytics/website", requireAdmin, async (req, res) => {
              COUNT(DISTINCT session_id) AS sessions,
              ROUND(AVG(CASE WHEN e.event_type = 'exit' THEN e.time_on_page END)) AS avg_time
       FROM page_events e
-      WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      WHERE event_type = 'pageview' AND ${timeFilter}
       GROUP BY page_path ORDER BY views DESC LIMIT 15
     `),
     db.execute(sql`
       SELECT COALESCE(country, 'Unknown') AS country, COUNT(DISTINCT session_id) AS sessions
-      FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      FROM page_events WHERE event_type = 'pageview' AND ${timeFilter}
       GROUP BY country ORDER BY sessions DESC LIMIT 10
     `),
     db.execute(sql`
@@ -116,8 +122,7 @@ router.get("/analytics/website", requireAdmin, async (req, res) => {
           ELSE referrer
         END AS referrer,
         COUNT(DISTINCT session_id) AS sessions
-      FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      FROM page_events WHERE event_type = 'pageview' AND ${timeFilter}
       GROUP BY
         CASE
           WHEN referrer IS NULL OR referrer = '' THEN 'Direct'
@@ -127,40 +132,34 @@ router.get("/analytics/website", requireAdmin, async (req, res) => {
     `),
     db.execute(sql`
       SELECT COALESCE(browser, 'Unknown') AS browser, COUNT(DISTINCT session_id) AS sessions
-      FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      FROM page_events WHERE event_type = 'pageview' AND ${timeFilter}
       GROUP BY browser ORDER BY sessions DESC LIMIT 8
     `),
     db.execute(sql`
       SELECT COALESCE(os, 'Unknown') AS os, COUNT(DISTINCT session_id) AS sessions
-      FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      FROM page_events WHERE event_type = 'pageview' AND ${timeFilter}
       GROUP BY os ORDER BY sessions DESC LIMIT 8
     `),
     db.execute(sql`
       SELECT COALESCE(device, 'Unknown') AS device, COUNT(DISTINCT session_id) AS sessions
-      FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      FROM page_events WHERE event_type = 'pageview' AND ${timeFilter}
       GROUP BY device ORDER BY sessions DESC
     `),
     db.execute(sql`
       SELECT EXTRACT(HOUR FROM created_at)::int AS hour, COUNT(*) AS pageviews
-      FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      FROM page_events WHERE event_type = 'pageview' AND ${timeFilter}
       GROUP BY hour ORDER BY hour
     `),
     db.execute(sql`
       SELECT TO_CHAR(created_at, 'Dy') AS day_name,
              EXTRACT(DOW FROM created_at)::int AS dow,
              COUNT(*) AS pageviews
-      FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      FROM page_events WHERE event_type = 'pageview' AND ${timeFilter}
       GROUP BY day_name, dow ORDER BY dow
     `),
     db.execute(sql`
       SELECT COALESCE(language, 'Unknown') AS language, COUNT(DISTINCT session_id) AS sessions
-      FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      FROM page_events WHERE event_type = 'pageview' AND ${timeFilter}
       GROUP BY language ORDER BY sessions DESC LIMIT 8
     `),
     db.execute(sql`
@@ -168,8 +167,7 @@ router.get("/analytics/website", requireAdmin, async (req, res) => {
              ROUND(AVG(scroll_depth)) AS avg_scroll,
              COUNT(*) AS readings
       FROM page_events
-      WHERE event_type = 'scroll' AND scroll_depth IS NOT NULL
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      WHERE event_type = 'scroll' AND scroll_depth IS NOT NULL AND ${timeFilter}
       GROUP BY page_path ORDER BY readings DESC LIMIT 10
     `),
     db.execute(sql`
@@ -177,8 +175,7 @@ router.get("/analytics/website", requireAdmin, async (req, res) => {
              ARRAY_AGG(page_path ORDER BY created_at) AS journey,
              COUNT(*) AS pages_visited,
              MIN(created_at) AS started_at
-      FROM page_events WHERE event_type = 'pageview'
-        AND created_at >= NOW() - ${days} * INTERVAL '1 day'
+      FROM page_events WHERE event_type = 'pageview' AND ${timeFilter}
       GROUP BY session_id
       ORDER BY started_at DESC LIMIT 20
     `),
@@ -187,7 +184,7 @@ router.get("/analytics/website", requireAdmin, async (req, res) => {
              COUNT(*) FILTER (WHERE event_type = 'pageview') AS page_views,
              MAX(created_at) AS last_seen
       FROM page_events
-      WHERE created_at >= NOW() - ${days} * INTERVAL '1 day'
+      WHERE ${timeFilter}
       GROUP BY session_id, country, city, browser, os, device, language
       ORDER BY last_seen DESC LIMIT 20
     `),

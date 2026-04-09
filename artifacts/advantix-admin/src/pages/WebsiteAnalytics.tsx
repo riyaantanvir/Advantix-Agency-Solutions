@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Loader2, Globe, Users, Eye, Clock, TrendingUp, Monitor, Smartphone, Languages, MapPin, BarChart2, Activity } from "lucide-react";
+import { Loader2, Globe, Users, Eye, Clock, TrendingUp, Monitor, Smartphone, Languages, MapPin, BarChart2, Activity, Calendar } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 const API = "/api";
@@ -180,22 +180,38 @@ function countryFlag(name: string): string {
   return map[name] ?? "🌐";
 }
 
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default function WebsiteAnalytics() {
   const [data, setData] = useState<WebsiteData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [days, setDays] = useState(30);
+  const [days, setDays] = useState<number | "today" | "custom">(30);
+  const [customFrom, setCustomFrom] = useState(todayStr());
+  const [customTo, setCustomTo] = useState(todayStr());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "pages" | "audience" | "journey">("overview");
 
   useEffect(() => {
     setLoading(true);
     setError("");
-    fetch(`${API}/analytics/website?days=${days}`, { credentials: "include" })
+    let url: string;
+    if (days === "today") {
+      const t = todayStr();
+      url = `${API}/analytics/website?from=${t}&to=${t}`;
+    } else if (days === "custom") {
+      url = `${API}/analytics/website?from=${customFrom}&to=${customTo}`;
+    } else {
+      url = `${API}/analytics/website?days=${days}`;
+    }
+    fetch(url, { credentials: "include" })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(setData)
       .catch(() => setError("Failed to load analytics"))
       .finally(() => setLoading(false));
-  }, [days]);
+  }, [days, customFrom, customTo]);
 
   const maxPage     = data ? Math.max(...(data.byPage ?? []).map(r => parseInt(r.views)), 1) : 1;
   const maxCountry  = data ? Math.max(...(data.byCountry ?? []).map(r => parseInt(r.sessions)), 1) : 1;
@@ -214,13 +230,48 @@ export default function WebsiteAnalytics() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">Real-time visitor data from your public website</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => { setDays("today"); setShowDatePicker(false); }}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${days === "today" ? "bg-primary text-primary-foreground" : "bg-secondary/60 text-muted-foreground hover:text-foreground"}`}>
+            Today
+          </button>
           {([7, 14, 30, 90] as const).map(d => (
-            <button key={d} onClick={() => setDays(d)}
+            <button key={d} onClick={() => { setDays(d); setShowDatePicker(false); }}
               className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${days === d ? "bg-primary text-primary-foreground" : "bg-secondary/60 text-muted-foreground hover:text-foreground"}`}>
               {d}d
             </button>
           ))}
+          <div className="relative">
+            <button
+              onClick={() => { setShowDatePicker(v => !v); setDays("custom"); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${days === "custom" ? "bg-primary text-primary-foreground" : "bg-secondary/60 text-muted-foreground hover:text-foreground"}`}>
+              <Calendar className="w-3.5 h-3.5" />
+              {days === "custom" ? `${customFrom} → ${customTo}` : "Custom"}
+            </button>
+            {showDatePicker && (
+              <div className="absolute right-0 top-full mt-2 z-50 bg-popover border border-border rounded-xl shadow-2xl p-4 min-w-[280px]">
+                <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Select Date Range</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">From</label>
+                    <input type="date" value={customFrom} max={customTo}
+                      onChange={e => { setCustomFrom(e.target.value); setDays("custom"); }}
+                      className="w-full bg-secondary border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">To</label>
+                    <input type="date" value={customTo} min={customFrom} max={todayStr()}
+                      onChange={e => { setCustomTo(e.target.value); setDays("custom"); }}
+                      className="w-full bg-secondary border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                  </div>
+                  <button onClick={() => setShowDatePicker(false)}
+                    className="w-full bg-primary text-primary-foreground rounded-lg py-1.5 text-sm font-medium hover:bg-primary/90 transition-colors">
+                    Apply
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
