@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, Search, Pencil, Trash2, Eye, FileText, Star, StarOff,
-  Globe, FileX, Loader2, Tag, Calendar, Clock,
+  Globe, FileX, Loader2, Tag, Calendar, Clock, Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,12 +44,34 @@ function formatDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
+async function exportSinglePost(post: BlogPost, toast: ReturnType<typeof useToast>["toast"]) {
+  try {
+    const full = await apiFetch(`/api/admin/blog/${post.id}`);
+    const data = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      posts: [full],
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${post.slug || `post-${post.id}`}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Post exported", description: `${post.title} saved as JSON` });
+  } catch {
+    toast({ title: "Export failed", variant: "destructive" });
+  }
+}
+
 export default function Blog() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [exportingId, setExportingId] = useState<number | null>(null);
 
   const { data: posts = [], isLoading } = useQuery<BlogPost[]>({
     queryKey: ["admin-blog-posts"],
@@ -252,6 +274,20 @@ export default function Blog() {
                               <Pencil size={15} />
                             </button>
                           </Link>
+                          <button
+                            onClick={async () => {
+                              setExportingId(post.id);
+                              await exportSinglePost(post, toast);
+                              setExportingId(null);
+                            }}
+                            disabled={exportingId === post.id}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-emerald-400 hover:bg-secondary transition-colors disabled:opacity-40"
+                            title="Export as JSON"
+                          >
+                            {exportingId === post.id
+                              ? <Loader2 size={15} className="animate-spin" />
+                              : <Download size={15} />}
+                          </button>
                           {deletingId === post.id ? (
                             <div className="flex items-center gap-1 ml-1">
                               <button onClick={() => setDeletingId(null)} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded border border-border">Cancel</button>
