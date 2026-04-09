@@ -2,7 +2,8 @@ import { SEO } from "@/components/SEO";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { Calendar, Clock, Tag, ArrowRight, Loader2, Rss, Eye } from "lucide-react";
+import { Calendar, Clock, ArrowRight, Loader2, Search, Eye } from "lucide-react";
+import { useState, useMemo } from "react";
 
 type BlogPost = {
   id: number;
@@ -23,19 +24,22 @@ type BlogPost = {
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+const fadeUp = {
+  hidden: { opacity: 0, y: 16 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.4 } },
+};
 const stagger = {
   hidden: {},
-  show: { transition: { staggerChildren: 0.08 } },
-};
-const fadeUp = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+  show: { transition: { staggerChildren: 0.06 } },
 };
 
 export default function Blog() {
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [search, setSearch] = useState("");
+
   const { data: posts = [], isLoading } = useQuery<BlogPost[]>({
     queryKey: ["blog-posts"],
     queryFn: async () => {
@@ -46,8 +50,22 @@ export default function Blog() {
     staleTime: 2 * 60 * 1000,
   });
 
-  const featuredPost = posts.find((p) => p.featured) ?? posts[0] ?? null;
-  const regularPosts = posts.filter((p) => p.id !== featuredPost?.id);
+  const categories = useMemo(() => {
+    const cats = Array.from(new Set(posts.map((p) => p.category).filter(Boolean)));
+    return ["All", ...cats];
+  }, [posts]);
+
+  const filtered = useMemo(() => {
+    return posts.filter((p) => {
+      const matchCat = activeCategory === "All" || p.category === activeCategory;
+      const q = search.toLowerCase();
+      const matchSearch = !q || p.title.toLowerCase().includes(q) || (p.excerpt ?? "").toLowerCase().includes(q);
+      return matchCat && matchSearch;
+    });
+  }, [posts, activeCategory, search]);
+
+  const featuredPost = filtered.find((p) => p.featured) ?? filtered[0] ?? null;
+  const gridPosts = filtered.filter((p) => p.id !== featuredPost?.id);
 
   const blogStructuredData = [
     {
@@ -56,19 +74,7 @@ export default function Blog() {
       "name": "Advantix Digital Blog",
       "url": "https://advantix.digital/blog",
       "description": "Tips, insights, and case studies on web development, digital marketing, automation, and business growth from the Advantix Digital team.",
-      "publisher": {
-        "@type": "Organization",
-        "name": "Advantix Digital",
-        "url": "https://advantix.digital",
-      },
-    },
-    {
-      "@context": "https://schema.org",
-      "@type": "BreadcrumbList",
-      "itemListElement": [
-        { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://advantix.digital/" },
-        { "@type": "ListItem", "position": 2, "name": "Blog", "item": "https://advantix.digital/blog" },
-      ],
+      "publisher": { "@type": "Organization", "name": "Advantix Digital", "url": "https://advantix.digital" },
     },
   ];
 
@@ -76,75 +82,131 @@ export default function Blog() {
     <div className="min-h-screen bg-background">
       <SEO
         title="Blog — Web Dev, Marketing & Automation Tips"
-        description="Read the latest articles from Advantix Digital on web development, CRM, digital marketing, automation, and business growth strategies. Expert insights from our team in Bangladesh."
-        keywords="digital agency blog, web development tips, marketing strategies, automation tutorials, CRM setup guide, ecommerce tips, bangladesh tech blog, advantix blog"
+        description="Read the latest articles from Advantix Digital on web development, CRM, digital marketing, automation, and business growth strategies."
+        keywords="digital agency blog, web development tips, marketing strategies, automation tutorials, CRM setup guide, advantix blog"
         canonical="/blog"
         structuredData={blogStructuredData}
       />
-      {/* Hero */}
-      <section className="relative py-24 pt-36 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
-        <div className="max-w-6xl mx-auto px-6 relative">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }} className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-medium mb-6">
-              <Rss size={14} /> Blog & Insights
-            </div>
-            <h1 className="text-4xl md:text-6xl font-display font-black text-foreground mb-4">
-              Ideas That <span className="text-primary">Drive Results</span>
-            </h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Insights on design, technology, marketing, and what it takes to build brands that convert.
-            </p>
-          </motion.div>
 
+      {/* ── Hero ── */}
+      <section className="pt-32 pb-10 px-6">
+        <div className="max-w-5xl mx-auto text-center">
+          <motion.p
+            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
+            className="text-xs font-semibold tracking-[0.2em] uppercase text-primary mb-3"
+          >
+            Blog & Insights
+          </motion.p>
+          <motion.h1
+            initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.05 }}
+            className="text-3xl md:text-5xl font-display font-black text-foreground mb-3"
+          >
+            Ideas That <span className="text-primary">Drive Results</span>
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.1 }}
+            className="text-muted-foreground text-base max-w-xl mx-auto"
+          >
+            Insights on design, technology, marketing, and what it takes to build brands that convert.
+          </motion.p>
+        </div>
+      </section>
+
+      {/* ── Filters ── */}
+      <section className="px-6 pb-8">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center gap-4">
+          {/* Category tabs */}
+          <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border ${
+                  activeCategory === cat
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-transparent text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* Search */}
+          <div className="relative sm:ml-auto">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search posts..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8 pr-4 py-1.5 rounded-full border border-border bg-card text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 w-52"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ── Content ── */}
+      <section className="px-6 pb-24">
+        <div className="max-w-5xl mx-auto">
           {isLoading ? (
-            <div className="flex items-center justify-center py-24 text-muted-foreground gap-3">
-              <Loader2 size={20} className="animate-spin" /> Loading posts...
+            <div className="flex items-center justify-center py-32 text-muted-foreground gap-3">
+              <Loader2 size={18} className="animate-spin" /> Loading posts…
             </div>
-          ) : posts.length === 0 ? (
-            <div className="text-center py-24">
-              <Rss size={40} className="mx-auto mb-3 text-muted-foreground/30" />
-              <p className="text-muted-foreground font-medium">No posts yet</p>
-              <p className="text-muted-foreground/60 text-sm mt-1">Check back soon for articles and insights.</p>
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-32">
+              <p className="text-muted-foreground font-medium">No posts found</p>
+              <p className="text-muted-foreground/50 text-sm mt-1">Try a different category or search term.</p>
             </div>
           ) : (
-            <>
-              {/* Featured Post */}
+            <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-10">
+
+              {/* ── Featured post — compact horizontal ── */}
               {featuredPost && (
-                <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }} className="mb-16">
+                <motion.div variants={fadeUp}>
                   <Link href={`/blog/${featuredPost.slug}`}>
-                    <div className="group cursor-pointer grid md:grid-cols-2 gap-0 rounded-2xl overflow-hidden border border-border/50 hover:border-primary/30 transition-all duration-300 bg-card hover:shadow-xl hover:shadow-primary/5">
-                      {featuredPost.coverImageUrl ? (
-                        <div className="overflow-hidden aspect-[16/10] md:aspect-auto">
+                    <div className="group cursor-pointer grid sm:grid-cols-[260px_1fr] gap-0 rounded-2xl overflow-hidden border border-border/50 hover:border-primary/30 bg-card transition-all duration-300 hover:shadow-lg hover:shadow-primary/5">
+                      {/* Image */}
+                      <div className="overflow-hidden h-44 sm:h-auto">
+                        {featuredPost.coverImageUrl ? (
                           <img
                             src={featuredPost.coverImageUrl}
                             alt={featuredPost.title}
                             loading="lazy"
-                            decoding="async"
-                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                           />
-                        </div>
-                      ) : (
-                        <div className="aspect-[16/10] md:aspect-auto bg-gradient-to-br from-primary/20 to-violet-900/30 flex items-center justify-center">
-                          <span className="text-6xl font-display font-black text-white/10">{featuredPost.title[0]}</span>
-                        </div>
-                      )}
-                      <div className="p-8 md:p-10 flex flex-col justify-center">
-                        <div className="flex items-center gap-2 mb-4">
-                          <span className="px-2.5 py-1 bg-primary/15 text-primary text-xs font-medium rounded-full border border-primary/20">Featured</span>
-                          <span className="px-2.5 py-1 bg-secondary text-muted-foreground text-xs rounded-full">{featuredPost.category}</span>
-                        </div>
-                        <h2 className="text-2xl md:text-3xl font-display font-bold text-foreground mb-3 group-hover:text-primary transition-colors">
-                          {featuredPost.title}
-                        </h2>
-                        {featuredPost.excerpt && <p className="text-muted-foreground mb-5 line-clamp-3">{featuredPost.excerpt}</p>}
-                        <div className="flex items-center justify-between mt-auto">
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            {featuredPost.publishedAt && <span className="flex items-center gap-1"><Calendar size={12} />{formatDate(featuredPost.publishedAt)}</span>}
-                            {featuredPost.readingTime && <span className="flex items-center gap-1"><Clock size={12} />{featuredPost.readingTime}</span>}
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-primary/20 to-violet-900/30 flex items-center justify-center">
+                            <span className="text-5xl font-black text-white/10">{featuredPost.title[0]}</span>
                           </div>
-                          <span className="flex items-center gap-1 text-primary text-sm font-medium group-hover:gap-2 transition-all">
-                            Read more <ArrowRight size={14} />
+                        )}
+                      </div>
+
+                      {/* Content */}
+                      <div className="p-6 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="px-2 py-0.5 bg-primary/10 text-primary text-[11px] font-semibold rounded-full border border-primary/20">Featured</span>
+                            <span className="px-2 py-0.5 bg-secondary text-muted-foreground text-[11px] rounded-full">{featuredPost.category}</span>
+                          </div>
+                          <h2 className="text-lg font-display font-bold text-foreground group-hover:text-primary transition-colors mb-2 line-clamp-2">
+                            {featuredPost.title}
+                          </h2>
+                          {featuredPost.excerpt && (
+                            <p className="text-sm text-muted-foreground line-clamp-2">{featuredPost.excerpt}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between mt-4">
+                          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                            {featuredPost.publishedAt && (
+                              <span className="flex items-center gap-1"><Calendar size={11} />{formatDate(featuredPost.publishedAt)}</span>
+                            )}
+                            {featuredPost.readingTime && (
+                              <span className="flex items-center gap-1"><Clock size={11} />{featuredPost.readingTime} min read</span>
+                            )}
+                          </div>
+                          <span className="flex items-center gap-1 text-primary text-xs font-medium group-hover:gap-2 transition-all">
+                            Read more <ArrowRight size={12} />
                           </span>
                         </div>
                       </div>
@@ -153,57 +215,63 @@ export default function Blog() {
                 </motion.div>
               )}
 
-              {/* Regular Posts Grid */}
-              {regularPosts.length > 0 && (
-                <motion.div
-                  variants={stagger}
-                  initial="hidden"
-                  animate="show"
-                  className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
-                >
-                  {regularPosts.map((post) => (
+              {/* ── Grid ── */}
+              {gridPosts.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                  {gridPosts.map((post) => (
                     <motion.div key={post.id} variants={fadeUp}>
                       <Link href={`/blog/${post.slug}`}>
-                        <div className="group cursor-pointer bg-card border border-border/50 hover:border-primary/30 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-1 h-full flex flex-col">
-                          {post.coverImageUrl ? (
-                            <div className="overflow-hidden aspect-[16/10]">
+                        <div className="group cursor-pointer bg-card border border-border/50 hover:border-primary/30 rounded-xl overflow-hidden transition-all duration-300 hover:shadow-md hover:shadow-primary/5 hover:-translate-y-0.5 h-full flex flex-col">
+                          {/* Image */}
+                          <div className="overflow-hidden h-40">
+                            {post.coverImageUrl ? (
                               <img
                                 src={post.coverImageUrl}
                                 alt={post.title}
                                 loading="lazy"
-                                decoding="async"
                                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                               />
-                            </div>
-                          ) : (
-                            <div className="aspect-[16/10] bg-gradient-to-br from-secondary to-muted flex items-center justify-center">
-                              <span className="text-4xl font-display font-black text-muted-foreground/20">{post.title[0]}</span>
-                            </div>
-                          )}
-                          <div className="p-5 flex flex-col flex-1">
-                            <div className="flex items-center gap-2 mb-3">
-                              <span className="text-xs text-muted-foreground flex items-center gap-1"><Tag size={10} />{post.category}</span>
-                            </div>
-                            <h3 className="font-display font-bold text-foreground text-lg mb-2 group-hover:text-primary transition-colors line-clamp-2">
+                            ) : (
+                              <div className="w-full h-full bg-gradient-to-br from-secondary to-muted flex items-center justify-center">
+                                <span className="text-3xl font-black text-muted-foreground/20">{post.title[0]}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Content */}
+                          <div className="p-4 flex flex-col flex-1">
+                            {/* Category badge */}
+                            <span className="inline-block self-start px-2 py-0.5 bg-primary/8 text-primary text-[10px] font-semibold rounded-full border border-primary/15 mb-2">
+                              {post.category}
+                            </span>
+
+                            <h3 className="font-display font-bold text-foreground text-sm mb-1.5 group-hover:text-primary transition-colors line-clamp-2 leading-snug">
                               {post.title}
                             </h3>
-                            {post.excerpt && <p className="text-sm text-muted-foreground line-clamp-3 flex-1">{post.excerpt}</p>}
-                            <div className="flex items-center gap-3 mt-4 pt-4 border-t border-border/50 text-xs text-muted-foreground">
-                              <span className="text-foreground/60 font-medium">{post.author}</span>
-                              <span className="ml-auto flex items-center gap-3">
-                                {post.publishedAt && <span className="flex items-center gap-1"><Calendar size={10} />{formatDate(post.publishedAt)}</span>}
-                                {post.readingTime && <span className="flex items-center gap-1"><Clock size={10} />{post.readingTime}</span>}
-                                {post.views > 0 && <span className="flex items-center gap-1"><Eye size={10} />{post.views}</span>}
-                              </span>
+                            {post.excerpt && (
+                              <p className="text-xs text-muted-foreground line-clamp-2 flex-1 leading-relaxed">{post.excerpt}</p>
+                            )}
+
+                            <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/40 text-[10px] text-muted-foreground">
+                              {post.publishedAt && (
+                                <span className="flex items-center gap-1"><Calendar size={9} />{formatDate(post.publishedAt)}</span>
+                              )}
+                              {post.readingTime && (
+                                <span className="flex items-center gap-1"><Clock size={9} />{post.readingTime} min</span>
+                              )}
+                              {post.views > 0 && (
+                                <span className="flex items-center gap-1 ml-auto"><Eye size={9} />{post.views}</span>
+                              )}
                             </div>
                           </div>
                         </div>
                       </Link>
                     </motion.div>
                   ))}
-                </motion.div>
+                </div>
               )}
-            </>
+
+            </motion.div>
           )}
         </div>
       </section>
