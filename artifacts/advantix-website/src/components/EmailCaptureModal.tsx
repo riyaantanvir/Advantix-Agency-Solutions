@@ -19,8 +19,15 @@ export function EmailCaptureModal() {
       localStorage.getItem(CAPTURED_KEY)
     ) return;
 
-    const t = setTimeout(() => setOpen(true), 15000);
-    return () => clearTimeout(t);
+    // Check if newsletter is enabled before showing modal
+    fetch(`${BASE}/api/settings/newsletter`)
+      .then(r => r.json())
+      .then((data: { enabled: boolean }) => {
+        if (!data.enabled) return;
+        const t = setTimeout(() => setOpen(true), 15000);
+        return () => clearTimeout(t);
+      })
+      .catch(() => {});
   }, []);
 
   const dismiss = () => {
@@ -43,9 +50,9 @@ export function EmailCaptureModal() {
       localStorage.setItem(CAPTURED_KEY, "1");
       setStatus("done");
       setTimeout(() => setOpen(false), 3000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setStatus("error");
-      setErrMsg(err.message ?? "Something went wrong. Please try again.");
+      setErrMsg(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     }
   };
 
