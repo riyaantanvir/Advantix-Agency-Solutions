@@ -146,6 +146,13 @@ router.patch("/admin/tasks/:id/status", requireAdmin, async (req: Request, res: 
     return;
   }
 
+  // Fetch current status BEFORE updating
+  const [current] = await db
+    .select({ status: tasksTable.status })
+    .from(tasksTable)
+    .where(eq(tasksTable.id, id))
+    .limit(1);
+
   const [updated] = await db
     .update(tasksTable)
     .set({ status, updatedAt: new Date() })
@@ -159,8 +166,8 @@ router.patch("/admin/tasks/:id/status", requireAdmin, async (req: Request, res: 
 
   res.json(updated);
 
-  // Get old task to compare status
-  const oldStatus = (req.body as { _prevStatus?: string })._prevStatus;
+  // Send Telegram notification if status actually changed
+  const oldStatus = current?.status;
   if (oldStatus && oldStatus !== status) {
     sendTelegramMessage(
       buildStatusChangedMessage({ title: updated.title, oldStatus, newStatus: status, assignedTo: updated.assignedTo }),
