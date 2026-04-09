@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { db, toolUsersTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
+import { ADMIN_TOOL_USER_ID, ADMIN_TOOL_USER_NAME, ADMIN_TOOL_USER_EMAIL } from "../middleware/toolAuth.js";
 
 const router = Router();
 
@@ -83,17 +84,33 @@ router.post("/tools/auth/login", async (req, res) => {
 });
 
 router.get("/tools/auth/me", (req, res) => {
-  if (!req.session.toolUserId) {
-    res.status(401).json({ error: "Not authenticated" });
+  if (req.session.toolUserId) {
+    res.json({
+      user: {
+        id: req.session.toolUserId,
+        name: req.session.toolUserName,
+        email: req.session.toolUserEmail,
+        isAdmin: !!(req.session as any).adminId,
+      },
+    });
     return;
   }
-  res.json({
-    user: {
-      id: req.session.toolUserId,
-      name: req.session.toolUserName,
-      email: req.session.toolUserEmail,
-    },
-  });
+  const adminSession = req.session as { adminId?: number; username?: string };
+  if (adminSession.adminId) {
+    req.session.toolUserId = ADMIN_TOOL_USER_ID;
+    req.session.toolUserName = ADMIN_TOOL_USER_NAME;
+    req.session.toolUserEmail = ADMIN_TOOL_USER_EMAIL;
+    res.json({
+      user: {
+        id: ADMIN_TOOL_USER_ID,
+        name: adminSession.username ?? ADMIN_TOOL_USER_NAME,
+        email: ADMIN_TOOL_USER_EMAIL,
+        isAdmin: true,
+      },
+    });
+    return;
+  }
+  res.status(401).json({ error: "Not authenticated" });
 });
 
 router.get("/tools/auth/profile", async (req, res) => {
