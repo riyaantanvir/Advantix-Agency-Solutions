@@ -57,6 +57,7 @@ export default function CustomPageEditor() {
   const [editingFolder, setEditingFolder] = useState<{ id: number; name: string; description: string } | null>(null);
   const [showPasswordField, setShowPasswordField] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [pendingPreviews, setPendingPreviews] = useState<{ tempId: string; localUrl: string; folderId: number }[]>([]);
 
   const { data: page, isLoading } = useQuery<CustomPage>({
     queryKey: ["custom-page", id],
@@ -162,28 +163,45 @@ export default function CustomPageEditor() {
 
   const uploadImages = useCallback(async (files: FileList, folderId: number) => {
     if (!files.length) return;
+
+    // Create local previews immediately for all files
+    const previews = Array.from(files).map((file) => ({
+      tempId: Math.random().toString(36).slice(2),
+      localUrl: URL.createObjectURL(file),
+      folderId,
+    }));
+    setPendingPreviews(prev => [...prev, ...previews]);
     setUploading(true);
-    try {
-      const uploaded: GalleryImage[] = [];
-      for (const file of Array.from(files)) {
+
+    let successCount = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const tempId = previews[i].tempId;
+      try {
         const formData = new FormData();
         formData.append("file", file);
-        const img = await apiFetch(`/api/admin/custom-pages/${id}/folders/${folderId}/images`, {
+        const img: GalleryImage = await apiFetch(`/api/admin/custom-pages/${id}/folders/${folderId}/images`, {
           method: "POST",
           body: formData,
         });
-        uploaded.push(img);
+        // Revoke the object URL and remove pending preview, add real image
+        URL.revokeObjectURL(previews[i].localUrl);
+        setPendingPreviews(prev => prev.filter(p => p.tempId !== tempId));
+        setFolders(prev => prev.map(f =>
+          f.id === folderId ? { ...f, images: [...f.images, img] } : f
+        ));
+        setSelectedFolder(prev => prev?.id === folderId ? { ...prev, images: [...prev.images, img] } : prev);
+        successCount++;
+      } catch {
+        // Remove failed preview
+        URL.revokeObjectURL(previews[i].localUrl);
+        setPendingPreviews(prev => prev.filter(p => p.tempId !== tempId));
       }
-      setFolders(prev => prev.map(f =>
-        f.id === folderId ? { ...f, images: [...f.images, ...uploaded] } : f
-      ));
-      setSelectedFolder(prev => prev?.id === folderId ? { ...prev, images: [...prev.images, ...uploaded] } : prev);
-      toast({ title: `${uploaded.length} image(s) uploaded` });
-    } catch (e: unknown) {
-      toast({ title: e instanceof Error ? e.message : "Upload failed", variant: "destructive" });
-    } finally {
-      setUploading(false);
     }
+
+    setUploading(false);
+    if (successCount > 0) toast({ title: `${successCount} image${successCount > 1 ? "s" : ""} uploaded` });
+    if (successCount < files.length) toast({ title: `${files.length - successCount} image(s) failed`, variant: "destructive" });
   }, [id, toast]);
 
   const deleteImage = async (folderId: number, imageId: number) => {
@@ -472,7 +490,14 @@ export default function CustomPageEditor() {
                     <div className="px-5 py-4 border-b border-border flex items-center justify-between">
                       <div>
                         <p className="font-semibold text-sm">{selectedFolder.name}</p>
-                        <p className="text-xs text-muted-foreground">{currentImages.length} image{currentImages.length !== 1 ? "s" : ""}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {currentImages.length + pendingPreviews.filter(p => p.folderId === selectedFolder.id).length} image{(currentImages.length + pendingPreviews.filter(p => p.folderId === selectedFolder.id).length) !== 1 ? "s" : ""}
+                          {pendingPreviews.filter(p => p.folderId === selectedFolder.id).length > 0 && (
+                            <span className="ml-1 text-primary">
+                              ({pendingPreviews.filter(p => p.folderId === selectedFolder.id).length} uploading…)
+                            </span>
+                          )}
+                        </p>
                       </div>
                       <div className="flex items-center gap-2">
                         <input
@@ -506,55 +531,73 @@ export default function CustomPageEditor() {
                         if (e.dataTransfer.files.length) uploadImages(e.dataTransfer.files, selectedFolder.id);
                       }}
                     >
-                      {currentImages.length === 0 ? (
-                        <div className="border-2 border-dashed border-border rounded-xl py-12 flex flex-col items-center gap-3 text-muted-foreground">
-                          <Upload className="w-8 h-8 opacity-50" />
-                          <p className="text-sm font-medium">Drop images here or click Upload</p>
-                          <p className="text-xs">Supports JPG, PNG, WebP up to 10MB each</p>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                          {currentImages.map((img, idx) => (
-                            <div key={img.id} className="group relative aspect-square rounded-xl overflow-hidden bg-muted">
-                              <img
-                                src={img.url}
-                                alt={img.caption ?? ""}
-                                className="w-full h-full object-cover"
-                              />
-                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                <button
-                                  onClick={() => setLightbox({ images: currentImages, index: idx })}
-                                  className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
-                                >
-                                  <ZoomIn className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => setCoverImage(selectedFolder.id, img.url)}
-                                  className={`p-1.5 rounded-lg transition-colors ${
-                                    selectedFolder.cover_image_url === img.url
-                                      ? "bg-yellow-400 text-black"
-                                      : "bg-white/20 hover:bg-white/30 text-white"
-                                  }`}
-                                  title="Set as cover"
-                                >
-                                  <Star className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => deleteImage(selectedFolder.id, img.id)}
-                                  className="p-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 text-white transition-colors"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                              {selectedFolder.cover_image_url === img.url && (
-                                <div className="absolute top-1.5 left-1.5 bg-yellow-400 text-black text-[9px] font-bold px-1 rounded">
-                                  COVER
+                      {(() => {
+                        const folderPending = pendingPreviews.filter(p => p.folderId === selectedFolder.id);
+                        const hasContent = currentImages.length > 0 || folderPending.length > 0;
+                        return !hasContent ? (
+                          <div className="border-2 border-dashed border-border rounded-xl py-12 flex flex-col items-center gap-3 text-muted-foreground">
+                            <Upload className="w-8 h-8 opacity-50" />
+                            <p className="text-sm font-medium">Drop images here or click Upload</p>
+                            <p className="text-xs">Supports JPG, PNG, WebP up to 10MB each</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                            {currentImages.map((img, idx) => (
+                              <div key={img.id} className="group relative aspect-square rounded-xl overflow-hidden bg-muted">
+                                <img
+                                  src={img.url}
+                                  alt={img.caption ?? ""}
+                                  className="w-full h-full object-cover"
+                                />
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                  <button
+                                    onClick={() => setLightbox({ images: currentImages, index: idx })}
+                                    className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
+                                  >
+                                    <ZoomIn className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => setCoverImage(selectedFolder.id, img.url)}
+                                    className={`p-1.5 rounded-lg transition-colors ${
+                                      selectedFolder.cover_image_url === img.url
+                                        ? "bg-yellow-400 text-black"
+                                        : "bg-white/20 hover:bg-white/30 text-white"
+                                    }`}
+                                    title="Set as cover"
+                                  >
+                                    <Star className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => deleteImage(selectedFolder.id, img.id)}
+                                    className="p-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 text-white transition-colors"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
                                 </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                                {selectedFolder.cover_image_url === img.url && (
+                                  <div className="absolute top-1.5 left-1.5 bg-yellow-400 text-black text-[9px] font-bold px-1 rounded">
+                                    COVER
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                            {/* Pending upload previews */}
+                            {folderPending.map((p) => (
+                              <div key={p.tempId} className="relative aspect-square rounded-xl overflow-hidden bg-muted">
+                                <img
+                                  src={p.localUrl}
+                                  alt=""
+                                  className="w-full h-full object-cover blur-[2px] scale-105 brightness-75"
+                                />
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
+                                  <Loader2 className="w-6 h-6 text-white animate-spin drop-shadow" />
+                                  <span className="text-white text-[10px] font-semibold drop-shadow">Uploading…</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </motion.div>
                 )}
