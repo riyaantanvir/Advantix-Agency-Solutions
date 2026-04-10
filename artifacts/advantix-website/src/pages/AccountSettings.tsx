@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Link, useLocation } from "wouter";
 import {
   ArrowLeft, User, Building2, Phone, Globe, Lock,
-  CheckCircle, AlertCircle, Loader2, Eye, EyeOff, Save
+  CheckCircle, AlertCircle, Loader2, Eye, EyeOff, Save, Heart
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -143,6 +143,24 @@ export default function AccountSettings() {
         </motion.div>
 
         <div className="space-y-6">
+
+          {/* ── Favorites shortcut ───────────────────── */}
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: expo, delay: 0.02 }}>
+            <Link href="/favorites">
+              <Card className="p-5 border-border/50 hover:border-red-500/30 hover:bg-red-500/5 transition-all cursor-pointer group">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-red-500/10 flex items-center justify-center group-hover:bg-red-500/20 transition-colors">
+                    <Heart className="w-5 h-5 text-red-500 fill-current" />
+                  </div>
+                  <div className="flex-1">
+                    <h2 className="font-bold text-base leading-none">My Favorites</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">View all your saved gallery images</p>
+                  </div>
+                  <ArrowLeft className="w-4 h-4 text-muted-foreground rotate-180 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </Card>
+            </Link>
+          </motion.div>
 
           {/* ── Profile Info ──────────────────────────── */}
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: expo, delay: 0.05 }}>

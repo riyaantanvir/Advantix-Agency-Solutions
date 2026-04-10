@@ -2,7 +2,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "wouter";
 import { Helmet } from "react-helmet-async";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, ChevronLeft, ChevronRight, X, FolderOpen, Eye } from "lucide-react";
+import { Lock, ChevronLeft, ChevronRight, X, FolderOpen, Eye, Heart, UserCircle2 } from "lucide-react";
+import { useToolsUser } from "@/context/ToolsUserContext";
+import { LoginForm } from "@/components/LoginForm";
+import type { ToolUser } from "@/lib/toolsApi";
 
 /* ── Ultra-fast lazy image with skeleton placeholder ─────────────────────── */
 function LazyImage({
@@ -14,18 +17,14 @@ function LazyImage({
   const [error, setError] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
-  // If already cached/loaded by browser, mark as loaded immediately
   useEffect(() => {
-    if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
-      setLoaded(true);
-    }
+    if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) setLoaded(true);
   }, []);
 
   return (
     <div className={`relative overflow-hidden bg-muted/40 ${className ?? ""}`} onClick={onClick}>
-      {/* Shimmer skeleton */}
       {!loaded && !error && (
-        <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-muted/40 via-muted/70 to-muted/40 bg-[length:200%_100%]"
+        <div className="absolute inset-0 bg-gradient-to-r from-muted/40 via-muted/70 to-muted/40"
           style={{ animation: "shimmer 1.5s infinite linear", backgroundSize: "200% 100%" }}
         />
       )}
@@ -57,14 +56,18 @@ type CustomPageData = {
   id: number; slug: string; title: string; type: "gallery" | "content";
   description: string | null; content: string | null; is_published: boolean;
   meta_title: string | null; meta_description: string | null;
-  requiresPassword?: boolean; folders?: GalleryFolder[];
+  requiresPassword?: boolean; requiresLogin?: boolean; folders?: GalleryFolder[];
 };
 
 export default function CustomPage() {
   const { slug } = useParams<{ slug: string }>();
+  const { user, isAdmin, setUser, loading: authLoading } = useToolsUser();
+
   const [page, setPage] = useState<CustomPageData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [requiresLogin, setRequiresLogin] = useState(false);
+  const [loginPageTitle, setLoginPageTitle] = useState("");
   const [requiresPassword, setRequiresPassword] = useState(false);
   const [password, setPassword] = useState("");
   const [pwError, setPwError] = useState("");
@@ -72,13 +75,30 @@ export default function CustomPage() {
   const [selectedFolder, setSelectedFolder] = useState<GalleryFolder | null>(null);
   const [lightbox, setLightbox] = useState<{ images: GalleryImage[]; index: number } | null>(null);
 
-  useEffect(() => {
+  // Favorites: set of favorited image IDs for this page
+  const [favoritedIds, setFavoritedIds] = useState<Set<number>>(new Set());
+  const [togglingId, setTogglingId] = useState<number | null>(null);
+
+  const fetchPage = useCallback(() => {
+    if (authLoading) return;
+    setLoading(true);
     fetch(`${BASE}/api/pages/${slug}`, { credentials: "include" })
       .then(async r => {
+        if (r.status === 401) {
+          const data = await r.json();
+          if (data.requiresLogin) {
+            setRequiresLogin(true);
+            setLoginPageTitle(data.title ?? "");
+          } else {
+            setNotFound(true);
+          }
+          return;
+        }
         if (!r.ok) { setNotFound(true); return; }
         const data: CustomPageData = await r.json();
         if (data.requiresPassword) {
           setRequiresPassword(true);
+          setLoginPageTitle(data.title ?? "");
         } else {
           setPage(data);
           if (data.folders?.length) setSelectedFolder(data.folders[0]);
@@ -86,11 +106,54 @@ export default function CustomPage() {
       })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
-  }, [slug]);
+  }, [slug, authLoading]);
+
+  useEffect(() => { fetchPage(); }, [fetchPage]);
+
+  // Load favorite IDs when page is loaded and user is logged in
+  useEffect(() => {
+    if (!page || !user) return;
+    fetch(`${BASE}/api/favorites/images/page/${page.id}`, { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then((ids: number[]) => setFavoritedIds(new Set(ids)))
+      .catch(() => {});
+  }, [page, user]);
+
+  const toggleFavorite = async (e: React.MouseEvent, imageId: number) => {
+    e.stopPropagation();
+    if (!user || togglingId === imageId) return;
+    setTogglingId(imageId);
+    // Optimistic update
+    setFavoritedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(imageId)) next.delete(imageId); else next.add(imageId);
+      return next;
+    });
+    try {
+      const res = await fetch(`${BASE}/api/favorites/images/${imageId}`, {
+        method: "POST", credentials: "include",
+      });
+      if (!res.ok) {
+        // Revert on failure
+        setFavoritedIds(prev => {
+          const next = new Set(prev);
+          if (next.has(imageId)) next.delete(imageId); else next.add(imageId);
+          return next;
+        });
+      }
+    } catch {
+      setFavoritedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(imageId)) next.delete(imageId); else next.add(imageId);
+        return next;
+      });
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   const submitPassword = async () => {
-    setPwLoading(true);
-    setPwError("");
+    setPwLoading(true); setPwError("");
     try {
       const res = await fetch(`${BASE}/api/pages/${slug}/verify`, {
         method: "POST",
@@ -103,14 +166,11 @@ export default function CustomPage() {
       setPage(data);
       setRequiresPassword(false);
       if (data.folders?.length) setSelectedFolder(data.folders[0]);
-    } catch {
-      setPwError("Something went wrong");
-    } finally {
-      setPwLoading(false);
-    }
+    } catch { setPwError("Something went wrong"); }
+    finally { setPwLoading(false); }
   };
 
-  const navigate = useCallback((dir: 1 | -1) => {
+  const navigateLightbox = useCallback((dir: 1 | -1) => {
     setLightbox(prev => {
       if (!prev) return null;
       const next = prev.index + dir;
@@ -122,15 +182,16 @@ export default function CustomPage() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!lightbox) return;
-      if (e.key === "ArrowRight") navigate(1);
-      if (e.key === "ArrowLeft") navigate(-1);
+      if (e.key === "ArrowRight") navigateLightbox(1);
+      if (e.key === "ArrowLeft") navigateLightbox(-1);
       if (e.key === "Escape") setLightbox(null);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [lightbox, navigate]);
+  }, [lightbox, navigateLightbox]);
 
-  if (loading) {
+  // ── Loading ──────────────────────────────────────────────────────────────
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -138,6 +199,7 @@ export default function CustomPage() {
     );
   }
 
+  // ── 404 ──────────────────────────────────────────────────────────────────
   if (notFound) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center text-center px-4">
@@ -148,6 +210,38 @@ export default function CustomPage() {
     );
   }
 
+  // ── Login gate ───────────────────────────────────────────────────────────
+  if (requiresLogin && !user && !isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+              <UserCircle2 className="w-8 h-8 text-primary" />
+            </div>
+            <h2 className="text-2xl font-bold">Sign in to view</h2>
+            {loginPageTitle && (
+              <p className="text-muted-foreground text-sm">
+                <span className="font-medium text-foreground">"{loginPageTitle}"</span> is only available to registered members.
+              </p>
+            )}
+          </div>
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-lg">
+            <LoginForm
+              onUserSuccess={(u: ToolUser) => {
+                setUser(u);
+                setRequiresLogin(false);
+                fetchPage();
+              }}
+              onAdminClick={() => {}}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Password gate ────────────────────────────────────────────────────────
   if (requiresPassword) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
@@ -206,14 +300,14 @@ export default function CustomPage() {
             {page.title}
           </motion.h1>
           {page.description && (
-            <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-muted-foreground text-lg max-w-2xl mx-auto">
+            <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+              className="text-muted-foreground text-lg max-w-2xl mx-auto">
               {page.description}
             </motion.p>
           )}
         </div>
 
         {page.type === "content" ? (
-          /* Content page */
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -221,7 +315,6 @@ export default function CustomPage() {
             dangerouslySetInnerHTML={{ __html: page.content ?? "" }}
           />
         ) : (
-          /* Gallery page */
           <div className="space-y-8">
             {/* Folder tabs */}
             {(page.folders ?? []).length > 1 && (
@@ -248,7 +341,6 @@ export default function CustomPage() {
               </div>
             )}
 
-            {/* Folder info */}
             {selectedFolder && (
               <AnimatePresence mode="wait">
                 <motion.div key={selectedFolder.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
@@ -263,27 +355,44 @@ export default function CustomPage() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                      {selectedFolder.images.map((img, idx) => (
-                        <div
-                          key={img.id}
-                          className="group relative aspect-square rounded-xl overflow-hidden cursor-pointer"
-                          onClick={() => setLightbox({ images: selectedFolder.images, index: idx })}
-                        >
-                          <LazyImage
-                            src={img.url}
-                            alt={img.caption ?? ""}
-                            priority={idx < 8}
-                            className="aspect-square rounded-xl group-hover:scale-105 transition-transform duration-300"
-                          />
-                          {img.caption && (
+                      {selectedFolder.images.map((img, idx) => {
+                        const isFav = favoritedIds.has(img.id);
+                        return (
+                          <div
+                            key={img.id}
+                            className="group relative aspect-square rounded-xl overflow-hidden cursor-pointer"
+                            onClick={() => setLightbox({ images: selectedFolder.images, index: idx })}
+                          >
+                            <LazyImage
+                              src={img.url}
+                              alt={img.caption ?? ""}
+                              priority={idx < 8}
+                              className="aspect-square rounded-xl group-hover:scale-105 transition-transform duration-300"
+                            />
+
+                            {/* Hover overlay */}
                             <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-end pointer-events-none">
-                              <p className="text-white text-xs font-medium px-2 py-1.5 truncate w-full bg-gradient-to-t from-black/60">
-                                {img.caption}
-                              </p>
+                              {img.caption && (
+                                <p className="text-white text-xs font-medium px-2 py-1.5 truncate w-full bg-gradient-to-t from-black/60">
+                                  {img.caption}
+                                </p>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      ))}
+
+                            {/* Favorite button */}
+                            {user && (
+                              <button
+                                onClick={(e) => toggleFavorite(e, img.id)}
+                                className={`absolute top-2 right-2 p-1.5 rounded-full backdrop-blur-sm transition-all z-10
+                                  opacity-0 group-hover:opacity-100
+                                  ${isFav ? "opacity-100 bg-red-500/90 text-white" : "bg-black/40 text-white/80 hover:bg-black/60"}`}
+                              >
+                                <Heart className={`w-3.5 h-3.5 ${isFav ? "fill-current" : ""}`} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </motion.div>
@@ -309,7 +418,7 @@ export default function CustomPage() {
 
             {lightbox.index > 0 && (
               <button
-                onClick={(e) => { e.stopPropagation(); navigate(-1); }}
+                onClick={(e) => { e.stopPropagation(); navigateLightbox(-1); }}
                 className="absolute left-4 p-3 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors z-10"
               >
                 <ChevronLeft className="w-6 h-6" />
@@ -329,10 +438,23 @@ export default function CustomPage() {
 
             {lightbox.index < lightbox.images.length - 1 && (
               <button
-                onClick={(e) => { e.stopPropagation(); navigate(1); }}
+                onClick={(e) => { e.stopPropagation(); navigateLightbox(1); }}
                 className="absolute right-4 p-3 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors z-10"
               >
                 <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+
+            {/* Favorite in lightbox */}
+            {user && (
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleFavorite(e, lightbox.images[lightbox.index].id); }}
+                className={`absolute top-4 left-4 p-2.5 rounded-full backdrop-blur-sm transition-all z-10
+                  ${favoritedIds.has(lightbox.images[lightbox.index].id)
+                    ? "bg-red-500/90 text-white"
+                    : "bg-white/10 text-white/70 hover:bg-white/20"}`}
+              >
+                <Heart className={`w-5 h-5 ${favoritedIds.has(lightbox.images[lightbox.index].id) ? "fill-current" : ""}`} />
               </button>
             )}
 

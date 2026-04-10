@@ -740,6 +740,15 @@ export async function runMigrations(): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
     )
   `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS page_image_favorites (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      image_id INTEGER NOT NULL REFERENCES gallery_images(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+      UNIQUE(user_id, image_id)
+    )
+  `);
 
   logger.info("Migrations applied");
 }

@@ -83,9 +83,19 @@ router.get("/gallery-img/{*filePath}", async (req: Request, res: Response) => {
 /* ── Public page fetch ───────────────────────────────────────────────────── */
 router.get("/pages/:slug", async (req: Request, res: Response) => {
   const { slug } = req.params;
-  // Allow admins to preview draft pages
-  const session = req.session as { adminId?: number };
+  const session = req.session as { adminId?: number; toolUserId?: number };
   const isAdmin = !!session?.adminId;
+  const userId = session?.toolUserId ?? null;
+
+  // Must be logged in (or admin) to view any custom page
+  if (!isAdmin && !userId) {
+    // Return minimal page info so the frontend can show the login gate with the page title
+    const peek = await db.execute(sql`SELECT title, slug FROM custom_pages WHERE slug = ${slug} AND is_published = true LIMIT 1`);
+    const p = peek.rows[0] as Record<string, unknown> | undefined;
+    if (!p) { res.status(404).json({ error: "Page not found" }); return; }
+    res.status(401).json({ requiresLogin: true, title: p.title, slug: p.slug });
+    return;
+  }
 
   const rows = await db.execute(
     isAdmin
@@ -335,6 +345,74 @@ router.post("/admin/custom-pages/:id/folders/:folderId/cover", requireAdmin, asy
   const { imageUrl } = req.body as { imageUrl: string };
   await db.execute(sql`UPDATE gallery_folders SET cover_image_url = ${imageUrl} WHERE id = ${folderId}`);
   res.json({ ok: true });
+});
+
+/* ── User Favorites ──────────────────────────────────────────────────────── */
+
+function requireToolUser(req: Request, res: Response): number | null {
+  const session = req.session as { toolUserId?: number };
+  if (!session.toolUserId) { res.status(401).json({ error: "Login required" }); return null; }
+  return session.toolUserId;
+}
+
+// Toggle favorite for an image (add or remove)
+router.post("/favorites/images/:imageId", async (req: Request, res: Response) => {
+  const userId = requireToolUser(req, res);
+  if (!userId) return;
+  const imageId = parseInt(req.params.imageId as string, 10);
+  if (!imageId) { res.status(400).json({ error: "Invalid image id" }); return; }
+
+  const existing = await db.execute(sql`
+    SELECT id FROM page_image_favorites WHERE user_id = ${userId} AND image_id = ${imageId} LIMIT 1
+  `);
+
+  if (existing.rows.length > 0) {
+    await db.execute(sql`DELETE FROM page_image_favorites WHERE user_id = ${userId} AND image_id = ${imageId}`);
+    res.json({ favorited: false });
+  } else {
+    await db.execute(sql`INSERT INTO page_image_favorites (user_id, image_id) VALUES (${userId}, ${imageId}) ON CONFLICT DO NOTHING`);
+    res.json({ favorited: true });
+  }
+});
+
+// Get favorited image IDs for a specific page (for overlay state)
+router.get("/favorites/images/page/:pageId", async (req: Request, res: Response) => {
+  const userId = requireToolUser(req, res);
+  if (!userId) return;
+  const pageId = parseInt(req.params.pageId as string, 10);
+
+  const rows = await db.execute(sql`
+    SELECT pif.image_id FROM page_image_favorites pif
+    JOIN gallery_images gi ON gi.id = pif.image_id
+    JOIN gallery_folders gf ON gf.id = gi.folder_id
+    WHERE pif.user_id = ${userId} AND gf.page_id = ${pageId}
+  `);
+  res.json((rows.rows as Array<Record<string, unknown>>).map(r => r.image_id));
+});
+
+// Get all favorites for the user's dashboard (full image + page info)
+router.get("/favorites/images", async (req: Request, res: Response) => {
+  const userId = requireToolUser(req, res);
+  if (!userId) return;
+
+  const rows = await db.execute(sql`
+    SELECT
+      gi.id AS image_id,
+      gi.url,
+      gi.caption,
+      gf.name AS folder_name,
+      cp.id AS page_id,
+      cp.title AS page_title,
+      cp.slug AS page_slug,
+      pif.created_at AS favorited_at
+    FROM page_image_favorites pif
+    JOIN gallery_images gi ON gi.id = pif.image_id
+    JOIN gallery_folders gf ON gf.id = gi.folder_id
+    JOIN custom_pages cp ON cp.id = gf.page_id
+    WHERE pif.user_id = ${userId}
+    ORDER BY pif.created_at DESC
+  `);
+  res.json(rows.rows);
 });
 
 export default router;
