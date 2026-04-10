@@ -750,6 +750,16 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  // Blob storage for gallery images — used when Replit Object Storage is unavailable (e.g. DigitalOcean)
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS gallery_image_blobs (
+      id SERIAL PRIMARY KEY,
+      data bytea NOT NULL,
+      mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
+      created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    )
+  `);
+
   logger.info("Migrations applied");
 }
 
