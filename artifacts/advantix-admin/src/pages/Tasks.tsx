@@ -881,8 +881,8 @@ export default function Tasks() {
 
   const moveMutation = useMutation({
     mutationFn: ({ taskId, status }: { taskId: number; status: string }) =>
-      apiFetch(`/api/admin/tasks/${taskId}`, {
-        method: "PUT",
+      apiFetch(`/api/admin/tasks/${taskId}/status`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       }),
