@@ -6,60 +6,73 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { randomUUID } from "crypto";
 import path from "path";
-import { objectStorageClient } from "../lib/objectStorage.js";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-function getGalleryBucket(): string {
+const SIDECAR = "http://127.0.0.1:1106";
+
+function parseStorageDir(): { bucketName: string; prefix: string } {
   const dir = process.env.PRIVATE_OBJECT_DIR || "";
   if (!dir) throw new Error("Object storage not configured");
-  if (dir.startsWith("gs://")) {
-    const match = dir.match(/^gs:\/\/([^/]+)/);
-    if (!match) throw new Error("Object storage not configured");
-    return match[1];
-  }
-  // Format: /bucket-name/path  (Replit object storage path)
-  const parts = dir.split("/").filter(Boolean);
+  // Format: /bucket-name/prefix  or  gs://bucket-name/prefix
+  const clean = dir.startsWith("gs://")
+    ? dir.slice(5)          // strip gs://
+    : dir.replace(/^\//, ""); // strip leading /
+  const parts = clean.split("/").filter(Boolean);
   if (!parts[0]) throw new Error("Object storage not configured");
-  return parts[0];
+  return {
+    bucketName: parts[0],
+    prefix: parts.slice(1).join("/"), // e.g. ".private"
+  };
+}
+
+async function getSignedUrl(objectName: string, method: "GET" | "PUT"): Promise<string> {
+  const { bucketName } = parseStorageDir();
+  const res = await fetch(`${SIDECAR}/object-storage/signed-object-url`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bucket_name: bucketName,
+      object_name: objectName,
+      method,
+      expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`Sidecar error: ${res.status}`);
+  const { signed_url } = await res.json() as { signed_url: string };
+  return signed_url;
 }
 
 async function uploadToGCS(buffer: Buffer, mimetype: string, originalName: string): Promise<string> {
-  const bucketName = getGalleryBucket();
+  const { prefix } = parseStorageDir();
   const ext = path.extname(originalName) || ".jpg";
-  const objectName = `gallery/${randomUUID()}${ext}`;
-  const bucket = objectStorageClient.bucket(bucketName);
-  const blob = bucket.file(objectName);
-  await blob.save(buffer, { contentType: mimetype, resumable: false });
+  const objectName = [prefix, `gallery/${randomUUID()}${ext}`].filter(Boolean).join("/");
+
+  // Upload via signed PUT URL from sidecar
+  const putUrl = await getSignedUrl(objectName, "PUT");
+  const uploadRes = await fetch(putUrl, {
+    method: "PUT",
+    headers: { "Content-Type": mimetype },
+    body: buffer,
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
+
+  // Store the object name so we can sign it later for serving
   return `/api/gallery-img/${objectName}`;
 }
 
-/* ── Public image serving ───────────────────────────────────────────────── */
+/* ── Public image serving — redirect via sidecar signed URL ─────────────── */
 router.get("/gallery-img/*filePath", async (req: Request, res: Response) => {
   try {
-    const filePath = req.params.filePath as string;
-    const dir = process.env.PRIVATE_OBJECT_DIR || "";
-    if (!dir) { res.status(500).json({ error: "Storage not configured" }); return; }
-    let bucketName: string;
-    if (dir.startsWith("gs://")) {
-      const match = dir.match(/^gs:\/\/([^/]+)/);
-      if (!match) { res.status(500).json({ error: "Storage not configured" }); return; }
-      bucketName = match[1];
-    } else {
-      bucketName = dir.split("/").filter(Boolean)[0];
-    }
-    if (!bucketName) { res.status(500).json({ error: "Storage not configured" }); return; }
-    const bucket = objectStorageClient.bucket(bucketName);
-    const blob = bucket.file(filePath);
-    const [exists] = await blob.exists();
-    if (!exists) { res.status(404).json({ error: "Image not found" }); return; }
-    const [metadata] = await blob.getMetadata();
-    res.setHeader("Content-Type", (metadata.contentType as string) || "image/jpeg");
-    res.setHeader("Cache-Control", "public, max-age=31536000");
-    blob.createReadStream().pipe(res);
-  } catch {
-    res.status(500).json({ error: "Failed to serve image" });
+    const objectName = req.params.filePath as string;
+    if (!objectName) { res.status(400).json({ error: "Missing path" }); return; }
+    const signedUrl = await getSignedUrl(objectName, "GET");
+    res.redirect(302, signedUrl);
+  } catch (e) {
+    res.status(500).json({ error: e instanceof Error ? e.message : "Failed to serve image" });
   }
 });
 
