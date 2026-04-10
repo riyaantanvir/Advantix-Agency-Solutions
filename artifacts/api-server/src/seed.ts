@@ -691,6 +691,17 @@ export async function runMigrations(): Promise<void> {
     ALTER TABLE admins ADD COLUMN IF NOT EXISTS is_super_admin boolean NOT NULL DEFAULT false
   `);
 
+  // Recurring tasks support
+  await db.execute(sql`
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_recurring boolean NOT NULL DEFAULT false
+  `);
+  await db.execute(sql`
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence_type text
+  `);
+  await db.execute(sql`
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence_time text
+  `);
+
   logger.info("Migrations applied");
 }
 
