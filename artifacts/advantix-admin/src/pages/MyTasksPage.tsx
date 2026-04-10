@@ -53,7 +53,7 @@ export default function MyTasksPage() {
 
   const { data: tasks = [], isLoading, refetch } = useQuery<Task[]>({
     queryKey: ["pm-my-tasks"],
-    queryFn: () => apiFetch(`${BASE}/api/admin/pm/my-tasks`),
+    queryFn: () => apiFetch(`/api/admin/pm/my-tasks`),
   });
 
   const grouped: Record<string, Task[]> = {};

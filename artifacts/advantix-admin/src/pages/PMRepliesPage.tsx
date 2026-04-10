@@ -33,7 +33,7 @@ function timeAgo(date: string) {
 export default function PMRepliesPage() {
   const { data: comments = [], isLoading } = useQuery<Comment[]>({
     queryKey: ["pm-replies"],
-    queryFn: () => apiFetch(`${BASE}/api/admin/pm/replies`),
+    queryFn: () => apiFetch(`/api/admin/pm/replies`),
   });
 
   return (

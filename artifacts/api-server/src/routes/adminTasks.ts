@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, tasksTable, taskCommentsTable } from "@workspace/db";
-import { eq, desc, asc, and, or, ilike, sql } from "drizzle-orm";
+import { eq, desc, asc, and, or, ilike, sql, inArray, count } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 import {
   sendTelegramMessage,
@@ -40,14 +40,13 @@ router.get("/admin/tasks", requireAdmin, async (req: Request, res: Response) => 
   let countMap: Record<number, number> = {};
   if (tasks.length > 0) {
     const ids = tasks.map(t => t.id);
-    const rows = await db.execute(sql`
-      SELECT task_id, COUNT(*)::int as cnt
-      FROM task_comments
-      WHERE task_id = ANY(${ids})
-      GROUP BY task_id
-    `);
-    for (const r of rows.rows) {
-      countMap[r.task_id as number] = r.cnt as number;
+    const rows = await db
+      .select({ taskId: taskCommentsTable.taskId, cnt: count() })
+      .from(taskCommentsTable)
+      .where(inArray(taskCommentsTable.taskId, ids))
+      .groupBy(taskCommentsTable.taskId);
+    for (const r of rows) {
+      countMap[r.taskId] = r.cnt;
     }
   }
 

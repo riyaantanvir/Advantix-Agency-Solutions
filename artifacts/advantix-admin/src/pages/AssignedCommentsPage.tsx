@@ -33,7 +33,7 @@ function timeAgo(date: string) {
 export default function AssignedCommentsPage() {
   const { data: comments = [], isLoading } = useQuery<Comment[]>({
     queryKey: ["pm-assigned-comments"],
-    queryFn: () => apiFetch(`${BASE}/api/admin/pm/assigned-comments`),
+    queryFn: () => apiFetch(`/api/admin/pm/assigned-comments`),
   });
 
   return (

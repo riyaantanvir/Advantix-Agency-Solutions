@@ -63,17 +63,17 @@ export default function ProjectDetail() {
 
   const { data: project, isLoading } = useQuery<Project>({
     queryKey: ["project", projectId],
-    queryFn: () => apiFetch(`${BASE}/api/admin/projects/${projectId}`),
+    queryFn: () => apiFetch(`/api/admin/projects/${projectId}`),
   });
 
   const { data: allAdmins = [] } = useQuery<AdminUser[]>({
     queryKey: ["admins"],
-    queryFn: () => apiFetch(`${BASE}/api/admin/admins`),
+    queryFn: () => apiFetch(`/api/admin/admins`),
   });
 
   const addMemberMutation = useMutation({
     mutationFn: (adminId: number) =>
-      apiFetch(`${BASE}/api/admin/projects/${projectId}/members`, {
+      apiFetch(`/api/admin/projects/${projectId}/members`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ adminId }),
@@ -89,7 +89,7 @@ export default function ProjectDetail() {
 
   const removeMemberMutation = useMutation({
     mutationFn: (adminId: number) =>
-      apiFetch(`${BASE}/api/admin/projects/${projectId}/members/${adminId}`, { method: "DELETE" }),
+      apiFetch(`/api/admin/projects/${projectId}/members/${adminId}`, { method: "DELETE" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project", projectId] });
       toast({ title: "Member removed" });

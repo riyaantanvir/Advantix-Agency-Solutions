@@ -43,7 +43,7 @@ export default function AssignedToMePage() {
 
   const { data: tasks = [], isLoading, refetch } = useQuery<Task[]>({
     queryKey: ["pm-assigned-to-me"],
-    queryFn: () => apiFetch(`${BASE}/api/admin/pm/assigned-to-me`),
+    queryFn: () => apiFetch(`/api/admin/pm/assigned-to-me`),
   });
 
   const active = tasks.filter(t => t.status !== "done" && t.status !== "cancelled");

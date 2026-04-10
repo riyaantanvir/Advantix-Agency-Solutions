@@ -44,12 +44,12 @@ export default function AllProjects() {
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["projects"],
-    queryFn: () => apiFetch(`${BASE}/api/admin/projects`),
+    queryFn: () => apiFetch(`/api/admin/projects`),
   });
 
   const createMutation = useMutation({
     mutationFn: (data: typeof form) =>
-      apiFetch(`${BASE}/api/admin/projects`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
+      apiFetch(`/api/admin/projects`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       setShowModal(false);
@@ -61,7 +61,7 @@ export default function AllProjects() {
 
   const updateMutation = useMutation({
     mutationFn: (data: { id: number; name: string; description: string; color: string }) =>
-      apiFetch(`${BASE}/api/admin/projects/${data.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
+      apiFetch(`/api/admin/projects/${data.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       setEditProject(null);
@@ -71,7 +71,7 @@ export default function AllProjects() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => apiFetch(`${BASE}/api/admin/projects/${id}`, { method: "DELETE" }),
+    mutationFn: (id: number) => apiFetch(`/api/admin/projects/${id}`, { method: "DELETE" }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["projects"] }); toast({ title: "Project deleted" }); },
     onError: (e: Error) => toast({ variant: "destructive", title: e.message }),
   });

@@ -48,7 +48,7 @@ export default function TodayOverduePage() {
 
   const { data: tasks = [], isLoading, refetch } = useQuery<Task[]>({
     queryKey: ["pm-today-overdue"],
-    queryFn: () => apiFetch(`${BASE}/api/admin/pm/today-overdue`),
+    queryFn: () => apiFetch(`/api/admin/pm/today-overdue`),
   });
 
   const overdue = tasks.filter(t => t.dueDate && isOverdue(t.dueDate));
