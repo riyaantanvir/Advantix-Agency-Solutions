@@ -43,6 +43,8 @@ const AssignedToMePage  = lazy(() => import("./pages/AssignedToMePage"));
 const TodayOverduePage  = lazy(() => import("./pages/TodayOverduePage"));
 const PMRepliesPage     = lazy(() => import("./pages/PMRepliesPage"));
 const AssignedCommentsPage = lazy(() => import("./pages/AssignedCommentsPage"));
+const CustomPages = lazy(() => import("./pages/CustomPages"));
+const CustomPageEditor = lazy(() => import("./pages/CustomPageEditor"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -187,6 +189,18 @@ function Router() {
 
       <Route path="/notifications">
         <ProtectedLayout><Notifications /></ProtectedLayout>
+      </Route>
+
+      <Route path="/custom-pages/new">
+        <ProtectedLayout><CustomPageEditor /></ProtectedLayout>
+      </Route>
+
+      <Route path="/custom-pages/:id/edit">
+        <ProtectedLayout><CustomPageEditor /></ProtectedLayout>
+      </Route>
+
+      <Route path="/custom-pages">
+        <ProtectedLayout><CustomPages /></ProtectedLayout>
       </Route>
 
       <Route path="/blog/new">

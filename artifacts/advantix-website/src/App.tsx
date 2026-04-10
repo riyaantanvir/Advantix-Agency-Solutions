@@ -28,6 +28,7 @@ const Login = lazy(() => import("@/pages/Login"));
 const Redirect = lazy(() => import("@/pages/Redirect"));
 const Careers = lazy(() => import("@/pages/Careers"));
 const ContestDetail = lazy(() => import("@/pages/ContestDetail"));
+const CustomPage = lazy(() => import("@/pages/CustomPage"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -78,6 +79,7 @@ function Router() {
               <Route path="/tools/settings" component={AccountSettings} />
               <Route path="/careers" component={Careers} />
               <Route path="/contests/:id" component={ContestDetail} />
+              <Route path="/pages/:slug" component={CustomPage} />
               <Route component={NotFound} />
             </Switch>
           </Suspense>

@@ -97,6 +97,7 @@ const navItems: NavItem[] = [
     icon: BookOpen,
     children: [
       { path: "/blog", label: "Blog", icon: BookOpen },
+      { path: "/custom-pages", label: "Custom Pages", icon: Globe },
       { path: "/portfolio", label: "Portfolio", icon: Briefcase },
       { path: "/services", label: "Services", icon: Package },
       { path: "/team", label: "Team", icon: Users },

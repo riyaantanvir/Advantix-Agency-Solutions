@@ -702,6 +702,45 @@ export async function runMigrations(): Promise<void> {
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurrence_time text
   `);
 
+  // Custom pages feature
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS custom_pages (
+      id SERIAL PRIMARY KEY,
+      slug TEXT NOT NULL UNIQUE,
+      title TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'content',
+      description TEXT,
+      content TEXT DEFAULT '',
+      password_hash TEXT,
+      is_published BOOLEAN NOT NULL DEFAULT false,
+      meta_title TEXT,
+      meta_description TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS gallery_folders (
+      id SERIAL PRIMARY KEY,
+      page_id INTEGER NOT NULL REFERENCES custom_pages(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT,
+      cover_image_url TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS gallery_images (
+      id SERIAL PRIMARY KEY,
+      folder_id INTEGER NOT NULL REFERENCES gallery_folders(id) ON DELETE CASCADE,
+      url TEXT NOT NULL,
+      caption TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    )
+  `);
+
   logger.info("Migrations applied");
 }
 
