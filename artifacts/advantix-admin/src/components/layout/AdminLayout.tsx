@@ -120,6 +120,15 @@ function getGroupDefaultOpen(group: NavGroup, currentPath: string): boolean {
   return group.children.some((child) => currentPath === child.path);
 }
 
+function getSeenReplies(): Set<number> {
+  try {
+    const raw = localStorage.getItem("replies-seen-ids");
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set();
+  }
+}
+
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -133,6 +142,14 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     staleTime: Infinity,
   });
 
+  const { data: replies = [] } = useQuery<{ id: number }[]>({
+    queryKey: ["pm-replies"],
+    queryFn: () => fetch("/api/admin/pm/replies", { credentials: "include" }).then(r => r.ok ? r.json() : []),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+
+  const unreadReplies = replies.filter(r => !getSeenReplies().has(r.id)).length;
 
   const initialOpen: Record<string, boolean> = {};
   navItems.forEach((item) => {
@@ -156,9 +173,15 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const badgeFor = (path: string): number => {
+    if (path === "/pm/replies") return unreadReplies;
+    return 0;
+  };
+
   const renderLink = (link: NavLink, indent = false) => {
     const isActive = location === link.path;
     const Icon = link.icon;
+    const badge = badgeFor(link.path);
     return (
       <Link
         key={link.path}
@@ -173,7 +196,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         }`}
       >
         <Icon className={`w-4 h-4 shrink-0 transition-colors ${isActive ? "text-primary" : "group-hover:text-foreground"}`} />
-        <span className="truncate">{link.label}</span>
+        <span className="truncate flex-1">{link.label}</span>
+        {badge > 0 && (
+          <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none shrink-0">
+            {badge > 99 ? "99+" : badge}
+          </span>
+        )}
       </Link>
     );
   };
@@ -182,6 +210,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     const isOpen = openGroups[group.label] ?? false;
     const hasActiveChild = group.children.some((c) => location === c.path);
     const Icon = group.icon;
+    const totalBadge = group.children.reduce((sum, c) => sum + badgeFor(c.path), 0);
     return (
       <div key={group.label}>
         <button
@@ -194,6 +223,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         >
           <Icon className={`w-4 h-4 shrink-0 transition-colors ${hasActiveChild ? "text-primary" : "group-hover:text-foreground"}`} />
           <span className="truncate flex-1 text-left">{group.label}</span>
+          {totalBadge > 0 && !isOpen && (
+            <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none shrink-0">
+              {totalBadge > 99 ? "99+" : totalBadge}
+            </span>
+          )}
           <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
         </button>
         <AnimatePresence initial={false}>

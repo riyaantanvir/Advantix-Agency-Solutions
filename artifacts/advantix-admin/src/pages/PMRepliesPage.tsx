@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { Reply, Loader2, Send, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
@@ -163,6 +163,14 @@ function CommentCard({ comment, onOpenTask }: { comment: Comment; onOpenTask: (i
   );
 }
 
+function markAllSeen(comments: Comment[]) {
+  try {
+    const existing: number[] = JSON.parse(localStorage.getItem("replies-seen-ids") ?? "[]");
+    const merged = Array.from(new Set([...existing, ...comments.map(c => c.id)]));
+    localStorage.setItem("replies-seen-ids", JSON.stringify(merged));
+  } catch {}
+}
+
 export default function PMRepliesPage() {
   const [openTaskId, setOpenTaskId] = useState<number | null>(null);
   const qc = useQueryClient();
@@ -172,6 +180,10 @@ export default function PMRepliesPage() {
     queryFn: () => apiFetch(`/api/admin/pm/replies`),
     staleTime: 15_000,
   });
+
+  useEffect(() => {
+    if (comments.length > 0) markAllSeen(comments);
+  }, [comments]);
 
   return (
     <div className="space-y-6">
