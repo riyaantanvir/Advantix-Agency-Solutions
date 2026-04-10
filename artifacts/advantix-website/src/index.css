@@ -127,6 +127,11 @@
   }
 }
 
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 @keyframes orbFloat1 {
   0%, 100% { transform: translate(0, 0) scale(1); }
   33%       { transform: translate(50px, -40px) scale(1.06); }

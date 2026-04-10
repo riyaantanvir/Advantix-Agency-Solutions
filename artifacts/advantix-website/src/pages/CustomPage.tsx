@@ -1,8 +1,53 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "wouter";
 import { Helmet } from "react-helmet-async";
 import { motion, AnimatePresence } from "framer-motion";
 import { Lock, ChevronLeft, ChevronRight, X, FolderOpen, Eye } from "lucide-react";
+
+/* ── Ultra-fast lazy image with skeleton placeholder ─────────────────────── */
+function LazyImage({
+  src, alt, className, priority = false, onClick,
+}: {
+  src: string; alt: string; className?: string; priority?: boolean; onClick?: () => void;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  // If already cached/loaded by browser, mark as loaded immediately
+  useEffect(() => {
+    if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
+      setLoaded(true);
+    }
+  }, []);
+
+  return (
+    <div className={`relative overflow-hidden bg-muted/40 ${className ?? ""}`} onClick={onClick}>
+      {/* Shimmer skeleton */}
+      {!loaded && !error && (
+        <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-muted/40 via-muted/70 to-muted/40 bg-[length:200%_100%]"
+          style={{ animation: "shimmer 1.5s infinite linear", backgroundSize: "200% 100%" }}
+        />
+      )}
+      <img
+        ref={imgRef}
+        src={src}
+        alt={alt}
+        loading={priority ? "eager" : "lazy"}
+        decoding="async"
+        fetchPriority={priority ? "high" : "low"}
+        onLoad={() => setLoaded(true)}
+        onError={() => setError(true)}
+        className={`w-full h-full object-cover transition-opacity duration-500 ${loaded ? "opacity-100" : "opacity-0"}`}
+      />
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/30">
+          <Eye className="w-6 h-6" />
+        </div>
+      )}
+    </div>
+  );
+}
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -185,7 +230,7 @@ export default function CustomPage() {
                     }`}
                   >
                     {folder.cover_image_url ? (
-                      <img src={folder.cover_image_url} alt="" className="w-5 h-5 rounded object-cover" />
+                      <img src={folder.cover_image_url} alt="" loading="lazy" decoding="async" className="w-5 h-5 rounded object-cover" />
                     ) : (
                       <FolderOpen className="w-4 h-4" />
                     )}
@@ -212,23 +257,25 @@ export default function CustomPage() {
                   ) : (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                       {selectedFolder.images.map((img, idx) => (
-                        <motion.div
+                        <div
                           key={img.id}
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ delay: idx * 0.03 }}
-                          className="group relative aspect-square rounded-xl overflow-hidden bg-muted cursor-pointer"
+                          className="group relative aspect-square rounded-xl overflow-hidden cursor-pointer"
                           onClick={() => setLightbox({ images: selectedFolder.images, index: idx })}
                         >
-                          <img src={img.url} alt={img.caption ?? ""} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                          <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-end">
-                            {img.caption && (
+                          <LazyImage
+                            src={img.url}
+                            alt={img.caption ?? ""}
+                            priority={idx < 8}
+                            className="aspect-square rounded-xl group-hover:scale-105 transition-transform duration-300"
+                          />
+                          {img.caption && (
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-end pointer-events-none">
                               <p className="text-white text-xs font-medium px-2 py-1.5 truncate w-full bg-gradient-to-t from-black/60">
                                 {img.caption}
                               </p>
-                            )}
-                          </div>
-                        </motion.div>
+                            </div>
+                          )}
+                        </div>
                       ))}
                     </div>
                   )}
