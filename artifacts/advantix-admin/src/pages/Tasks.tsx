@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import {
   Plus, Search, ChevronDown, ChevronRight, Flag, MessageSquare, Loader2,
   List, LayoutGrid, Calendar, Table2, GanttChartSquare, ChevronLeft,
+  UserCircle2, CalendarDays, Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -211,19 +212,172 @@ function ListView({
   );
 }
 
+/* ─── QUICK CREATE CARD (Board) ──────────────────────────────── */
+function QuickCreateCard({
+  statusId,
+  onSave,
+  onCancel,
+}: {
+  statusId: string;
+  onSave: (data: { title: string; assignedTo?: string; dueDate?: string; priority?: string }) => void;
+  onCancel: () => void;
+}) {
+  const titleRef = useRef<HTMLInputElement>(null);
+  const [title, setTitle] = useState("");
+  const [assignedTo, setAssignedTo] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [priority, setPriority] = useState("");
+  const [openPicker, setOpenPicker] = useState<"assignee" | "date" | "priority" | null>(null);
+
+  const { data: admins = [] } = useQuery<{ id: number; username: string }[]>({
+    queryKey: ["admin-users"],
+    queryFn: () => apiFetch(`/api/admin/admins`),
+    staleTime: 60_000,
+  });
+
+  function save() {
+    if (!title.trim()) return;
+    onSave({ title: title.trim(), assignedTo: assignedTo || undefined, dueDate: dueDate || undefined, priority: priority || undefined });
+  }
+
+  const togglePicker = (p: "assignee" | "date" | "priority") =>
+    setOpenPicker(prev => (prev === p ? null : p));
+
+  const selectedPriority = priority ? PRIORITIES[priority] : null;
+
+  return (
+    <div className="bg-background border border-primary/50 rounded-xl shadow-md overflow-visible">
+      {/* Title row */}
+      <div className="flex items-center gap-2 px-3 pt-3 pb-1">
+        <input
+          ref={titleRef}
+          autoFocus
+          className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+          placeholder="Task Name…"
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") onCancel(); }}
+        />
+        <button
+          onClick={save}
+          disabled={!title.trim()}
+          className="flex items-center gap-1 text-xs bg-primary text-primary-foreground px-2.5 py-1 rounded-lg font-medium disabled:opacity-40 hover:bg-primary/90 transition-colors shrink-0"
+        >
+          <Send className="w-3 h-3" /> Save
+        </button>
+      </div>
+
+      {/* Field buttons */}
+      <div className="px-3 pb-2 space-y-0.5 relative">
+        {/* Assignee */}
+        <div className="relative">
+          <button
+            onClick={() => togglePicker("assignee")}
+            className="flex items-center gap-2 w-full px-1 py-1.5 rounded hover:bg-secondary/30 transition-colors text-left"
+          >
+            <UserCircle2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <span className={`text-xs ${assignedTo ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+              {assignedTo || "Add assignee"}
+            </span>
+          </button>
+          {openPicker === "assignee" && (
+            <div className="absolute left-0 top-full mt-1 z-50 bg-popover border border-border rounded-lg shadow-lg min-w-36 py-1 max-h-40 overflow-y-auto">
+              <button
+                onClick={() => { setAssignedTo(""); setOpenPicker(null); }}
+                className="w-full text-left px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary/40"
+              >
+                None
+              </button>
+              {admins.map(a => (
+                <button
+                  key={a.id}
+                  onClick={() => { setAssignedTo(a.username); setOpenPicker(null); }}
+                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/40 flex items-center gap-2 ${assignedTo === a.username ? "text-primary font-medium" : "text-foreground"}`}
+                >
+                  <AssigneeAvatar name={a.username} />
+                  {a.username}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Date */}
+        <div className="relative">
+          <button
+            onClick={() => togglePicker("date")}
+            className="flex items-center gap-2 w-full px-1 py-1.5 rounded hover:bg-secondary/30 transition-colors text-left"
+          >
+            <CalendarDays className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <span className={`text-xs ${dueDate ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+              {dueDate ? new Date(dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Add dates"}
+            </span>
+          </button>
+          {openPicker === "date" && (
+            <div className="absolute left-0 top-full mt-1 z-50 bg-popover border border-border rounded-lg shadow-lg p-2">
+              <input
+                type="date"
+                autoFocus
+                className="bg-transparent text-xs text-foreground outline-none border border-border rounded px-2 py-1"
+                value={dueDate}
+                onChange={e => { setDueDate(e.target.value); setOpenPicker(null); }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Priority */}
+        <div className="relative">
+          <button
+            onClick={() => togglePicker("priority")}
+            className="flex items-center gap-2 w-full px-1 py-1.5 rounded hover:bg-secondary/30 transition-colors text-left"
+          >
+            <Flag
+              className="w-3.5 h-3.5 shrink-0"
+              style={selectedPriority
+                ? { color: selectedPriority.color, fill: selectedPriority.fill ? selectedPriority.color : "none", strokeWidth: 2 }
+                : { color: "var(--muted-foreground)" }}
+            />
+            <span className={`text-xs capitalize ${priority ? "font-medium" : "text-muted-foreground"}`}
+              style={selectedPriority ? { color: selectedPriority.color } : undefined}>
+              {priority || "Add priority"}
+            </span>
+          </button>
+          {openPicker === "priority" && (
+            <div className="absolute left-0 top-full mt-1 z-50 bg-popover border border-border rounded-lg shadow-lg min-w-32 py-1">
+              {["low", "medium", "high", "urgent"].map(pr => {
+                const pc = PRIORITIES[pr];
+                return (
+                  <button
+                    key={pr}
+                    onClick={() => { setPriority(pr); setOpenPicker(null); }}
+                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/40 flex items-center gap-2 capitalize ${priority === pr ? "font-semibold" : ""}`}
+                  >
+                    <Flag className="w-3 h-3" style={{ color: pc.color, fill: pc.fill ? pc.color : "none", strokeWidth: 2 }} />
+                    <span style={{ color: pc.color }}>{pr}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── BOARD VIEW ─────────────────────────────────────────────── */
 function BoardView({
-  grouped, addingTo, newTitle, setNewTitle, addInputRef, startAdd, commit, navigate,
+  grouped,
+  onCreateTask,
+  navigate,
 }: {
   grouped: Record<string, Task[]>;
-  addingTo: string | null;
-  newTitle: string;
-  setNewTitle: (v: string) => void;
-  addInputRef: React.RefObject<HTMLInputElement>;
-  startAdd: (s: string) => void;
-  commit: (s: string) => void;
+  onCreateTask: (status: string, data: { title: string; assignedTo?: string; dueDate?: string; priority?: string }) => void;
   navigate: (path: string) => void;
 }) {
+  const [addingTo, setAddingTo] = useState<string | null>(null);
+
   return (
     <div className="flex gap-3 overflow-x-auto pb-4 min-h-[500px]">
       {STATUSES.map(status => {
@@ -238,7 +392,7 @@ function BoardView({
                 <span className="text-xs text-muted-foreground bg-secondary/60 px-1.5 py-0.5 rounded-full">{items.length}</span>
               </div>
               <button
-                onClick={() => startAdd(status.id)}
+                onClick={() => setAddingTo(status.id)}
                 className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -289,25 +443,16 @@ function BoardView({
                 );
               })}
 
-              {/* Inline add */}
+              {/* Quick create card */}
               {addingTo === status.id ? (
-                <div className="bg-background border border-primary/40 rounded-lg p-2 space-y-2">
-                  <Input
-                    ref={addInputRef}
-                    className="h-7 text-sm border-0 bg-transparent shadow-none focus-visible:ring-0 p-0"
-                    placeholder="Task title…"
-                    value={newTitle}
-                    onChange={e => setNewTitle(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") commit(status.id); if (e.key === "Escape") startAdd(""); }}
-                  />
-                  <div className="flex gap-1.5">
-                    <button onClick={() => commit(status.id)} className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded font-medium">Save</button>
-                    <button onClick={() => startAdd("")} className="text-xs text-muted-foreground hover:text-foreground px-1">Cancel</button>
-                  </div>
-                </div>
+                <QuickCreateCard
+                  statusId={status.id}
+                  onSave={data => { onCreateTask(status.id, data); setAddingTo(null); }}
+                  onCancel={() => setAddingTo(null)}
+                />
               ) : (
                 <button
-                  onClick={() => startAdd(status.id)}
+                  onClick={() => setAddingTo(status.id)}
                   className="w-full flex items-center gap-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary/30 px-2 py-1.5 rounded-lg transition-colors text-xs"
                 >
                   <Plus className="w-3.5 h-3.5" /> Add Task
@@ -666,7 +811,7 @@ export default function Tasks() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (d: { title: string; status: string }) =>
+    mutationFn: (d: { title: string; status: string; assignedTo?: string; dueDate?: string; priority?: string }) =>
       apiFetch(`/api/admin/tasks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -708,8 +853,8 @@ export default function Tasks() {
     if (statusId) setTimeout(() => addInputRef.current?.focus(), 60);
   }
 
-  function commit(statusId: string) {
-    if (newTitle.trim()) createMutation.mutate({ title: newTitle.trim(), status: statusId });
+  function commit(statusId: string, extras?: { assignedTo?: string; dueDate?: string; priority?: string }) {
+    if (newTitle.trim()) createMutation.mutate({ title: newTitle.trim(), status: statusId, ...extras });
     setAddingTo(null);
     setNewTitle("");
   }
@@ -778,12 +923,9 @@ export default function Tasks() {
           {view === "board" && (
             <BoardView
               grouped={grouped}
-              addingTo={addingTo}
-              newTitle={newTitle}
-              setNewTitle={setNewTitle}
-              addInputRef={addInputRef}
-              startAdd={startAdd}
-              commit={commit}
+              onCreateTask={(status, data) => {
+                createMutation.mutate({ title: data.title, status, assignedTo: data.assignedTo, dueDate: data.dueDate, priority: data.priority });
+              }}
               navigate={navigate}
             />
           )}

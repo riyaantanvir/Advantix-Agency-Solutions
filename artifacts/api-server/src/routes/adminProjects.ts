@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, projectsTable, projectMembersTable, tasksTable, adminsTable, taskCommentsTable } from "@workspace/db";
-import { eq, and, desc, lte, or, ne, sql } from "drizzle-orm";
+import { eq, and, desc, lte, or, ne, sql, inArray } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 
 const router: IRouter = Router();
@@ -289,7 +289,7 @@ router.get("/admin/pm/replies", requireAdmin, async (req: Request, res: Response
   const comments = await db
     .select()
     .from(taskCommentsTable)
-    .where(sql`${taskCommentsTable.taskId} = ANY(${taskIds})`)
+    .where(inArray(taskCommentsTable.taskId, taskIds))
     .orderBy(desc(taskCommentsTable.createdAt));
 
   res.json(comments.map(c => ({ ...c, taskTitle: taskMap[c.taskId] })));
@@ -311,7 +311,7 @@ router.get("/admin/pm/assigned-comments", requireAdmin, async (req: Request, res
   const comments = await db
     .select()
     .from(taskCommentsTable)
-    .where(sql`${taskCommentsTable.taskId} = ANY(${taskIds})`)
+    .where(inArray(taskCommentsTable.taskId, taskIds))
     .orderBy(desc(taskCommentsTable.createdAt));
 
   res.json(comments.map(c => ({ ...c, taskTitle: taskMap[c.taskId] })));
