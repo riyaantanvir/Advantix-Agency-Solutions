@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, tasksTable } from "@workspace/db";
-import { eq, desc, asc, and, or, ilike } from "drizzle-orm";
+import { db, tasksTable, taskCommentsTable } from "@workspace/db";
+import { eq, desc, asc, and, or, ilike, sql } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 import {
   sendTelegramMessage,
@@ -36,7 +36,31 @@ router.get("/admin/tasks", requireAdmin, async (req: Request, res: Response) => 
   }
 
   const tasks = await query.orderBy(asc(tasksTable.position), desc(tasksTable.createdAt));
-  res.json(tasks);
+
+  let countMap: Record<number, number> = {};
+  if (tasks.length > 0) {
+    const ids = tasks.map(t => t.id);
+    const rows = await db.execute(sql`
+      SELECT task_id, COUNT(*)::int as cnt
+      FROM task_comments
+      WHERE task_id = ANY(${ids})
+      GROUP BY task_id
+    `);
+    for (const r of rows.rows) {
+      countMap[r.task_id as number] = r.cnt as number;
+    }
+  }
+
+  res.json(tasks.map(t => ({ ...t, commentCount: countMap[t.id] ?? 0 })));
+});
+
+/* GET /api/admin/tasks/:id */
+router.get("/admin/tasks/:id", requireAdmin, async (req: Request, res: Response) => {
+  const id = parseInt(String(req.params.id ?? "0"), 10);
+  const [task] = await db.select().from(tasksTable).where(eq(tasksTable.id, id)).limit(1);
+  if (!task) { res.status(404).json({ error: "Task not found" }); return; }
+  const [{ cnt }] = await db.select({ cnt: sql<number>`count(*)::int` }).from(taskCommentsTable).where(eq(taskCommentsTable.taskId, id));
+  res.json({ ...task, commentCount: cnt ?? 0 });
 });
 
 /* POST /api/admin/tasks */

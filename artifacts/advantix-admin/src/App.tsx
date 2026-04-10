@@ -22,6 +22,7 @@ const ManageAI = lazy(() => import("./pages/ManageAI"));
 const Integrations = lazy(() => import("./pages/Integrations"));
 const Tools = lazy(() => import("./pages/Tools"));
 const Tasks = lazy(() => import("./pages/Tasks"));
+const TaskDetail = lazy(() => import("./pages/TaskDetail"));
 const Notifications = lazy(() => import("./pages/Notifications"));
 const Blog = lazy(() => import("./pages/Blog"));
 const BlogEditor = lazy(() => import("./pages/BlogEditor"));
@@ -178,6 +179,10 @@ function Router() {
 
       <Route path="/tasks">
         <ProtectedLayout><Tasks /></ProtectedLayout>
+      </Route>
+
+      <Route path="/tasks/:id">
+        <ProtectedLayout><TaskDetail /></ProtectedLayout>
       </Route>
 
       <Route path="/notifications">
