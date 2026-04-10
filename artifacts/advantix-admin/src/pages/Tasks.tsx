@@ -108,6 +108,11 @@ export default function Tasks() {
     queryFn: () => apiFetch("/api/team"),
   });
 
+  const { data: adminUsers = [] } = useQuery<{ id: number; username: string }[]>({
+    queryKey: ["admin-users"],
+    queryFn: () => apiFetch(`${BASE}/api/admin/admins`),
+  });
+
   const filtered = useMemo(() => {
     if (!search.trim()) return tasks;
     const q = search.toLowerCase();
@@ -428,11 +433,11 @@ export default function Tasks() {
                         className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring appearance-none cursor-pointer"
                       >
                         <option value="">Unassigned</option>
-                        {form.assignedTo && !teamMembers.some(m => m.name === form.assignedTo) && (
-                          <option value={form.assignedTo}>{form.assignedTo} (not on team)</option>
+                        {form.assignedTo && !adminUsers.some(a => a.username === form.assignedTo) && (
+                          <option value={form.assignedTo}>{form.assignedTo}</option>
                         )}
-                        {teamMembers.map(m => (
-                          <option key={m.id} value={m.name}>{m.name} — {m.role}</option>
+                        {adminUsers.map(a => (
+                          <option key={a.id} value={a.username}>{a.username}</option>
                         ))}
                       </select>
                     </div>
