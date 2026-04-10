@@ -27,11 +27,12 @@ router.post("/auth/login", async (req, res) => {
     return;
   }
 
-  const session = req.session as { adminId?: number; username?: string };
+  const session = req.session as { adminId?: number; username?: string; isSuperAdmin?: boolean };
   session.adminId = admin.id;
   session.username = admin.username;
+  session.isSuperAdmin = admin.isSuperAdmin;
 
-  res.json({ success: true, username: admin.username });
+  res.json({ success: true, username: admin.username, isSuperAdmin: admin.isSuperAdmin });
 });
 
 router.post("/auth/logout", (req, res) => {
@@ -45,9 +46,9 @@ router.post("/auth/logout", (req, res) => {
 });
 
 router.get("/auth/me", (req, res) => {
-  const session = req.session as { adminId?: number; username?: string };
+  const session = req.session as { adminId?: number; username?: string; isSuperAdmin?: boolean };
   if (session.adminId) {
-    res.json({ authenticated: true, username: session.username });
+    res.json({ authenticated: true, username: session.username, isSuperAdmin: session.isSuperAdmin === true });
   } else {
     res.status(401).json({ error: "Not authenticated" });
   }

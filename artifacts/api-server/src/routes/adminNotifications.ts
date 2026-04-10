@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { requireAdmin } from "../middleware/auth.js";
+import { requireSuperAdmin } from "../middleware/auth.js";
 import { sendTelegramMessage, SETTING_KEYS } from "../services/telegram.js";
 import { db } from "@workspace/db";
 import { integrationsTable } from "@workspace/db/schema";
@@ -10,7 +10,7 @@ const router = Router();
 const TELEGRAM_KEYS = [...SETTING_KEYS] as string[];
 
 /* GET /api/admin/notifications/settings */
-router.get("/admin/notifications/settings", requireAdmin, async (_req: Request, res: Response) => {
+router.get("/admin/notifications/settings", requireSuperAdmin, async (_req: Request, res: Response) => {
   const rows = await db
     .select()
     .from(integrationsTable)
@@ -30,7 +30,7 @@ router.get("/admin/notifications/settings", requireAdmin, async (_req: Request, 
 });
 
 /* PUT /api/admin/notifications/settings/:key */
-router.put("/admin/notifications/settings/:key", requireAdmin, async (req: Request, res: Response) => {
+router.put("/admin/notifications/settings/:key", requireSuperAdmin, async (req: Request, res: Response) => {
   const key = req.params.key?.toUpperCase();
   if (!TELEGRAM_KEYS.includes(key)) {
     res.status(400).json({ error: "Unknown setting key" });
@@ -53,7 +53,7 @@ router.put("/admin/notifications/settings/:key", requireAdmin, async (req: Reque
 });
 
 /* POST /api/admin/notifications/telegram/test */
-router.post("/admin/notifications/telegram/test", requireAdmin, async (_req: Request, res: Response) => {
+router.post("/admin/notifications/telegram/test", requireSuperAdmin, async (_req: Request, res: Response) => {
   const result = await sendTelegramMessage(
     `🔔 <b>Advantix Admin — Test Notification</b>\n\nYour Telegram integration is working correctly! You will receive task notifications here.\n\n<i>— Advantix Admin</i>`
   );

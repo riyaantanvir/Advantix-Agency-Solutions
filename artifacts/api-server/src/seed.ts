@@ -686,6 +686,11 @@ export async function runMigrations(): Promise<void> {
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS project_id integer REFERENCES projects(id) ON DELETE SET NULL
   `);
 
+  // Super admin role
+  await db.execute(sql`
+    ALTER TABLE admins ADD COLUMN IF NOT EXISTS is_super_admin boolean NOT NULL DEFAULT false
+  `);
+
   logger.info("Migrations applied");
 }
 
@@ -722,13 +727,12 @@ export async function seedAdmin(): Promise<void> {
   const passwordHash = await bcrypt.hash(password, 12);
 
   if (!existing) {
-    await db.insert(adminsTable).values({ username, passwordHash });
+    await db.insert(adminsTable).values({ username, passwordHash, isSuperAdmin: true });
     logger.info({ username }, "Admin user seeded successfully");
   } else {
     // Always sync the password hash with the current ADMIN_PASSWORD env var.
-    // This ensures that if the password was changed in DO secrets, it takes
-    // effect on the next deployment without any manual DB intervention.
-    await db.update(adminsTable).set({ passwordHash }).where(eq(adminsTable.username, username));
+    // Also ensure the primary admin is always super admin.
+    await db.update(adminsTable).set({ passwordHash, isSuperAdmin: true }).where(eq(adminsTable.username, username));
     logger.info({ username }, "Admin password synced from ADMIN_PASSWORD env var");
   }
 }

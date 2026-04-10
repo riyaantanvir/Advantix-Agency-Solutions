@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Users, Shield, Plus, Trash2, Loader2, Search,
-  UserCheck, UserCog, AlertTriangle, Mail, Calendar,
+  UserCheck, UserCog, AlertTriangle, Mail, Calendar, Crown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ interface ToolUser {
 interface AdminUser {
   id: number;
   username: string;
+  isSuperAdmin: boolean;
   createdAt: string;
 }
 
@@ -270,9 +271,10 @@ interface AdminsTabProps {
   admins: AdminUser[];
   isLoading: boolean;
   meUsername: string | undefined;
+  isSuperAdmin: boolean;
 }
 
-function AdminsTab({ admins, isLoading, meUsername }: AdminsTabProps) {
+function AdminsTab({ admins, isLoading, meUsername, isSuperAdmin }: AdminsTabProps) {
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
@@ -310,6 +312,20 @@ function AdminsTab({ admins, isLoading, meUsername }: AdminsTabProps) {
     onError: (e: Error) => toast({ variant: "destructive", title: "Error", description: e.message }),
   });
 
+  const superAdminMutation = useMutation({
+    mutationFn: ({ id, value }: { id: number; value: boolean }) =>
+      apiFetch(`/api/admin/admins/${id}/super-admin`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isSuperAdmin: value }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/admins"] });
+      toast({ title: "Super admin status updated" });
+    },
+    onError: (e: Error) => toast({ variant: "destructive", title: "Error", description: e.message }),
+  });
+
   const filtered = admins.filter((a) =>
     a.username.toLowerCase().includes(search.toLowerCase()),
   );
@@ -336,10 +352,12 @@ function AdminsTab({ admins, isLoading, meUsername }: AdminsTabProps) {
             className="pl-10 bg-secondary/50"
           />
         </div>
-        <Button onClick={() => { setCreateOpen(true); setForm({ username: "", password: "", confirm: "" }); setFormError(""); }}
-          className="bg-primary text-primary-foreground font-semibold rounded-xl px-5 shrink-0">
-          <Plus className="w-4 h-4 mr-2" /> Create Admin
-        </Button>
+        {isSuperAdmin && (
+          <Button onClick={() => { setCreateOpen(true); setForm({ username: "", password: "", confirm: "" }); setFormError(""); }}
+            className="bg-primary text-primary-foreground font-semibold rounded-xl px-5 shrink-0">
+            <Plus className="w-4 h-4 mr-2" /> Create Admin
+          </Button>
+        )}
       </div>
 
       <div className="bg-card border border-border/50 rounded-2xl overflow-hidden">
@@ -359,21 +377,25 @@ function AdminsTab({ admins, isLoading, meUsername }: AdminsTabProps) {
                 <tr className="border-b border-border/50 bg-secondary/20">
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Username</th>
                   <th className="text-left px-5 py-3.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide hidden sm:table-cell">Created</th>
-                  <th className="px-5 py-3.5 w-16" />
+                  {isSuperAdmin && <th className="px-5 py-3.5 w-32 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wide">Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((admin, i) => {
                   const isSelf = admin.username === meUsername;
+                  const isTogglingSuper = superAdminMutation.isPending;
                   return (
                     <tr key={admin.id} className={`border-b border-border/30 hover:bg-secondary/20 transition-colors ${i === filtered.length - 1 ? "border-b-0" : ""}`}>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-violet-500/10 text-violet-400 flex items-center justify-center text-sm font-bold shrink-0">
-                            <Shield className="w-4 h-4" />
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${admin.isSuperAdmin ? "bg-amber-500/15 text-amber-400" : "bg-violet-500/10 text-violet-400"}`}>
+                            {admin.isSuperAdmin ? <Crown className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-medium text-sm text-foreground">{admin.username}</span>
+                            {admin.isSuperAdmin && (
+                              <span className="text-xs bg-amber-500/15 text-amber-400 px-2 py-0.5 rounded-full font-semibold border border-amber-500/20">Super Admin</span>
+                            )}
                             {isSelf && (
                               <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-semibold">You</span>
                             )}
@@ -386,18 +408,35 @@ function AdminsTab({ admins, isLoading, meUsername }: AdminsTabProps) {
                           {formatDate(admin.createdAt)}
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30"
-                          onClick={() => setDeleteTarget(admin)}
-                          disabled={isSelf}
-                          title={isSelf ? "Cannot delete your own account" : "Delete admin"}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </td>
+                      {isSuperAdmin && (
+                        <td className="px-5 py-4 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {!isSelf && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={`h-8 text-xs px-3 ${admin.isSuperAdmin ? "text-amber-400 hover:text-amber-300 hover:bg-amber-500/10" : "text-muted-foreground hover:text-amber-400 hover:bg-amber-500/10"}`}
+                                onClick={() => superAdminMutation.mutate({ id: admin.id, value: !admin.isSuperAdmin })}
+                                disabled={isTogglingSuper}
+                                title={admin.isSuperAdmin ? "Revoke super admin" : "Grant super admin"}
+                              >
+                                {isTogglingSuper ? <Loader2 className="w-3 h-3 animate-spin" /> : <Crown className="w-3 h-3 mr-1" />}
+                                {admin.isSuperAdmin ? "Revoke" : "Grant"}
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30"
+                              onClick={() => setDeleteTarget(admin)}
+                              disabled={isSelf}
+                              title={isSelf ? "Cannot delete your own account" : "Delete admin"}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -464,7 +503,7 @@ function AdminsTab({ admins, isLoading, meUsername }: AdminsTabProps) {
 export default function UserManagement() {
   const [tab, setTab] = useState<"users" | "admins">("users");
 
-  const { data: me } = useQuery<{ authenticated: boolean; username: string }>({
+  const { data: me } = useQuery<{ authenticated: boolean; username: string; isSuperAdmin: boolean }>({
     queryKey: ["/api/auth/me"],
     queryFn: () => apiFetch(`/api/auth/me`),
   });
@@ -518,7 +557,7 @@ export default function UserManagement() {
       {tab === "users" ? (
         <UsersTab users={users} isLoading={usersLoading} />
       ) : (
-        <AdminsTab admins={admins} isLoading={adminsLoading} meUsername={me?.username} />
+        <AdminsTab admins={admins} isLoading={adminsLoading} meUsername={me?.username} isSuperAdmin={me?.isSuperAdmin === true} />
       )}
     </div>
   );

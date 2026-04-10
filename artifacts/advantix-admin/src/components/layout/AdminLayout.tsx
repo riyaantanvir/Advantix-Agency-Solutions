@@ -144,7 +144,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: me } = useQuery<{ authenticated: boolean; username: string }>({
+  const { data: me } = useQuery<{ authenticated: boolean; username: string; isSuperAdmin: boolean }>({
     queryKey: ["auth-me"],
     queryFn: () => fetch("/api/auth/me", { credentials: "include" }).then(r => r.json()),
     staleTime: Infinity,
@@ -267,9 +267,16 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <nav className="flex-1 px-3 space-y-1 mt-2 overflow-y-auto">
-        {navItems.map((item) =>
-          isGroup(item) ? renderGroup(item) : renderLink(item)
-        )}
+        {navItems
+          .filter((item) => {
+            if (isGroup(item) && item.label === "Admin Settings") {
+              return me?.isSuperAdmin === true;
+            }
+            return true;
+          })
+          .map((item) =>
+            isGroup(item) ? renderGroup(item) : renderLink(item)
+          )}
       </nav>
 
       <div className="shrink-0 border-t border-border/50">
@@ -280,7 +287,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground truncate">{me.username}</p>
-              <p className="text-xs text-muted-foreground">Administrator</p>
+              <p className="text-xs text-muted-foreground">{me.isSuperAdmin ? "Super Admin" : "Administrator"}</p>
             </div>
           </div>
         )}
