@@ -87,13 +87,13 @@ export default function Tasks() {
 
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
     queryKey: ["admin-tasks"],
-    queryFn: () => apiFetch(`${BASE}/api/admin/tasks`),
+    queryFn: () => apiFetch(`/api/admin/tasks`),
     staleTime: 15_000,
   });
 
   const createMutation = useMutation({
     mutationFn: (d: { title: string; status: string }) =>
-      apiFetch(`${BASE}/api/admin/tasks`, {
+      apiFetch(`/api/admin/tasks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(d),

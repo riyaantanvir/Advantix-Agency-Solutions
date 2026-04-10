@@ -113,19 +113,19 @@ export default function TaskDetail() {
 
   const { data: task, isLoading } = useQuery<Task>({
     queryKey: ["task-detail", taskId],
-    queryFn: () => apiFetch(`${BASE}/api/admin/tasks/${taskId}`),
+    queryFn: () => apiFetch(`/api/admin/tasks/${taskId}`),
     enabled: !isNew && !!taskId,
   });
 
   const { data: comments = [] } = useQuery<Comment[]>({
     queryKey: ["task-comments", taskId],
-    queryFn: () => apiFetch(`${BASE}/api/admin/tasks/${taskId}/comments`),
+    queryFn: () => apiFetch(`/api/admin/tasks/${taskId}/comments`),
     enabled: !isNew && !!taskId,
   });
 
   const { data: adminUsers = [] } = useQuery<{ id: number; username: string }[]>({
     queryKey: ["admin-users"],
-    queryFn: () => apiFetch(`${BASE}/api/admin/admins`),
+    queryFn: () => apiFetch(`/api/admin/admins`),
   });
 
   const [titleEditing, setTitleEditing] = useState(false);
@@ -138,7 +138,7 @@ export default function TaskDetail() {
 
   const updateMutation = useMutation({
     mutationFn: (patch: Partial<Task>) =>
-      apiFetch(`${BASE}/api/admin/tasks/${taskId}`, {
+      apiFetch(`/api/admin/tasks/${taskId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...task, ...patch }),
@@ -151,13 +151,13 @@ export default function TaskDetail() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: () => apiFetch(`${BASE}/api/admin/tasks/${taskId}`, { method: "DELETE" }),
+    mutationFn: () => apiFetch(`/api/admin/tasks/${taskId}`, { method: "DELETE" }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-tasks"] }); navigate("/tasks"); toast({ title: "Task deleted" }); },
   });
 
   const commentMutation = useMutation({
     mutationFn: (content: string) =>
-      apiFetch(`${BASE}/api/admin/tasks/${taskId}/comments`, {
+      apiFetch(`/api/admin/tasks/${taskId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
@@ -175,7 +175,7 @@ export default function TaskDetail() {
 
   const deleteCommentMutation = useMutation({
     mutationFn: (commentId: number) =>
-      apiFetch(`${BASE}/api/admin/tasks/${taskId}/comments/${commentId}`, { method: "DELETE" }),
+      apiFetch(`/api/admin/tasks/${taskId}/comments/${commentId}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["task-comments", taskId] }),
   });
 
