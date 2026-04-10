@@ -31,6 +31,11 @@ import {
   Inbox,
   Trophy,
   FolderKanban,
+  Reply,
+  MessageSquareMore,
+  ClipboardList,
+  UserCheck,
+  CalendarClock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -66,7 +71,14 @@ const navItems: NavItem[] = [
   {
     label: "Project Management",
     icon: FolderKanban,
-    children: [],
+    children: [
+      { path: "/pm/inbox", label: "Inbox", icon: Inbox },
+      { path: "/pm/replies", label: "Replies", icon: Reply },
+      { path: "/pm/assigned-comments", label: "Assigned Comments", icon: MessageSquareMore },
+      { path: "/pm/my-tasks", label: "My Tasks", icon: ClipboardList },
+      { path: "/pm/assigned-to-me", label: "Assigned to me", icon: UserCheck },
+      { path: "/pm/today-overdue", label: "Today & Overdue", icon: CalendarClock },
+    ],
   },
   {
     label: "Marketing",
