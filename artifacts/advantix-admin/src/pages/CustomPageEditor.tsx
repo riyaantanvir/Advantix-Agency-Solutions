@@ -58,6 +58,8 @@ export default function CustomPageEditor() {
   const [showPasswordField, setShowPasswordField] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [pendingPreviews, setPendingPreviews] = useState<{ tempId: string; localUrl: string; folderId: number }[]>([]);
+  const [editingCaption, setEditingCaption] = useState<{ imageId: number; folderId: number; value: string } | null>(null);
+  const [uploadCaption, setUploadCaption] = useState("");
 
   const { data: page, isLoading } = useQuery<CustomPage>({
     queryKey: ["custom-page", id],
@@ -180,6 +182,7 @@ export default function CustomPageEditor() {
       try {
         const formData = new FormData();
         formData.append("file", file);
+        if (uploadCaption.trim()) formData.append("caption", uploadCaption.trim());
         const img: GalleryImage = await apiFetch(`/api/admin/custom-pages/${id}/folders/${folderId}/images`, {
           method: "POST",
           body: formData,
@@ -211,6 +214,24 @@ export default function CustomPageEditor() {
       setSelectedFolder(prev => prev?.id === folderId ? { ...prev, images: prev.images.filter(img => img.id !== imageId) } : prev);
     } catch (e: unknown) {
       toast({ title: e instanceof Error ? e.message : "Failed", variant: "destructive" });
+    }
+  };
+
+  const saveCaption = async () => {
+    if (!editingCaption) return;
+    const { imageId, folderId, value } = editingCaption;
+    try {
+      const updated: GalleryImage = await apiFetch(
+        `/api/admin/custom-pages/${id}/folders/${folderId}/images/${imageId}`,
+        { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ caption: value }) }
+      );
+      const update = (imgs: GalleryImage[]) => imgs.map(i => i.id === imageId ? { ...i, caption: updated.caption } : i);
+      setFolders(prev => prev.map(f => f.id === folderId ? { ...f, images: update(f.images) } : f));
+      setSelectedFolder(prev => prev?.id === folderId ? { ...prev, images: update(prev.images) } : prev);
+    } catch (e: unknown) {
+      toast({ title: e instanceof Error ? e.message : "Failed to save caption", variant: "destructive" });
+    } finally {
+      setEditingCaption(null);
     }
   };
 
@@ -496,37 +517,46 @@ export default function CustomPageEditor() {
                     exit={{ opacity: 0 }}
                     className="bg-card border border-border rounded-2xl overflow-hidden"
                   >
-                    <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-                      <div>
-                        <p className="font-semibold text-sm">{selectedFolder.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {currentImages.length + pendingPreviews.filter(p => p.folderId === selectedFolder.id).length} image{(currentImages.length + pendingPreviews.filter(p => p.folderId === selectedFolder.id).length) !== 1 ? "s" : ""}
-                          {pendingPreviews.filter(p => p.folderId === selectedFolder.id).length > 0 && (
-                            <span className="ml-1 text-primary">
-                              ({pendingPreviews.filter(p => p.folderId === selectedFolder.id).length} uploading…)
-                            </span>
-                          )}
-                        </p>
+                    <div className="px-5 py-4 border-b border-border space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold text-sm">{selectedFolder.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {currentImages.length + pendingPreviews.filter(p => p.folderId === selectedFolder.id).length} image{(currentImages.length + pendingPreviews.filter(p => p.folderId === selectedFolder.id).length) !== 1 ? "s" : ""}
+                            {pendingPreviews.filter(p => p.folderId === selectedFolder.id).length > 0 && (
+                              <span className="ml-1 text-primary">
+                                ({pendingPreviews.filter(p => p.folderId === selectedFolder.id).length} uploading…)
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => e.target.files && uploadImages(e.target.files, selectedFolder.id)}
+                          />
+                          <Button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploading}
+                            className="gap-2 rounded-xl"
+                            size="sm"
+                          >
+                            {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                            {uploading ? "Uploading..." : "Upload Images"}
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="hidden"
-                          onChange={(e) => e.target.files && uploadImages(e.target.files, selectedFolder.id)}
-                        />
-                        <Button
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={uploading}
-                          className="gap-2 rounded-xl"
-                          size="sm"
-                        >
-                          {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                          {uploading ? "Uploading..." : "Upload Images"}
-                        </Button>
-                      </div>
+                      <input
+                        type="text"
+                        value={uploadCaption}
+                        onChange={e => setUploadCaption(e.target.value)}
+                        placeholder="Caption for uploaded images (optional)"
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 transition"
+                      />
                     </div>
 
                     {/* Drop zone */}
@@ -551,45 +581,92 @@ export default function CustomPageEditor() {
                           </div>
                         ) : (
                           <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                            {currentImages.map((img, idx) => (
-                              <div key={img.id} className="group relative aspect-square rounded-xl overflow-hidden bg-muted">
-                                <img
-                                  src={img.url}
-                                  alt={img.caption ?? ""}
-                                  className="w-full h-full object-cover"
-                                />
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                  <button
-                                    onClick={() => setLightbox({ images: currentImages, index: idx })}
-                                    className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
-                                  >
-                                    <ZoomIn className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => setCoverImage(selectedFolder.id, img.url)}
-                                    className={`p-1.5 rounded-lg transition-colors ${
-                                      selectedFolder.cover_image_url === img.url
-                                        ? "bg-yellow-400 text-black"
-                                        : "bg-white/20 hover:bg-white/30 text-white"
-                                    }`}
-                                    title="Set as cover"
-                                  >
-                                    <Star className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => deleteImage(selectedFolder.id, img.id)}
-                                    className="p-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 text-white transition-colors"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                                {selectedFolder.cover_image_url === img.url && (
-                                  <div className="absolute top-1.5 left-1.5 bg-yellow-400 text-black text-[9px] font-bold px-1 rounded">
-                                    COVER
+                            {currentImages.map((img, idx) => {
+                              const isEditingThis = editingCaption?.imageId === img.id;
+                              return (
+                                <div key={img.id} className="group relative rounded-xl overflow-hidden bg-muted">
+                                  {/* Image */}
+                                  <div className="aspect-square">
+                                    <img
+                                      src={img.url}
+                                      alt={img.caption ?? ""}
+                                      className="w-full h-full object-cover"
+                                    />
+                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                      <button
+                                        onClick={() => setLightbox({ images: currentImages, index: idx })}
+                                        className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
+                                      >
+                                        <ZoomIn className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => setCoverImage(selectedFolder.id, img.url)}
+                                        className={`p-1.5 rounded-lg transition-colors ${
+                                          selectedFolder.cover_image_url === img.url
+                                            ? "bg-yellow-400 text-black"
+                                            : "bg-white/20 hover:bg-white/30 text-white"
+                                        }`}
+                                        title="Set as cover"
+                                      >
+                                        <Star className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => setEditingCaption({ imageId: img.id, folderId: selectedFolder.id, value: img.caption ?? "" })}
+                                        className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
+                                        title="Edit caption"
+                                      >
+                                        <Pencil className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => deleteImage(selectedFolder.id, img.id)}
+                                        className="p-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 text-white transition-colors"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                    {selectedFolder.cover_image_url === img.url && (
+                                      <div className="absolute top-1.5 left-1.5 bg-yellow-400 text-black text-[9px] font-bold px-1 rounded">
+                                        COVER
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
-                            ))}
+
+                                  {/* Caption row */}
+                                  {isEditingThis ? (
+                                    <div className="flex items-center gap-1 px-1.5 py-1.5 bg-background/95 border-t border-border">
+                                      <input
+                                        autoFocus
+                                        type="text"
+                                        value={editingCaption!.value}
+                                        onChange={e => setEditingCaption(prev => prev ? { ...prev, value: e.target.value } : null)}
+                                        onKeyDown={e => { if (e.key === "Enter") saveCaption(); if (e.key === "Escape") setEditingCaption(null); }}
+                                        placeholder="Add caption…"
+                                        className="flex-1 min-w-0 text-[11px] bg-transparent outline-none border-none placeholder:text-muted-foreground/50"
+                                      />
+                                      <button onClick={saveCaption} className="p-1 rounded text-primary hover:bg-primary/10 transition-colors flex-shrink-0">
+                                        <Check className="w-3 h-3" />
+                                      </button>
+                                      <button onClick={() => setEditingCaption(null)} className="p-1 rounded text-muted-foreground hover:bg-muted transition-colors flex-shrink-0">
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div
+                                      className="flex items-center gap-1 px-2 py-1 min-h-[26px] cursor-pointer hover:bg-muted/50 transition-colors"
+                                      onClick={() => setEditingCaption({ imageId: img.id, folderId: selectedFolder.id, value: img.caption ?? "" })}
+                                      title="Click to edit caption"
+                                    >
+                                      {img.caption ? (
+                                        <p className="text-[11px] text-muted-foreground truncate flex-1">{img.caption}</p>
+                                      ) : (
+                                        <p className="text-[11px] text-muted-foreground/40 italic flex-1">Add caption…</p>
+                                      )}
+                                      <Pencil className="w-2.5 h-2.5 text-muted-foreground/30 flex-shrink-0" />
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                             {/* Pending upload previews */}
                             {folderPending.map((p) => (
                               <div key={p.tempId} className="relative aspect-square rounded-xl overflow-hidden bg-muted">
