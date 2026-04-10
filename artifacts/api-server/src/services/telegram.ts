@@ -12,6 +12,7 @@ export const SETTING_KEYS = [
   "TELEGRAM_NOTIFY_TASK_COMMENT",
   "TELEGRAM_NOTIFY_ASSISTANT_REQUEST",
   "TELEGRAM_NOTIFY_NEW_CONTACT",
+  "TELEGRAM_NOTIFY_CONTACT_ASSIGNED",
   "TELEGRAM_NOTIFY_NEW_LEAD",
   "TELEGRAM_NOTIFY_BUG_REPORT",
 ] as const;
@@ -194,6 +195,26 @@ export function buildAssistantRequestMessage(conv: {
     ``,
     `<i>— Advantix Admin</i>`,
   ].join("\n");
+}
+
+export function buildContactAssignedMessage(data: {
+  contactName: string;
+  contactEmail: string;
+  service?: string | null;
+  assignedTo: string;
+}): string {
+  return [
+    `👤 <b>Contact Assigned</b>`,
+    ``,
+    `<b>${escapeHtml(data.contactName)}</b> (${escapeHtml(data.contactEmail)})`,
+    data.service ? `🛠 <b>Service:</b> ${escapeHtml(data.service)}` : null,
+    ``,
+    `✅ Assigned to: <b>${escapeHtml(data.assignedTo)}</b>`,
+    ``,
+    `⚡ Go to <b>Admin → Inbox</b> to respond.`,
+    ``,
+    `<i>— Advantix Admin</i>`,
+  ].filter(Boolean).join("\n");
 }
 
 export function buildNewContactMessage(contact: {

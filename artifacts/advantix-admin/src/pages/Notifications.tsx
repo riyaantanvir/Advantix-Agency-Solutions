@@ -23,6 +23,7 @@ const TOGGLE_KEYS = [
   "TELEGRAM_NOTIFICATIONS_ENABLED",
   "TELEGRAM_NOTIFY_ASSISTANT_REQUEST",
   "TELEGRAM_NOTIFY_NEW_CONTACT",
+  "TELEGRAM_NOTIFY_CONTACT_ASSIGNED",
   "TELEGRAM_NOTIFY_NEW_LEAD",
   "TELEGRAM_NOTIFY_BUG_REPORT",
   "TELEGRAM_NOTIFY_TASK_CREATED",
@@ -50,6 +51,11 @@ const EVENT_GROUPS: EventGroup[] = [
         key: "TELEGRAM_NOTIFY_NEW_CONTACT",
         label: "📬 New Contact Form",
         description: "Alert when someone submits the contact form with their name, email, and message",
+      },
+      {
+        key: "TELEGRAM_NOTIFY_CONTACT_ASSIGNED",
+        label: "📋 Contact Assigned",
+        description: "Alert when a contact in the Inbox is assigned to an admin",
       },
       {
         key: "TELEGRAM_NOTIFY_NEW_LEAD",

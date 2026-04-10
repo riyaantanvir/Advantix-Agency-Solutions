@@ -853,6 +853,7 @@ const TELEGRAM_DEFAULTS = [
   { name: "TELEGRAM_NOTIFICATIONS_ENABLED",     label: "Telegram Notifications Enabled",   value: "true", category: "Notifications" },
   { name: "TELEGRAM_NOTIFY_ASSISTANT_REQUEST",  label: "Human Agent Requested",            value: "true", category: "Notifications" },
   { name: "TELEGRAM_NOTIFY_NEW_CONTACT",        label: "New Contact Form",                 value: "true", category: "Notifications" },
+  { name: "TELEGRAM_NOTIFY_CONTACT_ASSIGNED",   label: "Contact Assigned",                 value: "true", category: "Notifications" },
   { name: "TELEGRAM_NOTIFY_NEW_LEAD",           label: "New Lead",                         value: "true", category: "Notifications" },
   { name: "TELEGRAM_NOTIFY_BUG_REPORT",         label: "Bug Report",                       value: "true", category: "Notifications" },
   { name: "TELEGRAM_NOTIFY_TASK_CREATED",       label: "Task Created",                     value: "true", category: "Notifications" },

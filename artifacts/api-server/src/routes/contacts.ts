@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, contactsTable, adminsTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
-import { sendTelegramMessage, buildNewContactMessage } from "../services/telegram.js";
+import { sendTelegramMessage, buildNewContactMessage, buildContactAssignedMessage } from "../services/telegram.js";
 
 const router: IRouter = Router();
 
@@ -85,6 +85,18 @@ router.patch("/contacts/:id", requireAdmin, async (req, res) => {
   if (!updated) {
     res.status(404).json({ error: "Contact not found" });
     return;
+  }
+
+  if (assignedTo) {
+    sendTelegramMessage(
+      buildContactAssignedMessage({
+        contactName: updated.name,
+        contactEmail: updated.email,
+        service: updated.service ?? null,
+        assignedTo,
+      }),
+      "TELEGRAM_NOTIFY_CONTACT_ASSIGNED"
+    ).catch(() => {});
   }
 
   res.json(updated);
