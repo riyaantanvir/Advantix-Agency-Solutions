@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db, projectsTable, projectMembersTable, tasksTable, adminsTable, taskCommentsTable } from "@workspace/db";
 import { eq, and, desc, lte, or, ne, sql, inArray, count, gte, lt } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
+import { sendTelegramMessage, buildTaskCommentMessage } from "../services/telegram.js";
 
 const router: IRouter = Router();
 
@@ -286,6 +287,20 @@ router.post("/admin/tasks/:id/comments", requireAdmin, async (req: Request, res:
     })
     .returning();
   res.status(201).json(comment);
+
+  // Send Telegram notification (non-blocking)
+  const [task] = await db.select({ title: tasksTable.title, projectId: tasksTable.projectId }).from(tasksTable).where(eq(tasksTable.id, taskId)).limit(1);
+  if (task) {
+    let projectName: string | null = null;
+    if (task.projectId) {
+      const [p] = await db.select({ name: projectsTable.name }).from(projectsTable).where(eq(projectsTable.id, task.projectId)).limit(1);
+      projectName = p?.name ?? null;
+    }
+    sendTelegramMessage(
+      buildTaskCommentMessage({ taskTitle: task.title, authorName: comment.authorName, content: comment.content, projectName }),
+      "TELEGRAM_NOTIFY_TASK_COMMENT"
+    ).catch(() => {});
+  }
 });
 
 router.delete("/admin/tasks/:id/comments/:commentId", requireAdmin, async (req: Request, res: Response) => {

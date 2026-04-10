@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db, tasksTable, taskCommentsTable } from "@workspace/db";
+import { db, tasksTable, taskCommentsTable, projectsTable } from "@workspace/db";
 import { eq, desc, asc, and, or, ilike, sql, inArray, count } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 import {
@@ -8,6 +8,12 @@ import {
   buildTaskAssignedMessage,
   buildStatusChangedMessage,
 } from "../services/telegram.js";
+
+async function getProjectName(projectId: number | null | undefined): Promise<string | null> {
+  if (!projectId) return null;
+  const [p] = await db.select({ name: projectsTable.name }).from(projectsTable).where(eq(projectsTable.id, projectId)).limit(1);
+  return p?.name ?? null;
+}
 
 const router: IRouter = Router();
 
@@ -110,10 +116,12 @@ router.post("/admin/tasks", requireAdmin, async (req: Request, res: Response) =>
   res.status(201).json(task);
 
   // Fire Telegram notifications (non-blocking)
-  sendTelegramMessage(buildTaskCreatedMessage(task), "TELEGRAM_NOTIFY_TASK_CREATED").catch(() => {});
-  if (task.assignedTo) {
-    sendTelegramMessage(buildTaskAssignedMessage(task), "TELEGRAM_NOTIFY_TASK_ASSIGNED").catch(() => {});
-  }
+  getProjectName(task.projectId).then(projectName => {
+    sendTelegramMessage(buildTaskCreatedMessage({ ...task, projectName }), "TELEGRAM_NOTIFY_TASK_CREATED").catch(() => {});
+    if (task.assignedTo) {
+      sendTelegramMessage(buildTaskAssignedMessage({ ...task, projectName }), "TELEGRAM_NOTIFY_TASK_ASSIGNED").catch(() => {});
+    }
+  }).catch(() => {});
 });
 
 /* PUT /api/admin/tasks/:id */
@@ -140,6 +148,10 @@ router.put("/admin/tasks/:id", requireAdmin, async (req: Request, res: Response)
     res.status(400).json({ error: "Title is required" });
     return;
   }
+
+  // Fetch current state BEFORE update for change detection
+  const [before] = await db.select({ status: tasksTable.status, assignedTo: tasksTable.assignedTo, projectId: tasksTable.projectId })
+    .from(tasksTable).where(eq(tasksTable.id, id)).limit(1);
 
   const [updated] = await db
     .update(tasksTable)
@@ -169,11 +181,22 @@ router.put("/admin/tasks/:id", requireAdmin, async (req: Request, res: Response)
 
   res.json(updated);
 
-  // Notify if assignee changed
-  const prevAssignee = (req.body as { _prevAssignedTo?: string })._prevAssignedTo;
-  if (updated.assignedTo && updated.assignedTo !== prevAssignee) {
-    sendTelegramMessage(buildTaskAssignedMessage(updated), "TELEGRAM_NOTIFY_TASK_ASSIGNED").catch(() => {});
-  }
+  // Fire notifications for changes (non-blocking)
+  const effectiveProjectId = projectId !== undefined ? (projectId ?? null) : (before?.projectId ?? null);
+  getProjectName(effectiveProjectId).then(projectName => {
+    // Assignee changed
+    if (updated.assignedTo && updated.assignedTo !== before?.assignedTo) {
+      sendTelegramMessage(buildTaskAssignedMessage({ ...updated, projectName }), "TELEGRAM_NOTIFY_TASK_ASSIGNED").catch(() => {});
+    }
+    // Status changed
+    const oldStatus = before?.status;
+    if (oldStatus && oldStatus !== updated.status) {
+      sendTelegramMessage(
+        buildStatusChangedMessage({ title: updated.title, oldStatus, newStatus: updated.status, assignedTo: updated.assignedTo, projectName }),
+        "TELEGRAM_NOTIFY_TASK_STATUS"
+      ).catch(() => {});
+    }
+  }).catch(() => {});
 });
 
 /* PATCH /api/admin/tasks/:id/status */
@@ -209,10 +232,12 @@ router.patch("/admin/tasks/:id/status", requireAdmin, async (req: Request, res: 
   // Send Telegram notification if status actually changed
   const oldStatus = current?.status;
   if (oldStatus && oldStatus !== status) {
-    sendTelegramMessage(
-      buildStatusChangedMessage({ title: updated.title, oldStatus, newStatus: status, assignedTo: updated.assignedTo }),
-      "TELEGRAM_NOTIFY_TASK_STATUS"
-    ).catch(() => {});
+    getProjectName(updated.projectId).then(projectName => {
+      sendTelegramMessage(
+        buildStatusChangedMessage({ title: updated.title, oldStatus, newStatus: status, assignedTo: updated.assignedTo, projectName }),
+        "TELEGRAM_NOTIFY_TASK_STATUS"
+      ).catch(() => {});
+    }).catch(() => {});
   }
 });
 

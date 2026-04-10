@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, contactsTable, adminsTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
+import { sendTelegramMessage, buildNewContactMessage } from "../services/telegram.js";
 
 const router: IRouter = Router();
 
@@ -44,6 +45,9 @@ router.post("/contacts", async (req, res) => {
   `).catch(() => {});
 
   res.status(201).json(contact);
+
+  // Telegram alert (non-blocking)
+  sendTelegramMessage(buildNewContactMessage({ name, email, phone, service, budget, message }), "TELEGRAM_NOTIFY_NEW_CONTACT").catch(() => {});
 });
 
 router.get("/contacts", requireAdmin, async (_req, res) => {

@@ -1,21 +1,13 @@
 import { Router, type Request, type Response } from "express";
 import { requireAdmin } from "../middleware/auth.js";
-import { sendTelegramMessage } from "../services/telegram.js";
+import { sendTelegramMessage, SETTING_KEYS } from "../services/telegram.js";
 import { db } from "@workspace/db";
 import { integrationsTable } from "@workspace/db/schema";
 import { eq, inArray } from "drizzle-orm";
 
 const router = Router();
 
-const TELEGRAM_KEYS = [
-  "TELEGRAM_BOT_TOKEN",
-  "TELEGRAM_CHAT_ID",
-  "TELEGRAM_NOTIFICATIONS_ENABLED",
-  "TELEGRAM_NOTIFY_TASK_CREATED",
-  "TELEGRAM_NOTIFY_TASK_ASSIGNED",
-  "TELEGRAM_NOTIFY_TASK_STATUS",
-  "TELEGRAM_NOTIFY_ASSISTANT_REQUEST",
-];
+const TELEGRAM_KEYS = [...SETTING_KEYS] as string[];
 
 /* GET /api/admin/notifications/settings */
 router.get("/admin/notifications/settings", requireAdmin, async (_req: Request, res: Response) => {

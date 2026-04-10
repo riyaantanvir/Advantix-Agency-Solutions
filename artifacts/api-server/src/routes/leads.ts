@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, leadsTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
+import { sendTelegramMessage, buildNewLeadMessage } from "../services/telegram.js";
 
 const router: IRouter = Router();
 
@@ -31,6 +32,9 @@ router.post("/leads", async (req, res) => {
     .returning();
 
   res.status(201).json(lead);
+
+  // Telegram alert (non-blocking)
+  sendTelegramMessage(buildNewLeadMessage({ service, name, email, sourcePage }), "TELEGRAM_NOTIFY_NEW_LEAD").catch(() => {});
 });
 
 router.get("/leads", requireAdmin, async (_req, res) => {

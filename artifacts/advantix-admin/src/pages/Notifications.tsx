@@ -22,30 +22,73 @@ type Settings = Record<string, Setting>;
 const TOGGLE_KEYS = [
   "TELEGRAM_NOTIFICATIONS_ENABLED",
   "TELEGRAM_NOTIFY_ASSISTANT_REQUEST",
+  "TELEGRAM_NOTIFY_NEW_CONTACT",
+  "TELEGRAM_NOTIFY_NEW_LEAD",
+  "TELEGRAM_NOTIFY_BUG_REPORT",
   "TELEGRAM_NOTIFY_TASK_CREATED",
   "TELEGRAM_NOTIFY_TASK_ASSIGNED",
   "TELEGRAM_NOTIFY_TASK_STATUS",
+  "TELEGRAM_NOTIFY_TASK_COMMENT",
 ] as const;
 
-const EVENT_LABELS: Record<string, { label: string; description: string; highlight?: boolean }> = {
-  TELEGRAM_NOTIFY_ASSISTANT_REQUEST: {
-    label: "🙋 Human Agent Requested",
-    description: "Alert when a real visitor clicks 'Talk to a human' — highest priority",
-    highlight: true,
-  },
-  TELEGRAM_NOTIFY_TASK_CREATED: {
-    label: "Task Created",
-    description: "Send a notification when a new task is added",
-  },
-  TELEGRAM_NOTIFY_TASK_ASSIGNED: {
-    label: "Task Assigned",
-    description: "Send a notification when a task is assigned to a team member",
-  },
-  TELEGRAM_NOTIFY_TASK_STATUS: {
-    label: "Task Status Changed",
-    description: "Send a notification when a task moves to a new status",
-  },
+type EventGroup = {
+  group: string;
+  events: { key: string; label: string; description: string; highlight?: boolean }[];
 };
+
+const EVENT_GROUPS: EventGroup[] = [
+  {
+    group: "🔔 Visitor & Business",
+    events: [
+      {
+        key: "TELEGRAM_NOTIFY_ASSISTANT_REQUEST",
+        label: "🙋 Human Agent Requested",
+        description: "Alert when a visitor clicks 'Talk to a human' in the AI chat — highest priority",
+        highlight: true,
+      },
+      {
+        key: "TELEGRAM_NOTIFY_NEW_CONTACT",
+        label: "📬 New Contact Form",
+        description: "Alert when someone submits the contact form with their name, email, and message",
+      },
+      {
+        key: "TELEGRAM_NOTIFY_NEW_LEAD",
+        label: "🎯 New Lead",
+        description: "Alert when a visitor expresses interest in a service (clicks 'Get Started')",
+      },
+      {
+        key: "TELEGRAM_NOTIFY_BUG_REPORT",
+        label: "🐛 Bug Report",
+        description: "Alert when someone submits a bug report from the website",
+      },
+    ],
+  },
+  {
+    group: "✅ Task Events",
+    events: [
+      {
+        key: "TELEGRAM_NOTIFY_TASK_CREATED",
+        label: "Task Created",
+        description: "Alert when a new task is added to any project",
+      },
+      {
+        key: "TELEGRAM_NOTIFY_TASK_ASSIGNED",
+        label: "Task Assigned",
+        description: "Alert when a task is assigned or reassigned to a team member",
+      },
+      {
+        key: "TELEGRAM_NOTIFY_TASK_STATUS",
+        label: "Task Status Changed",
+        description: "Alert when a task moves to a different status (e.g. In Progress → Done)",
+      },
+      {
+        key: "TELEGRAM_NOTIFY_TASK_COMMENT",
+        label: "💬 Task Comment",
+        description: "Alert when a team member adds a comment to any task",
+      },
+    ],
+  },
+];
 
 async function apiFetch(url: string, opts?: RequestInit): Promise<unknown> {
   const res = await fetch(url, { credentials: "include", ...opts });
@@ -293,42 +336,44 @@ export default function Notifications() {
       </div>
 
       {/* Event toggles */}
-      <div className="bg-card border border-border rounded-2xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-border bg-muted/20">
-          <p className="font-semibold">Notification Events</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Choose which events trigger a Telegram message</p>
-        </div>
-        <div className="divide-y divide-border">
-          {Object.entries(EVENT_LABELS).map(([key, { label, description, highlight }]) => {
-            const isOn = settings[key]?.value !== "false";
-            const isLoading = saving === key;
-            return (
-              <div
-                key={key}
-                className={`flex items-center gap-4 px-5 py-4 ${highlight ? "bg-primary/5 border-l-2 border-primary" : ""}`}
-              >
-                <div className="flex-1">
-                  <p className={`text-sm font-medium ${highlight ? "text-primary" : ""}`}>{label}</p>
-                  <p className="text-xs text-muted-foreground">{description}</p>
-                </div>
-                <button
-                  onClick={() => toggleSetting(key)}
-                  disabled={isLoading}
-                  className="flex items-center gap-2 text-sm transition-colors"
+      {EVENT_GROUPS.map(({ group, events }) => (
+        <div key={group} className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="px-5 py-4 border-b border-border bg-muted/20">
+            <p className="font-semibold">{group}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Choose which events trigger a Telegram alert</p>
+          </div>
+          <div className="divide-y divide-border">
+            {events.map(({ key, label, description, highlight }) => {
+              const isOn = settings[key]?.value !== "false";
+              const isLoading = saving === key;
+              return (
+                <div
+                  key={key}
+                  className={`flex items-center gap-4 px-5 py-4 ${highlight ? "bg-primary/5 border-l-2 border-primary" : ""}`}
                 >
-                  {isLoading ? (
-                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                  ) : isOn ? (
-                    <ToggleRight className="w-8 h-8 text-primary" />
-                  ) : (
-                    <ToggleLeft className="w-8 h-8 text-muted-foreground" />
-                  )}
-                </button>
-              </div>
-            );
-          })}
+                  <div className="flex-1">
+                    <p className={`text-sm font-medium ${highlight ? "text-primary" : ""}`}>{label}</p>
+                    <p className="text-xs text-muted-foreground">{description}</p>
+                  </div>
+                  <button
+                    onClick={() => toggleSetting(key)}
+                    disabled={isLoading}
+                    className="flex items-center gap-2 text-sm transition-colors"
+                  >
+                    {isLoading ? (
+                      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                    ) : isOn ? (
+                      <ToggleRight className="w-8 h-8 text-primary" />
+                    ) : (
+                      <ToggleLeft className="w-8 h-8 text-muted-foreground" />
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      ))}
 
       {/* Info note */}
       <div className="flex items-start gap-2.5 text-xs text-muted-foreground bg-card border border-border rounded-xl px-4 py-3">

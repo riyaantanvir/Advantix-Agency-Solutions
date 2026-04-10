@@ -3,6 +3,7 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { bugReportsTable } from "@workspace/db/schema";
 import { requireAdmin } from "../middleware/auth.js";
+import { sendTelegramMessage, buildBugReportMessage } from "../services/telegram.js";
 
 const router = Router();
 
@@ -37,6 +38,9 @@ router.post("/bugs", async (req, res) => {
       .returning();
 
     res.status(201).json(bug);
+
+    // Telegram alert (non-blocking)
+    sendTelegramMessage(buildBugReportMessage(bug), "TELEGRAM_NOTIFY_BUG_REPORT").catch(() => {});
   } catch {
     res.status(500).json({ error: "Failed to submit bug report" });
   }

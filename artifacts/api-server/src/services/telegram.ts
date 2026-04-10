@@ -2,14 +2,18 @@ import { db } from "@workspace/db";
 import { integrationsTable } from "@workspace/db/schema";
 import { inArray } from "drizzle-orm";
 
-const SETTING_KEYS = [
+export const SETTING_KEYS = [
   "TELEGRAM_BOT_TOKEN",
   "TELEGRAM_CHAT_ID",
   "TELEGRAM_NOTIFICATIONS_ENABLED",
   "TELEGRAM_NOTIFY_TASK_CREATED",
   "TELEGRAM_NOTIFY_TASK_ASSIGNED",
   "TELEGRAM_NOTIFY_TASK_STATUS",
+  "TELEGRAM_NOTIFY_TASK_COMMENT",
   "TELEGRAM_NOTIFY_ASSISTANT_REQUEST",
+  "TELEGRAM_NOTIFY_NEW_CONTACT",
+  "TELEGRAM_NOTIFY_NEW_LEAD",
+  "TELEGRAM_NOTIFY_BUG_REPORT",
 ] as const;
 
 async function getSettings(): Promise<Record<string, string>> {
@@ -36,7 +40,6 @@ export async function sendTelegramMessage(
     if (!masterEnabled) return { ok: false, error: "Notifications disabled" };
     if (!token || !chatId) return { ok: false, error: "Bot token or chat ID not configured" };
 
-    // Check per-event toggle if provided
     if (eventKey && s[eventKey] === "false") {
       return { ok: false, error: `Event ${eventKey} notifications disabled` };
     }
@@ -58,6 +61,8 @@ export async function sendTelegramMessage(
   }
 }
 
+// ── Emoji helpers ─────────────────────────────────────────────────────────────
+
 const PRIORITY_EMOJI: Record<string, string> = {
   low: "🟢",
   medium: "🔵",
@@ -73,6 +78,8 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
+// ── Message builders ──────────────────────────────────────────────────────────
+
 export function buildTaskCreatedMessage(task: {
   title: string;
   priority: string;
@@ -81,9 +88,10 @@ export function buildTaskCreatedMessage(task: {
   assignedTo?: string | null;
   dueDate?: Date | null;
   description?: string | null;
+  projectName?: string | null;
 }): string {
   const pe = PRIORITY_EMOJI[task.priority] ?? "⚪";
-  const typeBadge = task.type === "client" ? `👤 Client${task.clientName ? `: ${task.clientName}` : ""}` : "🏢 Internal";
+  const typeBadge = task.type === "client" ? `👤 Client${task.clientName ? `: ${escapeHtml(task.clientName)}` : ""}` : "🏢 Internal";
   const lines = [
     `🆕 <b>New Task Created</b>`,
     ``,
@@ -91,6 +99,7 @@ export function buildTaskCreatedMessage(task: {
     `${pe} Priority: <b>${capitalize(task.priority)}</b>`,
     `🏷 Type: ${typeBadge}`,
   ];
+  if (task.projectName) lines.push(`📁 Project: <b>${escapeHtml(task.projectName)}</b>`);
   if (task.assignedTo) lines.push(`👤 Assigned to: <b>${escapeHtml(task.assignedTo)}</b>`);
   if (task.dueDate) lines.push(`📅 Due: <b>${new Date(task.dueDate).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" })}</b>`);
   if (task.description) lines.push(``, `📝 ${escapeHtml(task.description.slice(0, 200))}${task.description.length > 200 ? "…" : ""}`);
@@ -104,6 +113,7 @@ export function buildTaskAssignedMessage(task: {
   priority: string;
   type: string;
   clientName?: string | null;
+  projectName?: string | null;
 }): string {
   const pe = PRIORITY_EMOJI[task.priority] ?? "⚪";
   return [
@@ -113,6 +123,7 @@ export function buildTaskAssignedMessage(task: {
     `👤 Assigned to: <b>${escapeHtml(task.assignedTo)}</b>`,
     `${pe} Priority: <b>${capitalize(task.priority)}</b>`,
     task.type === "client" && task.clientName ? `🏷 Client: ${escapeHtml(task.clientName)}` : `🏢 Internal Task`,
+    task.projectName ? `📁 Project: <b>${escapeHtml(task.projectName)}</b>` : null,
     ``,
     `<i>— Advantix Admin</i>`,
   ].filter(Boolean).join("\n");
@@ -123,16 +134,41 @@ export function buildStatusChangedMessage(task: {
   oldStatus: string;
   newStatus: string;
   assignedTo?: string | null;
+  projectName?: string | null;
 }): string {
   const from = STATUS_LABEL[task.oldStatus] ?? task.oldStatus;
   const to = STATUS_LABEL[task.newStatus] ?? task.newStatus;
-  const statusEmoji = task.newStatus === "done" ? "✅" : task.newStatus === "cancelled" ? "❌" : task.newStatus === "in_progress" ? "🔄" : task.newStatus === "review" ? "👀" : "📋";
+  const statusEmoji =
+    task.newStatus === "done" ? "✅" :
+    task.newStatus === "cancelled" ? "❌" :
+    task.newStatus === "in_progress" ? "🔄" :
+    task.newStatus === "review" ? "👀" : "📋";
   return [
     `${statusEmoji} <b>Task Status Updated</b>`,
     ``,
     `📌 <b>${escapeHtml(task.title)}</b>`,
     `📊 Status: <b>${from}</b> → <b>${to}</b>`,
     task.assignedTo ? `👤 Assigned to: ${escapeHtml(task.assignedTo)}` : null,
+    task.projectName ? `📁 Project: ${escapeHtml(task.projectName)}` : null,
+    ``,
+    `<i>— Advantix Admin</i>`,
+  ].filter(Boolean).join("\n");
+}
+
+export function buildTaskCommentMessage(data: {
+  taskTitle: string;
+  authorName: string;
+  content: string;
+  projectName?: string | null;
+}): string {
+  return [
+    `💬 <b>New Comment on Task</b>`,
+    ``,
+    `📌 <b>${escapeHtml(data.taskTitle)}</b>`,
+    data.projectName ? `📁 Project: ${escapeHtml(data.projectName)}` : null,
+    ``,
+    `👤 <b>${escapeHtml(data.authorName)}</b> commented:`,
+    `<i>${escapeHtml(data.content.slice(0, 300))}${data.content.length > 300 ? "…" : ""}</i>`,
     ``,
     `<i>— Advantix Admin</i>`,
   ].filter(Boolean).join("\n");
@@ -159,6 +195,73 @@ export function buildAssistantRequestMessage(conv: {
     `<i>— Advantix Admin</i>`,
   ].join("\n");
 }
+
+export function buildNewContactMessage(contact: {
+  name: string;
+  email: string;
+  phone?: string | null;
+  service?: string | null;
+  budget?: string | null;
+  message: string;
+}): string {
+  return [
+    `📬 <b>New Contact Form Submission</b>`,
+    ``,
+    `👤 <b>Name:</b> ${escapeHtml(contact.name)}`,
+    `📧 <b>Email:</b> ${escapeHtml(contact.email)}`,
+    contact.phone ? `📞 <b>Phone:</b> ${escapeHtml(contact.phone)}` : null,
+    contact.service ? `🛠 <b>Service:</b> ${escapeHtml(contact.service)}` : null,
+    contact.budget ? `💰 <b>Budget:</b> ${escapeHtml(contact.budget)}` : null,
+    ``,
+    `💬 <b>Message:</b>`,
+    `<i>${escapeHtml(contact.message.slice(0, 400))}${contact.message.length > 400 ? "…" : ""}</i>`,
+    ``,
+    `<i>— Advantix Admin</i>`,
+  ].filter(Boolean).join("\n");
+}
+
+export function buildNewLeadMessage(lead: {
+  service: string;
+  name?: string | null;
+  email?: string | null;
+  sourcePage?: string | null;
+}): string {
+  return [
+    `🎯 <b>New Lead!</b>`,
+    ``,
+    `🛠 <b>Service interest:</b> ${escapeHtml(lead.service)}`,
+    lead.name ? `👤 <b>Name:</b> ${escapeHtml(lead.name)}` : null,
+    lead.email ? `📧 <b>Email:</b> ${escapeHtml(lead.email)}` : null,
+    lead.sourcePage ? `🔗 <b>Page:</b> ${escapeHtml(lead.sourcePage)}` : null,
+    ``,
+    `<i>— Advantix Admin</i>`,
+  ].filter(Boolean).join("\n");
+}
+
+export function buildBugReportMessage(bug: {
+  title: string;
+  description: string;
+  reporterName?: string | null;
+  reporterEmail?: string | null;
+  pageUrl?: string | null;
+}): string {
+  return [
+    `🐛 <b>Bug Report Submitted</b>`,
+    ``,
+    `🏷 <b>${escapeHtml(bug.title)}</b>`,
+    bug.reporterName ? `👤 <b>Reporter:</b> ${escapeHtml(bug.reporterName)}` : null,
+    bug.reporterEmail ? `📧 <b>Email:</b> ${escapeHtml(bug.reporterEmail)}` : null,
+    bug.pageUrl ? `🔗 <b>Page:</b> ${escapeHtml(bug.pageUrl)}` : null,
+    ``,
+    `📝 ${escapeHtml(bug.description.slice(0, 300))}${bug.description.length > 300 ? "…" : ""}`,
+    ``,
+    `⚡ Go to <b>Admin → Bug Reports</b> to review.`,
+    ``,
+    `<i>— Advantix Admin</i>`,
+  ].filter(Boolean).join("\n");
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function escapeHtml(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
