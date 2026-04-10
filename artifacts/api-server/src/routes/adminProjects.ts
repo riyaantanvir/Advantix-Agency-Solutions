@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, projectsTable, projectMembersTable, tasksTable, adminsTable, taskCommentsTable } from "@workspace/db";
-import { eq, and, desc, lte, or, ne, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, lte, or, ne, sql, inArray, count } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 
 const router: IRouter = Router();
@@ -242,7 +242,18 @@ router.get("/admin/pm/assigned-to-me", requireAdmin, async (req: Request, res: R
     projectMap = Object.fromEntries(projects.map(p => [p.id, p.name]));
   }
 
-  res.json(tasks.map(t => ({ ...t, projectName: t.projectId ? projectMap[t.projectId] : null })));
+  let countMap: Record<number, number> = {};
+  if (tasks.length > 0) {
+    const ids = tasks.map(t => t.id);
+    const rows = await db
+      .select({ taskId: taskCommentsTable.taskId, cnt: count() })
+      .from(taskCommentsTable)
+      .where(inArray(taskCommentsTable.taskId, ids))
+      .groupBy(taskCommentsTable.taskId);
+    for (const r of rows) countMap[r.taskId] = r.cnt;
+  }
+
+  res.json(tasks.map(t => ({ ...t, projectName: t.projectId ? projectMap[t.projectId] : null, commentCount: countMap[t.id] ?? 0 })));
 });
 
 router.get("/admin/pm/today-overdue", requireAdmin, async (req: Request, res: Response) => {
