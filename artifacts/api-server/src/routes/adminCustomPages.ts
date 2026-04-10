@@ -29,18 +29,17 @@ function parseStorageDir(): { bucketName: string; prefix: string } {
 
 async function getSignedUrl(objectName: string, method: "GET" | "PUT"): Promise<string> {
   const { bucketName } = parseStorageDir();
+  const body = { bucket_name: bucketName, object_name: objectName, method, expires_at: new Date(Date.now() + 3600 * 1000).toISOString() };
   const res = await fetch(`${SIDECAR}/object-storage/signed-object-url`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      bucket_name: bucketName,
-      object_name: objectName,
-      method,
-      expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
-    }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(15_000),
   });
-  if (!res.ok) throw new Error(`Sidecar error: ${res.status}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Sidecar error: ${res.status} — body: ${text} — request: ${JSON.stringify(body)}`);
+  }
   const { signed_url } = await res.json() as { signed_url: string };
   return signed_url;
 }
@@ -65,9 +64,11 @@ async function uploadToGCS(buffer: Buffer, mimetype: string, originalName: strin
 }
 
 /* ── Public image serving — redirect via sidecar signed URL ─────────────── */
-router.get("/gallery-img/*filePath", async (req: Request, res: Response) => {
+router.get("/gallery-img/{*filePath}", async (req: Request, res: Response) => {
   try {
-    const filePath = req.params.filePath as string;
+    // Express 5 wildcard params can be arrays — extract the path segment reliably
+    const raw = req.params.filePath;
+    const filePath = Array.isArray(raw) ? raw.join("/") : String(raw ?? "");
     if (!filePath) { res.status(400).json({ error: "Missing path" }); return; }
     // Always prepend the bucket prefix so URLs stored with or without it both work
     const { prefix } = parseStorageDir();
