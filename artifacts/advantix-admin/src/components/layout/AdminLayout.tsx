@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useLogout } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -127,6 +127,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const { data: me } = useQuery<{ authenticated: boolean; username: string }>({
+    queryKey: ["auth-me"],
+    queryFn: () => fetch("/api/auth/me", { credentials: "include" }).then(r => r.json()),
+    staleTime: Infinity,
+  });
+
 
   const initialOpen: Record<string, boolean> = {};
   navItems.forEach((item) => {
@@ -224,15 +230,28 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         )}
       </nav>
 
-      <div className="p-4 shrink-0 border-t border-border/50">
-        <button
-          onClick={handleLogout}
-          disabled={logoutMutation.isPending}
-          className="flex items-center gap-3 w-full px-4 py-2.5 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors font-medium group text-sm"
-        >
-          <LogOut className="w-4 h-4 group-hover:text-destructive transition-colors" />
-          {logoutMutation.isPending ? "Logging out..." : "Logout"}
-        </button>
+      <div className="shrink-0 border-t border-border/50">
+        {me?.username && (
+          <div className="px-4 pt-3 pb-2 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+              <span className="text-xs font-bold text-primary">{me.username[0].toUpperCase()}</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground truncate">{me.username}</p>
+              <p className="text-xs text-muted-foreground">Administrator</p>
+            </div>
+          </div>
+        )}
+        <div className="px-4 pb-4">
+          <button
+            onClick={handleLogout}
+            disabled={logoutMutation.isPending}
+            className="flex items-center gap-3 w-full px-4 py-2.5 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors font-medium group text-sm"
+          >
+            <LogOut className="w-4 h-4 group-hover:text-destructive transition-colors" />
+            {logoutMutation.isPending ? "Logging out..." : "Logout"}
+          </button>
+        </div>
       </div>
     </>
   );

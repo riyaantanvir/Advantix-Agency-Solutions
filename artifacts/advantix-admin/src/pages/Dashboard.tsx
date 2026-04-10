@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useGetStats, getGetStatsQueryKey, useListLeads, useListContacts } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { Users, Eye, Mail, TrendingUp, MessageSquare, Activity, Calendar, ChevronDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -77,6 +78,12 @@ export default function Dashboard() {
     () => getRangeForPreset(preset, customFrom, customTo),
     [preset, customFrom, customTo]
   );
+
+  const { data: me } = useQuery<{ authenticated: boolean; username: string }>({
+    queryKey: ["auth-me"],
+    queryFn: () => fetch("/api/auth/me", { credentials: "include" }).then(r => r.json()),
+    staleTime: Infinity,
+  });
 
   const { data: stats, isLoading: statsLoading } = useGetStats({
     query: {
@@ -163,7 +170,12 @@ export default function Dashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-foreground">Dashboard Overview</h1>
-          <p className="text-muted-foreground mt-1">Real-time metrics and agency performance.</p>
+          <p className="text-muted-foreground mt-1">
+            {me?.username
+              ? <>Welcome back, <span className="text-foreground font-medium">{me.username}</span> · Real-time metrics and agency performance.</>
+              : "Real-time metrics and agency performance."
+            }
+          </p>
         </div>
 
         {/* Date filter */}
