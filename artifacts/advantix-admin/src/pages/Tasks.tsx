@@ -110,6 +110,7 @@ function StatusBadge({ status }: { status: string }) {
 /* ─── LIST VIEW ──────────────────────────────────────────────── */
 function ListView({
   grouped, collapsed, toggle, addingTo, newTitle, setNewTitle, addInputRef, startAdd, commit, navigate,
+  projects = [], defaultProjectId = null,
 }: {
   grouped: Record<string, Task[]>;
   collapsed: Set<string>;
@@ -119,9 +120,14 @@ function ListView({
   setNewTitle: (v: string) => void;
   addInputRef: React.RefObject<HTMLInputElement>;
   startAdd: (s: string) => void;
-  commit: (s: string) => void;
+  commit: (s: string, projId?: number | null) => void;
   navigate: (path: string) => void;
+  projects?: { id: number; name: string }[];
+  defaultProjectId?: number | null;
 }) {
+  const [listProjId, setListProjId] = useState<number | null>(defaultProjectId);
+  const [listProjOpen, setListProjOpen] = useState(false);
+  const selectedListProj = projects.find(p => p.id === listProjId);
   return (
     <div className="border border-border rounded-xl overflow-hidden bg-card">
       <div
@@ -198,11 +204,42 @@ function ListView({
                         placeholder="Task title… Enter to save"
                         value={newTitle}
                         onChange={e => setNewTitle(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter") commit(status.id); if (e.key === "Escape") startAdd(""); }}
+                        onKeyDown={e => { if (e.key === "Enter") commit(status.id, listProjId); if (e.key === "Escape") startAdd(""); }}
                       />
                     </div>
-                    <button onClick={() => commit(status.id)} className="text-xs text-primary font-medium hover:underline">Save</button>
-                    <button onClick={() => startAdd("")} className="text-xs text-muted-foreground hover:underline">Cancel</button>
+                    {/* Project selector in list inline add */}
+                    {projects.length > 0 && (
+                      <div className="relative shrink-0">
+                        <button
+                          onClick={() => setListProjOpen(v => !v)}
+                          className={`flex items-center gap-1.5 h-7 px-2 rounded border border-border bg-card hover:bg-secondary/40 text-xs transition-colors ${listProjId ? "text-primary font-medium" : "text-muted-foreground"}`}
+                        >
+                          <FolderKanban className="w-3 h-3 shrink-0" />
+                          <span className="max-w-[80px] truncate">{selectedListProj?.name ?? "Project"}</span>
+                          <ChevronDown className="w-3 h-3 shrink-0" />
+                        </button>
+                        {listProjOpen && (
+                          <div className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-lg shadow-lg min-w-[140px] py-1 max-h-40 overflow-y-auto">
+                            <button
+                              onClick={() => { setListProjId(null); setListProjOpen(false); }}
+                              className={`w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/40 ${listProjId === null ? "text-primary font-medium" : "text-muted-foreground"}`}
+                            >None</button>
+                            {projects.map(p => (
+                              <button
+                                key={p.id}
+                                onClick={() => { setListProjId(p.id); setListProjOpen(false); }}
+                                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/40 flex items-center gap-2 ${listProjId === p.id ? "text-primary font-medium" : "text-foreground"}`}
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-primary/60 shrink-0" />
+                                <span className="truncate">{p.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <button onClick={() => commit(status.id, listProjId)} className="text-xs text-primary font-medium hover:underline shrink-0">Save</button>
+                    <button onClick={() => startAdd("")} className="text-xs text-muted-foreground hover:underline shrink-0">Cancel</button>
                   </div>
                 ) : (
                   <button
@@ -226,10 +263,14 @@ function QuickCreateCard({
   statusId,
   onSave,
   onCancel,
+  projects = [],
+  defaultProjectId = null,
 }: {
   statusId: string;
-  onSave: (data: { title: string; assignedTo?: string; dueDate?: string; priority?: string; isRecurring?: boolean; recurrenceTime?: string }) => void;
+  onSave: (data: { title: string; assignedTo?: string; dueDate?: string; priority?: string; isRecurring?: boolean; recurrenceTime?: string; projectId?: number | null }) => void;
   onCancel: () => void;
+  projects?: { id: number; name: string }[];
+  defaultProjectId?: number | null;
 }) {
   const titleRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState("");
@@ -238,7 +279,8 @@ function QuickCreateCard({
   const [priority, setPriority] = useState("");
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurrenceTime, setRecurrenceTime] = useState("09:00");
-  const [openPicker, setOpenPicker] = useState<"assignee" | "date" | "priority" | null>(null);
+  const [selectedProjId, setSelectedProjId] = useState<number | null>(defaultProjectId);
+  const [openPicker, setOpenPicker] = useState<"assignee" | "date" | "priority" | "project" | null>(null);
 
   const { data: admins = [] } = useQuery<{ id: number; username: string }[]>({
     queryKey: ["admin-users"],
@@ -255,10 +297,11 @@ function QuickCreateCard({
       priority: priority || undefined,
       isRecurring,
       recurrenceTime: isRecurring ? recurrenceTime : undefined,
+      projectId: selectedProjId,
     });
   }
 
-  const togglePicker = (p: "assignee" | "date" | "priority") =>
+  const togglePicker = (p: "assignee" | "date" | "priority" | "project") =>
     setOpenPicker(prev => (prev === p ? null : p));
 
   const selectedPriority = priority ? PRIORITIES[priority] : null;
@@ -380,6 +423,41 @@ function QuickCreateCard({
           )}
         </div>
 
+        {/* Project picker (only shows when there are projects to pick) */}
+        {projects.length > 0 && (
+          <div className="relative">
+            <button
+              onClick={() => togglePicker("project")}
+              className="flex items-center gap-2 w-full px-1 py-1.5 rounded hover:bg-secondary/30 transition-colors text-left"
+            >
+              <FolderKanban className={`w-3.5 h-3.5 shrink-0 ${selectedProjId ? "text-primary" : "text-muted-foreground"}`} />
+              <span className={`text-xs ${selectedProjId ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+                {projects.find(p => p.id === selectedProjId)?.name ?? "Select project"}
+              </span>
+            </button>
+            {openPicker === "project" && (
+              <div className="absolute left-0 top-full mt-1 z-50 bg-popover border border-border rounded-lg shadow-lg min-w-40 py-1 max-h-48 overflow-y-auto">
+                <button
+                  onClick={() => { setSelectedProjId(null); setOpenPicker(null); }}
+                  className={`w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/40 flex items-center gap-2 ${selectedProjId === null ? "text-primary font-medium" : "text-muted-foreground"}`}
+                >
+                  None
+                </button>
+                {projects.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => { setSelectedProjId(p.id); setOpenPicker(null); }}
+                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-secondary/40 flex items-center gap-2 ${selectedProjId === p.id ? "text-primary font-medium" : "text-foreground"}`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary/60 shrink-0" />
+                    <span className="truncate">{p.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Repeat daily toggle */}
         <div className="flex items-center gap-2 px-1 py-1.5">
           <button
@@ -412,11 +490,15 @@ function BoardView({
   onCreateTask,
   onMoveTask,
   navigate,
+  projects = [],
+  defaultProjectId = null,
 }: {
   grouped: Record<string, Task[]>;
-  onCreateTask: (status: string, data: { title: string; assignedTo?: string; dueDate?: string; priority?: string; isRecurring?: boolean; recurrenceTime?: string }) => void;
+  onCreateTask: (status: string, data: { title: string; assignedTo?: string; dueDate?: string; priority?: string; isRecurring?: boolean; recurrenceTime?: string; projectId?: number | null }) => void;
   onMoveTask: (taskId: number, newStatus: string) => void;
   navigate: (path: string) => void;
+  projects?: { id: number; name: string }[];
+  defaultProjectId?: number | null;
 }) {
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<number | null>(null);
@@ -553,6 +635,8 @@ function BoardView({
                   statusId={status.id}
                   onSave={data => { onCreateTask(status.id, data); setAddingTo(null); }}
                   onCancel={() => setAddingTo(null)}
+                  projects={projects}
+                  defaultProjectId={defaultProjectId}
                 />
               ) : (
                 <button
@@ -976,8 +1060,14 @@ export default function Tasks() {
     if (statusId) setTimeout(() => addInputRef.current?.focus(), 60);
   }
 
-  function commit(statusId: string, extras?: { assignedTo?: string; dueDate?: string; priority?: string }) {
-    if (newTitle.trim()) createMutation.mutate({ title: newTitle.trim(), status: statusId, projectId: selectedProjectId ?? undefined, ...extras });
+  function commit(statusId: string, projIdOrExtras?: number | null | { assignedTo?: string; dueDate?: string; priority?: string }) {
+    const projId = typeof projIdOrExtras === "number" || projIdOrExtras === null
+      ? projIdOrExtras
+      : (selectedProjectId ?? null);
+    const extras = typeof projIdOrExtras === "object" && projIdOrExtras !== null && !("id" in projIdOrExtras)
+      ? projIdOrExtras as { assignedTo?: string; dueDate?: string; priority?: string }
+      : undefined;
+    if (newTitle.trim()) createMutation.mutate({ title: newTitle.trim(), status: statusId, projectId: projId ?? undefined, ...extras });
     setAddingTo(null);
     setNewTitle("");
   }
@@ -1077,16 +1167,21 @@ export default function Tasks() {
               startAdd={startAdd}
               commit={commit}
               navigate={navigate}
+              projects={projects}
+              defaultProjectId={selectedProjectId}
             />
           )}
           {view === "board" && (
             <BoardView
               grouped={grouped}
               onCreateTask={(status, data) => {
-                createMutation.mutate({ title: data.title, status, projectId: selectedProjectId ?? undefined, assignedTo: data.assignedTo, dueDate: data.dueDate, priority: data.priority, isRecurring: data.isRecurring, recurrenceTime: data.recurrenceTime });
+                const pid = data.projectId !== undefined ? data.projectId : (selectedProjectId ?? null);
+                createMutation.mutate({ title: data.title, status, projectId: pid ?? undefined, assignedTo: data.assignedTo, dueDate: data.dueDate, priority: data.priority, isRecurring: data.isRecurring, recurrenceTime: data.recurrenceTime });
               }}
               onMoveTask={(taskId, status) => moveMutation.mutate({ taskId, status })}
               navigate={navigate}
+              projects={projects}
+              defaultProjectId={selectedProjectId}
             />
           )}
           {view === "calendar" && (

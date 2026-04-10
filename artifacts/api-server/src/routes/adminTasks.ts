@@ -119,7 +119,7 @@ router.post("/admin/tasks", requireAdmin, async (req: Request, res: Response) =>
 /* PUT /api/admin/tasks/:id */
 router.put("/admin/tasks/:id", requireAdmin, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id ?? "0"), 10);
-  const { title, description, status, priority, type, clientName, assignedTo, dueDate, tags, isRecurring, recurrenceType, recurrenceTime } =
+  const { title, description, status, priority, type, clientName, assignedTo, dueDate, tags, projectId, isRecurring, recurrenceType, recurrenceTime } =
     req.body as {
       title?: string;
       description?: string;
@@ -130,6 +130,7 @@ router.put("/admin/tasks/:id", requireAdmin, async (req: Request, res: Response)
       assignedTo?: string;
       dueDate?: string | null;
       tags?: string;
+      projectId?: number | null;
       isRecurring?: boolean;
       recurrenceType?: string;
       recurrenceTime?: string;
@@ -152,6 +153,7 @@ router.put("/admin/tasks/:id", requireAdmin, async (req: Request, res: Response)
       assignedTo: assignedTo?.trim() ?? null,
       dueDate: dueDate ? new Date(dueDate) : null,
       tags: tags ?? null,
+      projectId: projectId !== undefined ? (projectId ?? null) : undefined,
       isRecurring: isRecurring ?? false,
       recurrenceType: isRecurring ? (recurrenceType ?? "daily") : null,
       recurrenceTime: isRecurring ? (recurrenceTime ?? null) : null,

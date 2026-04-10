@@ -4,7 +4,7 @@ import { useParams, useLocation } from "wouter";
 import {
   ArrowLeft, Trash2, Loader2, Send, Flag, Calendar, User, Tag,
   Building2, CheckSquare, Circle, Clock, AlertCircle, MessageSquare,
-  Pencil, Check, X, Plus, Repeat2,
+  Pencil, Check, X, Plus, Repeat2, FolderKanban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -104,6 +104,65 @@ function Dropdown<T extends string>({
   );
 }
 
+function ProjectDropdown({
+  value,
+  projects,
+  onChange,
+}: {
+  value: number | null;
+  projects: { id: number; name: string }[];
+  onChange: (id: number | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+  const selected = projects.find(p => p.id === value);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 hover:bg-secondary/50 px-2 py-1 rounded-lg transition-colors text-left w-full"
+      >
+        {selected ? (
+          <>
+            <span className="w-2 h-2 rounded-full bg-primary/60 shrink-0" />
+            <span className="text-sm font-medium text-primary">{selected.name}</span>
+          </>
+        ) : (
+          <>
+            <FolderKanban className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">No project</span>
+          </>
+        )}
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 bg-popover border border-border rounded-lg shadow-lg z-20 min-w-[180px] max-h-52 overflow-y-auto">
+          <button
+            onClick={() => { onChange(null); setOpen(false); }}
+            className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-secondary/50 transition-colors ${value === null ? "text-primary font-medium" : "text-muted-foreground"}`}
+          >
+            <FolderKanban className="w-3.5 h-3.5" /> No project
+          </button>
+          {projects.map(p => (
+            <button
+              key={p.id}
+              onClick={() => { onChange(p.id); setOpen(false); }}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-secondary/50 transition-colors ${value === p.id ? "text-primary font-medium" : "text-foreground"}`}
+            >
+              <span className="w-2 h-2 rounded-full bg-primary/60 shrink-0" />
+              <span className="truncate">{p.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TaskDetail() {
   const params = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -129,6 +188,12 @@ export default function TaskDetail() {
   const { data: adminUsers = [] } = useQuery<{ id: number; username: string }[]>({
     queryKey: ["admin-users"],
     queryFn: () => apiFetch(`/api/admin/admins`),
+  });
+
+  const { data: projects = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["admin-projects-list"],
+    queryFn: () => apiFetch(`/api/admin/projects`),
+    staleTime: 60_000,
   });
 
   const [titleEditing, setTitleEditing] = useState(false);
@@ -192,6 +257,11 @@ export default function TaskDetail() {
   function patch(key: keyof Task, value: string | null) {
     if (!task) return;
     updateMutation.mutate({ [key]: value });
+  }
+
+  function patchProject(projectId: number | null) {
+    if (!task) return;
+    updateMutation.mutate({ projectId } as Partial<Task>);
   }
 
   const statusConfig = (id: string) => STATUSES.find(s => s.id === id) ?? STATUSES[0];
@@ -358,8 +428,18 @@ export default function TaskDetail() {
                     </td>
                   </tr>
 
-                  {/* Client + Created by */}
-                  <tr>
+                  {/* Project + Client */}
+                  <tr className="border-b border-border/50">
+                    <td className="px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide bg-secondary/10">
+                      <div className="flex items-center gap-2"><FolderKanban className="w-3.5 h-3.5" /> Project</div>
+                    </td>
+                    <td className="px-4 py-1.5">
+                      <ProjectDropdown
+                        value={task.projectId}
+                        projects={projects}
+                        onChange={patchProject}
+                      />
+                    </td>
                     <td className="px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide bg-secondary/10">
                       <div className="flex items-center gap-2"><Building2 className="w-3.5 h-3.5" /> Client</div>
                     </td>
@@ -371,12 +451,17 @@ export default function TaskDetail() {
                         onBlur={e => patch("clientName", e.target.value.trim() || null)}
                       />
                     </td>
+                  </tr>
+
+                  {/* Created by */}
+                  <tr>
                     <td className="px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide bg-secondary/10">
                       <div className="flex items-center gap-2"><User className="w-3.5 h-3.5" /> Created by</div>
                     </td>
                     <td className="px-4 py-2.5">
                       <span className="text-sm text-muted-foreground">{task.createdBy ?? "—"}</span>
                     </td>
+                    <td colSpan={2} className="px-4 py-1.5" />
                   </tr>
 
                   {/* Recurrence */}
