@@ -30,6 +30,7 @@ import {
   ChevronDown,
   Inbox,
   Trophy,
+  FolderKanban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -61,6 +62,11 @@ const navItems: NavItem[] = [
       { path: "/user-management", label: "Users", icon: UserCog },
       { path: "/contests", label: "Contests", icon: Trophy },
     ],
+  },
+  {
+    label: "Project Management",
+    icon: FolderKanban,
+    children: [],
   },
   {
     label: "Marketing",
