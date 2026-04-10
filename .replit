@@ -35,7 +35,8 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "until curl -sf http://localhost:8080/api/health > /dev/null 2>&1; do sleep 1; done && echo \"✓ API Server ready on :8080\" && echo \"✓ Website ready on :18880\" && echo \"✓ Admin ready on :23910\" && echo \"✓ AI ready on :26083\" && sleep infinity"
+args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
+waitForPort = 8080
 
 [agent]
 stack = "PNPM_WORKSPACE"
