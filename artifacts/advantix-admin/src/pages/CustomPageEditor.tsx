@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Save, Plus, Trash2, Upload, Image, FolderOpen, Lock, Unlock,
   Eye, EyeOff, Globe, FileText, ChevronRight, X, ZoomIn, ZoomOut, ChevronLeft,
-  Loader2, Check, AlertCircle, Pencil, Star
+  Loader2, Check, AlertCircle, Pencil, Star, ExternalLink
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -238,19 +238,28 @@ export default function CustomPageEditor() {
   return (
     <div className="space-y-6 max-w-5xl">
       {/* Header */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => setLocation("/custom-pages")} className="rounded-xl">
           <ArrowLeft className="w-5 h-5" />
         </Button>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold">{isNew ? "New Page" : "Edit Page"}</h1>
-          {!isNew && form.isPublished && (
-            <a href={`/pages/${form.slug}`} target="_blank" rel="noopener noreferrer"
-              className="text-xs text-primary hover:underline flex items-center gap-1 mt-0.5">
-              <Globe className="w-3 h-3" /> /pages/{form.slug}
-            </a>
+          {!isNew && (
+            <p className="text-xs text-muted-foreground mt-0.5">/pages/{form.slug}</p>
           )}
         </div>
+        {!isNew && (
+          <a
+            href={`/pages/${form.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Button variant="outline" className="gap-2 rounded-xl">
+              <ExternalLink className="w-4 h-4" />
+              View Webpage
+            </Button>
+          </a>
+        )}
         <Button onClick={savePage} disabled={saving} className="gap-2 rounded-xl">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {isNew ? "Create Page" : "Save Changes"}
