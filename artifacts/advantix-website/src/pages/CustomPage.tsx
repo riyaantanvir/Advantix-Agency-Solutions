@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "wouter";
 import { Helmet } from "react-helmet-async";
-import { motion, AnimatePresence } from "framer-motion";
-import { Lock, ChevronLeft, ChevronRight, X, FolderOpen, Eye, Heart, UserCircle2 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  Lock, ChevronLeft, ChevronRight, X, FolderOpen, Eye, Heart,
+  UserCircle2, ZoomIn, ZoomOut,
+} from "lucide-react";
 import { useToolsUser } from "@/context/ToolsUserContext";
 import { LoginForm } from "@/components/LoginForm";
 import type { ToolUser } from "@/lib/toolsApi";
 
-/* ── Ultra-fast lazy image with skeleton placeholder ─────────────────────── */
+/* ── Fast lazy image — static skeleton, 200ms fade ───────────────────────── */
 function LazyImage({
   src, alt, className, priority = false, onClick,
 }: {
@@ -19,32 +22,258 @@ function LazyImage({
 
   useEffect(() => {
     if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) setLoaded(true);
-  }, []);
+  }, [src]);
 
   return (
-    <div className={`relative overflow-hidden bg-muted/40 ${className ?? ""}`} onClick={onClick}>
-      {!loaded && !error && (
-        <div className="absolute inset-0 bg-gradient-to-r from-muted/40 via-muted/70 to-muted/40"
-          style={{ animation: "shimmer 1.5s infinite linear", backgroundSize: "200% 100%" }}
-        />
-      )}
+    <div className={`relative overflow-hidden bg-muted/30 ${className ?? ""}`} onClick={onClick}>
       <img
         ref={imgRef}
         src={src}
         alt={alt}
         loading={priority ? "eager" : "lazy"}
         decoding="async"
-        fetchPriority={priority ? "high" : "low"}
+        fetchPriority={priority ? "high" : "auto"}
         onLoad={() => setLoaded(true)}
-        onError={() => setError(true)}
-        className={`w-full h-full object-cover transition-opacity duration-500 ${loaded ? "opacity-100" : "opacity-0"}`}
+        onError={() => { setError(false); setLoaded(true); setError(true); }}
+        style={{ transition: "opacity 0.2s ease" }}
+        className={`w-full h-full object-cover ${loaded ? "opacity-100" : "opacity-0"}`}
       />
       {error && (
-        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/30">
-          <Eye className="w-6 h-6" />
+        <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/20">
+          <Eye className="w-5 h-5" />
         </div>
       )}
     </div>
+  );
+}
+
+/* ── Lightbox with smooth wheel/pinch zoom + drag pan ────────────────────── */
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 4;
+const ZOOM_STEP = 0.35;
+
+function Lightbox({
+  images, index, onClose, onNavigate, user, favoritedIds, onToggleFavorite,
+}: {
+  images: GalleryImage[];
+  index: number;
+  onClose: () => void;
+  onNavigate: (dir: 1 | -1) => void;
+  user: ToolUser | null;
+  favoritedIds: Set<number>;
+  onToggleFavorite: (e: React.MouseEvent, id: number) => void;
+}) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const dragging = useRef(false);
+  const lastMouse = useRef({ x: 0, y: 0 });
+  const imgContainerRef = useRef<HTMLDivElement>(null);
+
+  const current = images[index];
+  const isFav = favoritedIds.has(current.id);
+
+  // Reset zoom & pan when navigating
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [index]);
+
+  // Preload adjacent images
+  useEffect(() => {
+    [index - 1, index + 1].forEach(i => {
+      if (i >= 0 && i < images.length) {
+        const img = new Image();
+        img.src = images[i].url;
+      }
+    });
+  }, [images, index]);
+
+  const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+
+  const changeZoom = (delta: number) => {
+    setZoom(prev => {
+      const next = clampZoom(prev + delta);
+      if (next === 1) setPan({ x: 0, y: 0 });
+      return next;
+    });
+  };
+
+  // Mouse wheel zoom
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
+    changeZoom(delta);
+  };
+
+  // Double-click toggle zoom
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setZoom(prev => {
+      const next = prev > 1 ? 1 : 2;
+      if (next === 1) setPan({ x: 0, y: 0 });
+      return next;
+    });
+  };
+
+  // Mouse drag pan
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoom <= 1) return;
+    dragging.current = true;
+    lastMouse.current = { x: e.clientX, y: e.clientY };
+    e.preventDefault();
+  };
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!dragging.current) return;
+    const dx = e.clientX - lastMouse.current.x;
+    const dy = e.clientY - lastMouse.current.y;
+    lastMouse.current = { x: e.clientX, y: e.clientY };
+    setPan(prev => ({ x: prev.x + dx / zoom, y: prev.y + dy / zoom }));
+  };
+  const handleMouseUp = () => { dragging.current = false; };
+
+  // Touch pinch-zoom
+  const lastPinchDist = useRef<number | null>(null);
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (lastPinchDist.current !== null) {
+        const delta = (dist - lastPinchDist.current) * 0.01;
+        changeZoom(delta);
+      }
+      lastPinchDist.current = dist;
+    }
+  };
+  const handleTouchEnd = () => { lastPinchDist.current = null; };
+
+  // Keyboard
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight") { if (zoom === 1) onNavigate(1); }
+      if (e.key === "ArrowLeft") { if (zoom === 1) onNavigate(-1); }
+      if (e.key === "+" || e.key === "=") changeZoom(ZOOM_STEP);
+      if (e.key === "-") changeZoom(-ZOOM_STEP);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose, onNavigate, zoom]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15 }}
+      className="fixed inset-0 bg-black/96 z-50 flex items-center justify-center select-none"
+      onClick={() => { if (zoom === 1) onClose(); }}
+    >
+      {/* Close */}
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 p-2 text-white/60 hover:text-white transition-colors z-20"
+      >
+        <X className="w-5 h-5" />
+      </button>
+
+      {/* Favorite */}
+      {user && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite(e, current.id); }}
+          className={`absolute top-4 left-4 p-2 rounded-full backdrop-blur-sm transition-all z-20
+            ${isFav ? "bg-red-500/90 text-white" : "bg-white/10 text-white/60 hover:bg-white/20 hover:text-white"}`}
+        >
+          <Heart className={`w-4 h-4 ${isFav ? "fill-current" : ""}`} />
+        </button>
+      )}
+
+      {/* Zoom controls */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-black/50 backdrop-blur-sm rounded-full px-3 py-1.5 z-20">
+        <button
+          onClick={(e) => { e.stopPropagation(); changeZoom(-ZOOM_STEP); }}
+          disabled={zoom <= ZOOM_MIN}
+          className="p-1 text-white/60 hover:text-white disabled:opacity-30 transition-colors"
+        >
+          <ZoomOut className="w-3.5 h-3.5" />
+        </button>
+        <span className="text-white/50 text-xs w-10 text-center">{Math.round(zoom * 100)}%</span>
+        <button
+          onClick={(e) => { e.stopPropagation(); changeZoom(ZOOM_STEP); }}
+          disabled={zoom >= ZOOM_MAX}
+          className="p-1 text-white/60 hover:text-white disabled:opacity-30 transition-colors"
+        >
+          <ZoomIn className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Prev */}
+      {index > 0 && zoom === 1 && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onNavigate(-1); }}
+          className="absolute left-4 top-1/2 -translate-y-1/2 p-2.5 text-white/60 hover:text-white bg-white/8 hover:bg-white/15 rounded-full transition-all z-20"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+      )}
+
+      {/* Next */}
+      {index < images.length - 1 && zoom === 1 && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onNavigate(1); }}
+          className="absolute right-4 top-1/2 -translate-y-1/2 p-2.5 text-white/60 hover:text-white bg-white/8 hover:bg-white/15 rounded-full transition-all z-20"
+        >
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      )}
+
+      {/* Image container */}
+      <div
+        ref={imgContainerRef}
+        className="relative flex items-center justify-center w-full h-full overflow-hidden"
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        style={{ cursor: zoom > 1 ? (dragging.current ? "grabbing" : "grab") : "default" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <motion.img
+          key={index}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.15 }}
+          src={current.url}
+          alt={current.caption ?? ""}
+          onDoubleClick={handleDoubleClick}
+          draggable={false}
+          style={{
+            transform: `scale(${zoom}) translate(${pan.x}px, ${pan.y}px)`,
+            transition: dragging.current ? "none" : "transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+            transformOrigin: "center center",
+            maxWidth: "90vw",
+            maxHeight: "85vh",
+            objectFit: "contain",
+            borderRadius: "10px",
+            userSelect: "none",
+          }}
+        />
+      </div>
+
+      {/* Caption + counter */}
+      <div className="absolute bottom-4 inset-x-0 text-center pointer-events-none">
+        {current.caption && (
+          <p className="text-white/70 text-sm mb-1">{current.caption}</p>
+        )}
+        <p className="text-white/35 text-xs">{index + 1} / {images.length}</p>
+        {zoom > 1 && (
+          <p className="text-white/30 text-[10px] mt-1">Scroll to zoom · Drag to pan · Double-click to reset</p>
+        )}
+      </div>
+    </motion.div>
   );
 }
 
@@ -75,7 +304,6 @@ export default function CustomPage() {
   const [selectedFolder, setSelectedFolder] = useState<GalleryFolder | null>(null);
   const [lightbox, setLightbox] = useState<{ images: GalleryImage[]; index: number } | null>(null);
 
-  // Favorites: set of favorited image IDs for this page
   const [favoritedIds, setFavoritedIds] = useState<Set<number>>(new Set());
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
@@ -110,7 +338,6 @@ export default function CustomPage() {
 
   useEffect(() => { fetchPage(); }, [fetchPage]);
 
-  // Load favorite IDs when page is loaded and user is logged in
   useEffect(() => {
     if (!page || !user) return;
     fetch(`${BASE}/api/favorites/images/page/${page.id}`, { credentials: "include" })
@@ -123,7 +350,6 @@ export default function CustomPage() {
     e.stopPropagation();
     if (!user || togglingId === imageId) return;
     setTogglingId(imageId);
-    // Optimistic update
     setFavoritedIds(prev => {
       const next = new Set(prev);
       if (next.has(imageId)) next.delete(imageId); else next.add(imageId);
@@ -134,7 +360,6 @@ export default function CustomPage() {
         method: "POST", credentials: "include",
       });
       if (!res.ok) {
-        // Revert on failure
         setFavoritedIds(prev => {
           const next = new Set(prev);
           if (next.has(imageId)) next.delete(imageId); else next.add(imageId);
@@ -179,38 +404,24 @@ export default function CustomPage() {
     });
   }, []);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (!lightbox) return;
-      if (e.key === "ArrowRight") navigateLightbox(1);
-      if (e.key === "ArrowLeft") navigateLightbox(-1);
-      if (e.key === "Escape") setLightbox(null);
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [lightbox, navigateLightbox]);
-
-  // ── Loading ──────────────────────────────────────────────────────────────
   if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <div className="w-7 h-7 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
-  // ── 404 ──────────────────────────────────────────────────────────────────
   if (notFound) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center text-center px-4">
-        <p className="text-6xl font-bold text-muted-foreground/30 mb-4">404</p>
+        <p className="text-6xl font-bold text-muted-foreground/20 mb-4">404</p>
         <p className="text-xl font-semibold mb-2">Page not found</p>
         <p className="text-muted-foreground">This page doesn't exist or has been removed.</p>
       </div>
     );
   }
 
-  // ── Login gate ───────────────────────────────────────────────────────────
   if (requiresLogin && !user && !isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4 py-12">
@@ -241,7 +452,6 @@ export default function CustomPage() {
     );
   }
 
-  // ── Password gate ────────────────────────────────────────────────────────
   if (requiresPassword) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
@@ -296,21 +506,14 @@ export default function CustomPage() {
       <div className="max-w-6xl mx-auto px-4 py-12">
         {/* Page header */}
         <div className="mb-10 text-center">
-          <motion.h1 initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="text-4xl font-bold mb-3">
-            {page.title}
-          </motion.h1>
+          <h1 className="text-4xl font-bold mb-3">{page.title}</h1>
           {page.description && (
-            <motion.p initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-              className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              {page.description}
-            </motion.p>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">{page.description}</p>
           )}
         </div>
 
         {page.type === "content" ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+          <div
             className="prose prose-invert max-w-4xl mx-auto"
             dangerouslySetInnerHTML={{ __html: page.content ?? "" }}
           />
@@ -323,7 +526,7 @@ export default function CustomPage() {
                   <button
                     key={folder.id}
                     onClick={() => setSelectedFolder(folder)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                       selectedFolder?.id === folder.id
                         ? "bg-primary text-primary-foreground"
                         : "bg-card border border-border hover:border-primary/50"
@@ -335,7 +538,7 @@ export default function CustomPage() {
                       <FolderOpen className="w-4 h-4" />
                     )}
                     {folder.name}
-                    <span className="opacity-60 text-xs">({folder.images.length})</span>
+                    <span className="opacity-50 text-xs">({folder.images.length})</span>
                   </button>
                 ))}
               </div>
@@ -343,7 +546,13 @@ export default function CustomPage() {
 
             {selectedFolder && (
               <AnimatePresence mode="wait">
-                <motion.div key={selectedFolder.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                <motion.div
+                  key={selectedFolder.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                >
                   {selectedFolder.description && (
                     <p className="text-muted-foreground text-center mb-6">{selectedFolder.description}</p>
                   )}
@@ -354,7 +563,7 @@ export default function CustomPage() {
                       <p>No images in this folder yet</p>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
                       {selectedFolder.images.map((img, idx) => {
                         const isFav = favoritedIds.has(img.id);
                         return (
@@ -367,17 +576,17 @@ export default function CustomPage() {
                               src={img.url}
                               alt={img.caption ?? ""}
                               priority={idx < 8}
-                              className="aspect-square rounded-xl group-hover:scale-105 transition-transform duration-300"
+                              className="absolute inset-0 w-full h-full"
                             />
 
-                            {/* Hover overlay */}
-                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-end pointer-events-none">
-                              {img.caption && (
-                                <p className="text-white text-xs font-medium px-2 py-1.5 truncate w-full bg-gradient-to-t from-black/60">
-                                  {img.caption}
-                                </p>
-                              )}
-                            </div>
+                            {/* Hover overlay — caption + gradient only */}
+                            {img.caption && (
+                              <div className="absolute inset-x-0 bottom-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none">
+                                <div className="bg-gradient-to-t from-black/70 via-black/30 to-transparent px-2.5 pb-2 pt-6">
+                                  <p className="text-white text-xs font-medium truncate">{img.caption}</p>
+                                </div>
+                              </div>
+                            )}
 
                             {/* Favorite button */}
                             {user && (
@@ -385,7 +594,7 @@ export default function CustomPage() {
                                 onClick={(e) => toggleFavorite(e, img.id)}
                                 className={`absolute top-2 right-2 p-1.5 rounded-full backdrop-blur-sm transition-all z-10
                                   opacity-0 group-hover:opacity-100
-                                  ${isFav ? "opacity-100 bg-red-500/90 text-white" : "bg-black/40 text-white/80 hover:bg-black/60"}`}
+                                  ${isFav ? "!opacity-100 bg-red-500/90 text-white" : "bg-black/40 text-white/80 hover:bg-black/60"}`}
                               >
                                 <Heart className={`w-3.5 h-3.5 ${isFav ? "fill-current" : ""}`} />
                               </button>
@@ -405,66 +614,15 @@ export default function CustomPage() {
       {/* Lightbox */}
       <AnimatePresence>
         {lightbox && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/95 z-50 flex items-center justify-center"
-            onClick={() => setLightbox(null)}
-          >
-            <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 p-2 text-white/70 hover:text-white z-10">
-              <X className="w-6 h-6" />
-            </button>
-
-            {lightbox.index > 0 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); navigateLightbox(-1); }}
-                className="absolute left-4 p-3 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors z-10"
-              >
-                <ChevronLeft className="w-6 h-6" />
-              </button>
-            )}
-
-            <motion.img
-              key={lightbox.index}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.2 }}
-              src={lightbox.images[lightbox.index].url}
-              alt={lightbox.images[lightbox.index].caption ?? ""}
-              className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl"
-              onClick={(e) => e.stopPropagation()}
-            />
-
-            {lightbox.index < lightbox.images.length - 1 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); navigateLightbox(1); }}
-                className="absolute right-4 p-3 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors z-10"
-              >
-                <ChevronRight className="w-6 h-6" />
-              </button>
-            )}
-
-            {/* Favorite in lightbox */}
-            {user && (
-              <button
-                onClick={(e) => { e.stopPropagation(); toggleFavorite(e, lightbox.images[lightbox.index].id); }}
-                className={`absolute top-4 left-4 p-2.5 rounded-full backdrop-blur-sm transition-all z-10
-                  ${favoritedIds.has(lightbox.images[lightbox.index].id)
-                    ? "bg-red-500/90 text-white"
-                    : "bg-white/10 text-white/70 hover:bg-white/20"}`}
-              >
-                <Heart className={`w-5 h-5 ${favoritedIds.has(lightbox.images[lightbox.index].id) ? "fill-current" : ""}`} />
-              </button>
-            )}
-
-            <div className="absolute bottom-4 text-center">
-              {lightbox.images[lightbox.index].caption && (
-                <p className="text-white/80 text-sm mb-1">{lightbox.images[lightbox.index].caption}</p>
-              )}
-              <p className="text-white/50 text-xs">{lightbox.index + 1} / {lightbox.images.length}</p>
-            </div>
-          </motion.div>
+          <Lightbox
+            images={lightbox.images}
+            index={lightbox.index}
+            onClose={() => setLightbox(null)}
+            onNavigate={navigateLightbox}
+            user={user}
+            favoritedIds={favoritedIds}
+            onToggleFavorite={toggleFavorite}
+          />
         )}
       </AnimatePresence>
     </>
