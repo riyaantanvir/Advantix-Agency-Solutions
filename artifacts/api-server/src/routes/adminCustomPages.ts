@@ -6,28 +6,46 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { randomUUID } from "crypto";
 import path from "path";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl as s3GetSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const SIDECAR = "http://127.0.0.1:1106";
 
+/* ── Storage backend detection ───────────────────────────────────────────── */
+// Replit mode: PRIVATE_OBJECT_DIR is set (Replit Object Storage via sidecar)
+// S3 mode: S3_BUCKET + S3_ACCESS_KEY_ID + S3_SECRET_ACCESS_KEY are set (DO Spaces / AWS S3)
+
+function isReplitStorage(): boolean {
+  return !!process.env.PRIVATE_OBJECT_DIR;
+}
+
+function getS3Client(): S3Client {
+  const endpoint = process.env.S3_ENDPOINT;
+  const region = process.env.S3_REGION || "us-east-1";
+  const accessKeyId = process.env.S3_ACCESS_KEY_ID || "";
+  const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY || "";
+  return new S3Client({
+    endpoint,
+    region,
+    credentials: { accessKeyId, secretAccessKey },
+    forcePathStyle: !!endpoint, // required for DO Spaces / non-AWS endpoints
+  });
+}
+
+/* ── Replit sidecar helpers ──────────────────────────────────────────────── */
 function parseStorageDir(): { bucketName: string; prefix: string } {
   const dir = process.env.PRIVATE_OBJECT_DIR || "";
   if (!dir) throw new Error("Object storage not configured");
-  // Format: /bucket-name/prefix  or  gs://bucket-name/prefix
-  const clean = dir.startsWith("gs://")
-    ? dir.slice(5)          // strip gs://
-    : dir.replace(/^\//, ""); // strip leading /
+  const clean = dir.startsWith("gs://") ? dir.slice(5) : dir.replace(/^\//, "");
   const parts = clean.split("/").filter(Boolean);
   if (!parts[0]) throw new Error("Object storage not configured");
-  return {
-    bucketName: parts[0],
-    prefix: parts.slice(1).join("/"), // e.g. ".private"
-  };
+  return { bucketName: parts[0], prefix: parts.slice(1).join("/") };
 }
 
-async function getSignedUrl(objectName: string, method: "GET" | "PUT"): Promise<string> {
+async function getSidecarSignedUrl(objectName: string, method: "GET" | "PUT"): Promise<string> {
   const { bucketName } = parseStorageDir();
   const body = { bucket_name: bucketName, object_name: objectName, method, expires_at: new Date(Date.now() + 3600 * 1000).toISOString() };
   const res = await fetch(`${SIDECAR}/object-storage/signed-object-url`, {
@@ -38,42 +56,61 @@ async function getSignedUrl(objectName: string, method: "GET" | "PUT"): Promise<
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Sidecar error: ${res.status} — body: ${text} — request: ${JSON.stringify(body)}`);
+    throw new Error(`Sidecar error: ${res.status} — body: ${text}`);
   }
   const { signed_url } = await res.json() as { signed_url: string };
   return signed_url;
 }
 
-async function uploadToGCS(buffer: Buffer, mimetype: string, originalName: string): Promise<string> {
-  const { prefix } = parseStorageDir();
+/* ── Unified upload & signed GET ─────────────────────────────────────────── */
+async function uploadImage(buffer: Buffer, mimetype: string, originalName: string): Promise<string> {
   const ext = path.extname(originalName) || ".jpg";
-  const objectName = [prefix, `gallery/${randomUUID()}${ext}`].filter(Boolean).join("/");
+  const filename = `gallery/${randomUUID()}${ext}`;
 
-  // Upload via signed PUT URL from sidecar
-  const putUrl = await getSignedUrl(objectName, "PUT");
-  const uploadRes = await fetch(putUrl, {
-    method: "PUT",
-    headers: { "Content-Type": mimetype },
-    body: buffer,
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
-
-  // Store the object name so we can sign it later for serving
-  return `/api/gallery-img/${objectName}`;
+  if (isReplitStorage()) {
+    // Replit Object Storage path
+    const { prefix } = parseStorageDir();
+    const objectName = [prefix, filename].filter(Boolean).join("/");
+    const putUrl = await getSidecarSignedUrl(objectName, "PUT");
+    const uploadRes = await fetch(putUrl, {
+      method: "PUT",
+      headers: { "Content-Type": mimetype },
+      body: buffer,
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`);
+    return `/api/gallery-img/${objectName}`;
+  } else {
+    // S3-compatible path (DO Spaces, AWS S3, etc.)
+    const bucket = process.env.S3_BUCKET;
+    if (!bucket) throw new Error("No storage configured — set PRIVATE_OBJECT_DIR (Replit) or S3_BUCKET + S3_ACCESS_KEY_ID + S3_SECRET_ACCESS_KEY");
+    const s3 = getS3Client();
+    await s3.send(new PutObjectCommand({ Bucket: bucket, Key: filename, Body: buffer, ContentType: mimetype }));
+    // Return a path our serving route can resolve to a signed URL
+    return `/api/gallery-img/${filename}`;
+  }
 }
 
-/* ── Public image serving — redirect via sidecar signed URL ─────────────── */
+async function getSignedReadUrl(objectName: string): Promise<string> {
+  if (isReplitStorage()) {
+    const { prefix } = parseStorageDir();
+    const fullName = prefix && !objectName.startsWith(`${prefix}/`) ? `${prefix}/${objectName}` : objectName;
+    return getSidecarSignedUrl(fullName, "GET");
+  } else {
+    const bucket = process.env.S3_BUCKET;
+    if (!bucket) throw new Error("No storage configured");
+    const s3 = getS3Client();
+    return s3GetSignedUrl(s3, new GetObjectCommand({ Bucket: bucket, Key: objectName }), { expiresIn: 3600 });
+  }
+}
+
+/* ── Public image serving — redirect via signed URL ──────────────────────── */
 router.get("/gallery-img/{*filePath}", async (req: Request, res: Response) => {
   try {
-    // Express 5 wildcard params can be arrays — extract the path segment reliably
     const raw = req.params.filePath;
     const filePath = Array.isArray(raw) ? raw.join("/") : String(raw ?? "");
     if (!filePath) { res.status(400).json({ error: "Missing path" }); return; }
-    // Always prepend the bucket prefix so URLs stored with or without it both work
-    const { prefix } = parseStorageDir();
-    const objectName = prefix && !filePath.startsWith(`${prefix}/`) ? `${prefix}/${filePath}` : filePath;
-    const signedUrl = await getSignedUrl(objectName, "GET");
+    const signedUrl = await getSignedReadUrl(filePath);
     res.redirect(302, signedUrl);
   } catch (e) {
     res.status(500).json({ error: e instanceof Error ? e.message : "Failed to serve image" });
@@ -304,7 +341,7 @@ router.post(
     if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
 
     try {
-      const url = await uploadToGCS(req.file.buffer, req.file.mimetype, req.file.originalname);
+      const url = await uploadImage(req.file.buffer, req.file.mimetype, req.file.originalname);
       const { caption } = req.body as { caption?: string };
       const maxOrderRes = await db.execute(sql`SELECT COALESCE(MAX(sort_order), -1) as max_order FROM gallery_images WHERE folder_id = ${folderId}`);
       const nextOrder = ((maxOrderRes.rows[0] as Record<string, unknown>).max_order as number) + 1;
