@@ -645,6 +645,47 @@ export async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_contest_submissions_contest ON contest_submissions(contest_id)
   `);
 
+  // ── Project Management ────────────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS projects (
+      id serial PRIMARY KEY,
+      name text NOT NULL,
+      description text,
+      color text NOT NULL DEFAULT '#3b82f6',
+      status text NOT NULL DEFAULT 'active',
+      created_by integer,
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS project_members (
+      id serial PRIMARY KEY,
+      project_id integer NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      admin_id integer NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+      role text NOT NULL DEFAULT 'member',
+      added_at timestamptz DEFAULT now() NOT NULL,
+      UNIQUE(project_id, admin_id)
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS task_comments (
+      id serial PRIMARY KEY,
+      task_id integer NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      author_id integer NOT NULL,
+      author_name text NOT NULL,
+      content text NOT NULL,
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS project_id integer REFERENCES projects(id) ON DELETE SET NULL
+  `);
+
   logger.info("Migrations applied");
 }
 

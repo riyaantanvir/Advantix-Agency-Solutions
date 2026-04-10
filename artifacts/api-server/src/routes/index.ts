@@ -31,6 +31,7 @@ import contentPlansRouter from "./contentPlans.js";
 import emailMarketingRouter from "./emailMarketing.js";
 import inboxRouter from "./inbox.js";
 import contestsRouter from "./contests.js";
+import adminProjectsRouter from "./adminProjects.js";
 
 const router: IRouter = Router();
 
@@ -66,5 +67,6 @@ router.use(contentPlansRouter);
 router.use(emailMarketingRouter);
 router.use(inboxRouter);
 router.use(contestsRouter);
+router.use(adminProjectsRouter);
 
 export default router;

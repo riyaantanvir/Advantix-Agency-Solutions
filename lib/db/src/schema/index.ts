@@ -32,3 +32,6 @@ export * from "./inboxMessages";
 export * from "./contests";
 export * from "./contestParticipants";
 export * from "./contestSubmissions";
+export * from "./projects";
+export * from "./projectMembers";
+export * from "./taskComments";

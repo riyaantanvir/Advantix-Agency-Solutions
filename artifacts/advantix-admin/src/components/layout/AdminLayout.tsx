@@ -71,8 +71,8 @@ const navItems: NavItem[] = [
     label: "Project Management",
     icon: FolderKanban,
     children: [
+      { path: "/pm/all-projects", label: "All Projects", icon: FolderKanban },
       { path: "/tasks", label: "Tasks", icon: CheckSquare },
-      { path: "/pm/inbox", label: "Inbox", icon: Inbox },
       { path: "/pm/replies", label: "Replies", icon: Reply },
       { path: "/pm/assigned-comments", label: "Assigned Comments", icon: MessageSquareMore },
       { path: "/pm/my-tasks", label: "My Tasks", icon: ClipboardList },

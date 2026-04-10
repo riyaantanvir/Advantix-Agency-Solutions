@@ -14,6 +14,7 @@ export const tasksTable = pgTable("tasks", {
   dueDate: timestamp("due_date", { withTimezone: true }),
   tags: text("tags"),
   position: integer("position").default(0).notNull(),
+  projectId: integer("project_id"),
   createdBy: text("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

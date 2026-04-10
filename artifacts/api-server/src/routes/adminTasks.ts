@@ -13,7 +13,7 @@ const router: IRouter = Router();
 
 /* GET /api/admin/tasks */
 router.get("/admin/tasks", requireAdmin, async (req: Request, res: Response) => {
-  const { type, status, priority, assignedTo, search } = req.query as Record<string, string>;
+  const { type, status, priority, assignedTo, search, projectId } = req.query as Record<string, string>;
 
   let query = db.select().from(tasksTable).$dynamic();
 
@@ -22,6 +22,7 @@ router.get("/admin/tasks", requireAdmin, async (req: Request, res: Response) => 
   if (status && status !== "all") conditions.push(eq(tasksTable.status, status));
   if (priority && priority !== "all") conditions.push(eq(tasksTable.priority, priority));
   if (assignedTo && assignedTo !== "all") conditions.push(eq(tasksTable.assignedTo, assignedTo));
+  if (projectId && projectId !== "all") conditions.push(eq(tasksTable.projectId, parseInt(projectId, 10)));
   if (search) conditions.push(
     or(
       ilike(tasksTable.title, `%${search}%`),
@@ -40,7 +41,7 @@ router.get("/admin/tasks", requireAdmin, async (req: Request, res: Response) => 
 
 /* POST /api/admin/tasks */
 router.post("/admin/tasks", requireAdmin, async (req: Request, res: Response) => {
-  const { title, description, status, priority, type, clientName, assignedTo, dueDate, tags, createdBy } =
+  const { title, description, status, priority, type, clientName, assignedTo, dueDate, tags, createdBy, projectId } =
     req.body as {
       title?: string;
       description?: string;
@@ -52,6 +53,7 @@ router.post("/admin/tasks", requireAdmin, async (req: Request, res: Response) =>
       dueDate?: string;
       tags?: string;
       createdBy?: string;
+      projectId?: number | null;
     };
 
   if (!title?.trim()) {
@@ -71,6 +73,7 @@ router.post("/admin/tasks", requireAdmin, async (req: Request, res: Response) =>
       assignedTo: assignedTo?.trim() ?? null,
       dueDate: dueDate ? new Date(dueDate) : null,
       tags: tags ?? null,
+      projectId: projectId ?? null,
       createdBy: createdBy?.trim() ?? null,
     })
     .returning();

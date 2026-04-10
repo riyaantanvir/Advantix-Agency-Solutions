@@ -35,6 +35,13 @@ const ContentPlanner    = lazy(() => import("./pages/ContentPlanner"));
 const EmailMarketing    = lazy(() => import("./pages/EmailMarketing"));
 const InboxPage         = lazy(() => import("./pages/InboxPage"));
 const Contests          = lazy(() => import("./pages/Contests"));
+const AllProjects       = lazy(() => import("./pages/AllProjects"));
+const ProjectDetail     = lazy(() => import("./pages/ProjectDetail"));
+const MyTasksPage       = lazy(() => import("./pages/MyTasksPage"));
+const AssignedToMePage  = lazy(() => import("./pages/AssignedToMePage"));
+const TodayOverduePage  = lazy(() => import("./pages/TodayOverduePage"));
+const PMRepliesPage     = lazy(() => import("./pages/PMRepliesPage"));
+const AssignedCommentsPage = lazy(() => import("./pages/AssignedCommentsPage"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -230,6 +237,34 @@ function Router() {
 
       <Route path="/contests">
         <ProtectedLayout><Contests /></ProtectedLayout>
+      </Route>
+
+      <Route path="/pm/all-projects">
+        <ProtectedLayout><AllProjects /></ProtectedLayout>
+      </Route>
+
+      <Route path="/pm/projects/:id">
+        <ProtectedLayout><ProjectDetail /></ProtectedLayout>
+      </Route>
+
+      <Route path="/pm/my-tasks">
+        <ProtectedLayout><MyTasksPage /></ProtectedLayout>
+      </Route>
+
+      <Route path="/pm/assigned-to-me">
+        <ProtectedLayout><AssignedToMePage /></ProtectedLayout>
+      </Route>
+
+      <Route path="/pm/today-overdue">
+        <ProtectedLayout><TodayOverduePage /></ProtectedLayout>
+      </Route>
+
+      <Route path="/pm/replies">
+        <ProtectedLayout><PMRepliesPage /></ProtectedLayout>
+      </Route>
+
+      <Route path="/pm/assigned-comments">
+        <ProtectedLayout><AssignedCommentsPage /></ProtectedLayout>
       </Route>
 
       <Route>
