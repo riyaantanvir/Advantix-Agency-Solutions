@@ -26,6 +26,7 @@ import {
   BarChart2,
   Megaphone,
   Settings,
+  Settings2,
   CalendarDays,
   ChevronDown,
   Inbox,
@@ -59,11 +60,9 @@ const navItems: NavItem[] = [
     label: "Management",
     icon: CheckSquare,
     children: [
-      { path: "/notifications", label: "Alerts", icon: Bell },
       { path: "/bug-reports", label: "Bug Reports", icon: Bug },
       { path: "/contacts", label: "Contacts", icon: Mail },
       { path: "/leads", label: "Leads", icon: TrendingUp },
-      { path: "/user-management", label: "Users", icon: UserCog },
       { path: "/contests", label: "Contests", icon: Trophy },
     ],
   },
@@ -109,9 +108,17 @@ const navItems: NavItem[] = [
     children: [
       { path: "/tools", label: "Advantix Tools", icon: Zap },
       { path: "/manage-ai", label: "Manage AI", icon: Sparkles },
-      { path: "/integrations", label: "Integrations", icon: Plug },
       { path: "/assistant-requests", label: "Assistant Requests", icon: HeadphonesIcon },
+    ],
+  },
+  {
+    label: "Admin Settings",
+    icon: Settings2,
+    children: [
+      { path: "/integrations", label: "Integrations", icon: Plug },
       { path: "/site-settings", label: "Site Settings", icon: Settings },
+      { path: "/notifications", label: "Notification Alerts", icon: Bell },
+      { path: "/user-management", label: "User Management", icon: UserCog },
     ],
   },
 ];
