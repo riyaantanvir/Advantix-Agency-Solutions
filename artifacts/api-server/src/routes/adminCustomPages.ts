@@ -13,9 +13,16 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 function getGalleryBucket(): string {
   const dir = process.env.PRIVATE_OBJECT_DIR || "";
-  const match = dir.match(/^gs:\/\/([^/]+)/);
-  if (!match) throw new Error("Object storage not configured");
-  return match[1];
+  if (!dir) throw new Error("Object storage not configured");
+  if (dir.startsWith("gs://")) {
+    const match = dir.match(/^gs:\/\/([^/]+)/);
+    if (!match) throw new Error("Object storage not configured");
+    return match[1];
+  }
+  // Format: /bucket-name/path  (Replit object storage path)
+  const parts = dir.split("/").filter(Boolean);
+  if (!parts[0]) throw new Error("Object storage not configured");
+  return parts[0];
 }
 
 async function uploadToGCS(buffer: Buffer, mimetype: string, originalName: string): Promise<string> {
@@ -33,9 +40,16 @@ router.get("/gallery-img/*filePath", async (req: Request, res: Response) => {
   try {
     const filePath = req.params.filePath as string;
     const dir = process.env.PRIVATE_OBJECT_DIR || "";
-    const match = dir.match(/^gs:\/\/([^/]+)/);
-    if (!match) { res.status(500).json({ error: "Storage not configured" }); return; }
-    const bucketName = match[1];
+    if (!dir) { res.status(500).json({ error: "Storage not configured" }); return; }
+    let bucketName: string;
+    if (dir.startsWith("gs://")) {
+      const match = dir.match(/^gs:\/\/([^/]+)/);
+      if (!match) { res.status(500).json({ error: "Storage not configured" }); return; }
+      bucketName = match[1];
+    } else {
+      bucketName = dir.split("/").filter(Boolean)[0];
+    }
+    if (!bucketName) { res.status(500).json({ error: "Storage not configured" }); return; }
     const bucket = objectStorageClient.bucket(bucketName);
     const blob = bucket.file(filePath);
     const [exists] = await blob.exists();
