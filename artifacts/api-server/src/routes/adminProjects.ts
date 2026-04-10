@@ -224,7 +224,18 @@ router.get("/admin/pm/my-tasks", requireAdmin, async (req: Request, res: Respons
     projectMap = Object.fromEntries(projects.map(p => [p.id, p.name]));
   }
 
-  res.json(tasks.map(t => ({ ...t, projectName: t.projectId ? projectMap[t.projectId] : null })));
+  let countMap: Record<number, number> = {};
+  if (tasks.length > 0) {
+    const ids = tasks.map(t => t.id);
+    const rows = await db
+      .select({ taskId: taskCommentsTable.taskId, cnt: count() })
+      .from(taskCommentsTable)
+      .where(inArray(taskCommentsTable.taskId, ids))
+      .groupBy(taskCommentsTable.taskId);
+    for (const r of rows) countMap[r.taskId] = r.cnt;
+  }
+
+  res.json(tasks.map(t => ({ ...t, projectName: t.projectId ? projectMap[t.projectId] : null, commentCount: countMap[t.id] ?? 0 })));
 });
 
 router.get("/admin/pm/assigned-to-me", requireAdmin, async (req: Request, res: Response) => {
