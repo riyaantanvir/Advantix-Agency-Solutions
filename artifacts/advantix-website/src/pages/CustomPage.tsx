@@ -177,16 +177,6 @@ function Lightbox({
         <X className="w-5 h-5" />
       </button>
 
-      {/* Favorite */}
-      {user && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onToggleFavorite(e, current.id); }}
-          className={`absolute top-4 left-4 p-2 rounded-full backdrop-blur-sm transition-all z-20
-            ${isFav ? "bg-red-500/90 text-white" : "bg-white/10 text-white/60 hover:bg-white/20 hover:text-white"}`}
-        >
-          <Heart className={`w-4 h-4 ${isFav ? "fill-current" : ""}`} />
-        </button>
-      )}
 
       {/* Zoom controls */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-black/50 backdrop-blur-sm rounded-full px-3 py-1.5 z-20">
@@ -263,14 +253,29 @@ function Lightbox({
         />
       </div>
 
-      {/* Caption + counter */}
-      <div className="absolute bottom-4 inset-x-0 text-center pointer-events-none">
+      {/* Caption + counter + favorite */}
+      <div className="absolute bottom-4 inset-x-0 flex flex-col items-center gap-2 pointer-events-none">
+        <div className="flex items-center gap-3">
+          {/* Heart button — always visible in lightbox */}
+          {user && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleFavorite(e, current.id); }}
+              className={`pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full backdrop-blur-sm text-sm font-medium transition-all
+                ${isFav
+                  ? "bg-red-500 text-white shadow-lg shadow-red-500/30"
+                  : "bg-white/10 text-white/70 hover:bg-white/20 hover:text-white"}`}
+            >
+              <Heart className={`w-4 h-4 transition-all ${isFav ? "fill-current scale-110" : ""}`} />
+              {isFav ? "Saved" : "Save"}
+            </button>
+          )}
+        </div>
         {current.caption && (
-          <p className="text-white/70 text-sm mb-1">{current.caption}</p>
+          <p className="text-white/70 text-sm">{current.caption}</p>
         )}
         <p className="text-white/35 text-xs">{index + 1} / {images.length}</p>
         {zoom > 1 && (
-          <p className="text-white/30 text-[10px] mt-1">Scroll to zoom · Drag to pan · Double-click to reset</p>
+          <p className="text-white/30 text-[10px]">Scroll to zoom · Drag to pan · Double-click to reset</p>
         )}
       </div>
     </motion.div>

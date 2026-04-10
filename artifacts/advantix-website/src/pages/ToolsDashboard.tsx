@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link, useLocation } from "wouter";
-import { Link2, BarChart2, Copy, CheckCircle, MessageSquare, ArrowRight, LogOut, Settings, Plus, Zap, Video, Clock, Sparkles, Brain } from "lucide-react";
+import { Link2, BarChart2, Copy, CheckCircle, MessageSquare, ArrowRight, LogOut, Settings, Plus, Zap, Video, Clock, Sparkles, Brain, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toolsApi, type ShortUrl } from "@/lib/toolsApi";
@@ -26,6 +26,15 @@ interface AiUsage {
   monthlyLimit: number | null;
 }
 
+interface FavoriteItem {
+  image_id: number;
+  url: string;
+  caption: string | null;
+  page_title: string;
+  page_slug: string;
+  folder_name: string;
+}
+
 export default function ToolsDashboard() {
   const { user, loading, logout } = useToolsUser();
   const [, navigate] = useLocation();
@@ -35,6 +44,8 @@ export default function ToolsDashboard() {
   const [loadingRec, setLoadingRec] = useState(true);
   const [aiUsage, setAiUsage] = useState<AiUsage | null>(null);
   const [loadingAi, setLoadingAi] = useState(true);
+  const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
+  const [loadingFavs, setLoadingFavs] = useState(true);
 
   const shortBase = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -53,6 +64,11 @@ export default function ToolsDashboard() {
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data) setAiUsage(data); })
       .finally(() => setLoadingAi(false));
+    fetch("/api/favorites/images", { credentials: "include" })
+      .then(r => r.ok ? r.json() : [])
+      .then(setFavorites)
+      .catch(() => setFavorites([]))
+      .finally(() => setLoadingFavs(false));
   }, [user]);
 
   const totalClicks = urls.reduce((s, u) => s + u.clicks, 0);
@@ -188,6 +204,51 @@ export default function ToolsDashboard() {
             )}
           </Card>
         </motion.div>
+
+        {/* Saved Photos / Favorites */}
+        {(loadingFavs || favorites.length > 0) && (
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: expo, delay: 0.09 }}
+            className="mb-8">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Heart className="w-4 h-4 text-red-400 fill-current" />
+                <h2 className="font-display font-bold text-lg">Saved Photos</h2>
+                {!loadingFavs && (
+                  <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{favorites.length}</span>
+                )}
+              </div>
+              <Link href="/favorites">
+                <button className="text-sm text-primary hover:underline flex items-center gap-1">
+                  View all <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </Link>
+            </div>
+
+            {loadingFavs ? (
+              <div className="flex gap-2 overflow-hidden">
+                {[1,2,3,4,5,6].map(i => (
+                  <div key={i} className="w-20 h-20 rounded-xl bg-secondary/40 animate-pulse shrink-0" />
+                ))}
+              </div>
+            ) : (
+              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+                {favorites.slice(0, 16).map(fav => (
+                  <Link key={fav.image_id} href={`/pages/${fav.page_slug}`}>
+                    <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0 bg-muted/40 cursor-pointer hover:ring-2 hover:ring-red-400/50 transition-all group relative">
+                      <img
+                        src={fav.url}
+                        alt={fav.caption ?? fav.folder_name}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
 
         <div className="grid sm:grid-cols-3 gap-6">
           {/* Recent links */}
