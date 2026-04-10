@@ -75,18 +75,18 @@ export default function TaskDetailModal({ taskId, onClose }: Props) {
 
   const { data: task, isLoading: taskLoading } = useQuery<Task>({
     queryKey: ["task", taskId],
-    queryFn: () => apiFetch(`${BASE}/api/admin/tasks`).then((tasks: Task[]) => tasks.find(t => t.id === taskId)!),
+    queryFn: () => apiFetch(`/api/admin/tasks/${taskId}`),
   });
 
   const { data: comments = [], isLoading: commentsLoading } = useQuery<Comment[]>({
     queryKey: ["task-comments", taskId],
-    queryFn: () => apiFetch(`${BASE}/api/admin/tasks/${taskId}/comments`),
+    queryFn: () => apiFetch(`/api/admin/tasks/${taskId}/comments`),
   });
 
   const statusMutation = useMutation({
     mutationFn: (status: string) =>
-      apiFetch(`${BASE}/api/admin/tasks/${taskId}/status`, {
-        method: "PATCH",
+      apiFetch(`/api/admin/tasks/${taskId}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       }),
@@ -102,7 +102,7 @@ export default function TaskDetailModal({ taskId, onClose }: Props) {
 
   const commentMutation = useMutation({
     mutationFn: (content: string) =>
-      apiFetch(`${BASE}/api/admin/tasks/${taskId}/comments`, {
+      apiFetch(`/api/admin/tasks/${taskId}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
@@ -119,7 +119,7 @@ export default function TaskDetailModal({ taskId, onClose }: Props) {
 
   const deleteCommentMutation = useMutation({
     mutationFn: (commentId: number) =>
-      apiFetch(`${BASE}/api/admin/tasks/${taskId}/comments/${commentId}`, { method: "DELETE" }),
+      apiFetch(`/api/admin/tasks/${taskId}/comments/${commentId}`, { method: "DELETE" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["task-comments", taskId] }),
   });
 
