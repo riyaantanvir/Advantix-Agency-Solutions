@@ -534,45 +534,44 @@ export default function CustomPage() {
                     <p>No folders yet</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                     {(page.folders ?? []).map((folder) => (
                       <button
                         key={folder.id}
                         onClick={() => setSelectedFolder(folder)}
-                        className="group text-left bg-card border border-border rounded-2xl overflow-hidden hover:border-primary/40 transition-colors"
+                        className="group text-left bg-card border border-border rounded-xl overflow-hidden hover:border-primary/40 transition-colors"
                       >
                         {/* Cover image */}
-                        <div className="relative aspect-[16/10] bg-muted/40 overflow-hidden">
+                        <div className="relative aspect-[4/3] bg-muted/40 overflow-hidden">
                           {folder.cover_image_url ? (
                             <LazyImage
                               src={folder.cover_image_url}
                               alt={folder.name}
                               priority
-                              className="absolute inset-0 w-full h-full group-hover:scale-[1.03] transition-transform duration-500"
+                              className="absolute inset-0 w-full h-full group-hover:scale-[1.04] transition-transform duration-500"
                             />
                           ) : (
                             <div className="absolute inset-0 flex items-center justify-center">
-                              <Images className="w-12 h-12 text-muted-foreground/20" />
+                              <Images className="w-8 h-8 text-muted-foreground/20" />
                             </div>
                           )}
-                          {/* View overlay */}
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-end">
-                            <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white text-xs font-semibold tracking-widest uppercase px-4 pb-3">
-                              View Collection →
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors duration-200 flex items-end">
+                            <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white text-[10px] font-semibold tracking-widest uppercase px-3 pb-2">
+                              View →
                             </span>
                           </div>
                         </div>
 
                         {/* Info below */}
-                        <div className="px-4 py-3">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="font-semibold text-base leading-snug">{folder.name}</p>
-                            <span className="shrink-0 text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full mt-0.5">
-                              {folder.images.length} {folder.images.length === 1 ? "photo" : "photos"}
+                        <div className="px-3 py-2">
+                          <div className="flex items-start justify-between gap-1">
+                            <p className="font-medium text-sm leading-snug truncate">{folder.name}</p>
+                            <span className="shrink-0 text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full mt-0.5">
+                              {folder.images.length}
                             </span>
                           </div>
                           {folder.description && (
-                            <p className="text-muted-foreground text-sm mt-1 line-clamp-2">{folder.description}</p>
+                            <p className="text-muted-foreground text-xs mt-0.5 line-clamp-1">{folder.description}</p>
                           )}
                         </div>
                       </button>
@@ -615,13 +614,13 @@ export default function CustomPage() {
                     <p>No images in this folder yet</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-1.5">
                     {selectedFolder.images.map((img, idx) => {
                       const isFav = favoritedIds.has(img.id);
                       return (
                         <div
                           key={img.id}
-                          className="group relative aspect-square rounded-xl overflow-hidden cursor-pointer"
+                          className="group relative aspect-square rounded-lg overflow-hidden cursor-pointer"
                           onClick={() => setLightbox({ images: selectedFolder.images, index: idx })}
                         >
                           <LazyImage
