@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import {
   Plus, Search, ChevronDown, ChevronRight, Flag, MessageSquare, Loader2,
   List, LayoutGrid, Calendar, Table2, GanttChartSquare, ChevronLeft,
-  UserCircle2, CalendarDays, Send, Repeat2,
+  UserCircle2, CalendarDays, Send, Repeat2, FolderKanban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -903,12 +903,20 @@ export default function Tasks() {
   const addInputRef = useRef<HTMLInputElement>(null);
 
   const [view, setView] = useState<ViewMode>(() => (localStorage.getItem("tasks-view") as ViewMode) ?? "board");
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
 
   function changeView(v: ViewMode) { setView(v); localStorage.setItem("tasks-view", v); }
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
+
+  const { data: projects = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["admin-projects-list"],
+    queryFn: () => apiFetch(`/api/admin/projects`),
+    staleTime: 60_000,
+  });
 
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
     queryKey: ["admin-tasks"],
@@ -917,7 +925,7 @@ export default function Tasks() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (d: { title: string; status: string; assignedTo?: string; dueDate?: string; priority?: string; isRecurring?: boolean; recurrenceTime?: string }) =>
+    mutationFn: (d: { title: string; status: string; projectId?: number; assignedTo?: string; dueDate?: string; priority?: string; isRecurring?: boolean; recurrenceTime?: string }) =>
       apiFetch(`/api/admin/tasks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -938,27 +946,25 @@ export default function Tasks() {
     onError: (e: Error) => toast({ variant: "destructive", title: e.message }),
   });
 
-  const grouped = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    const list = q ? tasks.filter(t =>
-      t.title.toLowerCase().includes(q) ||
-      t.assignedTo?.toLowerCase().includes(q) ||
-      t.tags?.toLowerCase().includes(q)
-    ) : tasks;
-    const map: Record<string, Task[]> = {};
-    for (const s of STATUSES) map[s.id] = [];
-    for (const t of list) { (map[t.status] ?? map.todo).push(t); }
-    return map;
-  }, [tasks, search]);
-
   const filteredTasks = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return q ? tasks.filter(t =>
+    let list = selectedProjectId !== null
+      ? tasks.filter(t => t.projectId === selectedProjectId)
+      : tasks;
+    if (q) list = list.filter(t =>
       t.title.toLowerCase().includes(q) ||
       t.assignedTo?.toLowerCase().includes(q) ||
       t.tags?.toLowerCase().includes(q)
-    ) : tasks;
-  }, [tasks, search]);
+    );
+    return list;
+  }, [tasks, search, selectedProjectId]);
+
+  const grouped = useMemo(() => {
+    const map: Record<string, Task[]> = {};
+    for (const s of STATUSES) map[s.id] = [];
+    for (const t of filteredTasks) { (map[t.status] ?? map.todo).push(t); }
+    return map;
+  }, [filteredTasks]);
 
   function toggle(id: string) {
     setCollapsed(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -971,18 +977,54 @@ export default function Tasks() {
   }
 
   function commit(statusId: string, extras?: { assignedTo?: string; dueDate?: string; priority?: string }) {
-    if (newTitle.trim()) createMutation.mutate({ title: newTitle.trim(), status: statusId, ...extras });
+    if (newTitle.trim()) createMutation.mutate({ title: newTitle.trim(), status: statusId, projectId: selectedProjectId ?? undefined, ...extras });
     setAddingTo(null);
     setNewTitle("");
   }
 
+  const selectedProject = projects.find(p => p.id === selectedProjectId);
+
   return (
     <div className="space-y-4">
       {/* Page header */}
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Tasks</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{tasks.length} task{tasks.length !== 1 ? "s" : ""}</p>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 min-w-0">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Tasks</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">{filteredTasks.length} task{filteredTasks.length !== 1 ? "s" : ""}</p>
+          </div>
+          {/* Project picker */}
+          <div className="relative">
+            <button
+              onClick={() => setProjectPickerOpen(v => !v)}
+              className="flex items-center gap-2 h-9 px-3 rounded-lg border border-border bg-card hover:bg-secondary/40 transition-colors text-sm font-medium text-foreground max-w-[200px]"
+            >
+              <FolderKanban className="w-4 h-4 text-primary shrink-0" />
+              <span className="truncate">{selectedProject?.name ?? "All Projects"}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0 ml-1" />
+            </button>
+            {projectPickerOpen && (
+              <div className="absolute left-0 top-full mt-1.5 z-50 bg-popover border border-border rounded-xl shadow-xl min-w-[180px] py-1.5 max-h-64 overflow-y-auto">
+                <button
+                  onClick={() => { setSelectedProjectId(null); setProjectPickerOpen(false); }}
+                  className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-secondary/40 transition-colors ${selectedProjectId === null ? "text-primary font-semibold" : "text-foreground"}`}
+                >
+                  <FolderKanban className="w-3.5 h-3.5 shrink-0" />
+                  All Projects
+                </button>
+                {projects.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => { setSelectedProjectId(p.id); setProjectPickerOpen(false); }}
+                    className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-secondary/40 transition-colors truncate ${selectedProjectId === p.id ? "text-primary font-semibold" : "text-foreground"}`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-primary/60 shrink-0" />
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -1041,7 +1083,7 @@ export default function Tasks() {
             <BoardView
               grouped={grouped}
               onCreateTask={(status, data) => {
-                createMutation.mutate({ title: data.title, status, assignedTo: data.assignedTo, dueDate: data.dueDate, priority: data.priority, isRecurring: data.isRecurring, recurrenceTime: data.recurrenceTime });
+                createMutation.mutate({ title: data.title, status, projectId: selectedProjectId ?? undefined, assignedTo: data.assignedTo, dueDate: data.dueDate, priority: data.priority, isRecurring: data.isRecurring, recurrenceTime: data.recurrenceTime });
               }}
               onMoveTask={(taskId, status) => moveMutation.mutate({ taskId, status })}
               navigate={navigate}

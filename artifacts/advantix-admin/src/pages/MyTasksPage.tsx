@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import {
   Search, Flag, MessageSquare, Loader2, CheckSquare,
   List, LayoutGrid, Calendar, Table2, GanttChartSquare,
-  ChevronDown, ChevronRight, ChevronLeft, Repeat2,
+  ChevronDown, ChevronRight, ChevronLeft, Repeat2, FolderKanban,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -402,6 +402,14 @@ export default function MyTasksPage() {
   const qc = useQueryClient();
   const [view, setView] = useState<ViewMode>(() => (localStorage.getItem("my-tasks-view") as ViewMode) ?? "board");
   const [search, setSearch] = useState("");
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+
+  const { data: projects = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["admin-projects-list"],
+    queryFn: () => apiFetch(`/api/admin/projects`),
+    staleTime: 60_000,
+  });
 
   const { data: tasks = [], isLoading } = useQuery<Task[]>({
     queryKey: ["pm-my-tasks"],
@@ -422,12 +430,16 @@ export default function MyTasksPage() {
 
   const filteredTasks = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return q ? tasks.filter(t =>
+    let list = selectedProjectId !== null
+      ? tasks.filter(t => t.projectId === selectedProjectId)
+      : tasks;
+    if (q) list = list.filter(t =>
       t.title.toLowerCase().includes(q) ||
       t.assignedTo?.toLowerCase().includes(q) ||
       t.tags?.toLowerCase().includes(q)
-    ) : tasks;
-  }, [tasks, search]);
+    );
+    return list;
+  }, [tasks, search, selectedProjectId]);
 
   const grouped = useMemo(() => {
     const map: Record<string, Task[]> = {};
@@ -459,13 +471,49 @@ export default function MyTasksPage() {
     </div>
   );
 
+  const selectedProject = projects.find(p => p.id === selectedProjectId) ?? null;
+
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">My Tasks</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{tasks.length} task{tasks.length !== 1 ? "s" : ""} you're involved in</p>
+        <div className="flex items-center gap-3 min-w-0">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">My Tasks</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">{filteredTasks.length} task{filteredTasks.length !== 1 ? "s" : ""} you're involved in</p>
+          </div>
+          {/* Project picker */}
+          <div className="relative">
+            <button
+              onClick={() => setProjectPickerOpen(v => !v)}
+              className="flex items-center gap-2 h-9 px-3 rounded-lg border border-border bg-card hover:bg-secondary/40 transition-colors text-sm font-medium text-foreground max-w-[200px]"
+            >
+              <FolderKanban className="w-4 h-4 text-primary shrink-0" />
+              <span className="truncate">{selectedProject?.name ?? "All Projects"}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0 ml-1" />
+            </button>
+            {projectPickerOpen && (
+              <div className="absolute left-0 top-full mt-1.5 z-50 bg-popover border border-border rounded-xl shadow-xl min-w-[180px] py-1.5 max-h-64 overflow-y-auto">
+                <button
+                  onClick={() => { setSelectedProjectId(null); setProjectPickerOpen(false); }}
+                  className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-secondary/40 transition-colors ${selectedProjectId === null ? "text-primary font-semibold" : "text-foreground"}`}
+                >
+                  <FolderKanban className="w-3.5 h-3.5 shrink-0" />
+                  All Projects
+                </button>
+                {projects.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => { setSelectedProjectId(p.id); setProjectPickerOpen(false); }}
+                    className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-secondary/40 transition-colors ${selectedProjectId === p.id ? "text-primary font-semibold" : "text-foreground"}`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-primary/60 shrink-0" />
+                    <span className="truncate">{p.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
