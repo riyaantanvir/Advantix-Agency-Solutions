@@ -3,8 +3,8 @@ import { useParams } from "wouter";
 import { Helmet } from "react-helmet-async";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Lock, ChevronLeft, ChevronRight, X, FolderOpen, Eye, Heart,
-  UserCircle2, ZoomIn, ZoomOut,
+  Lock, ChevronLeft, ChevronRight, X, Eye, Heart,
+  UserCircle2, ZoomIn, ZoomOut, Images, ArrowLeft,
 } from "lucide-react";
 import { useToolsUser } from "@/context/ToolsUserContext";
 import { LoginForm } from "@/components/LoginForm";
@@ -329,7 +329,7 @@ export default function CustomPage() {
           setLoginPageTitle(data.title ?? "");
         } else {
           setPage(data);
-          if (data.folders?.length) setSelectedFolder(data.folders[0]);
+          setSelectedFolder(null);
         }
       })
       .catch(() => setNotFound(true))
@@ -518,96 +518,143 @@ export default function CustomPage() {
             dangerouslySetInnerHTML={{ __html: page.content ?? "" }}
           />
         ) : (
-          <div className="space-y-8">
-            {/* Folder tabs */}
-            {(page.folders ?? []).length > 1 && (
-              <div className="flex gap-3 flex-wrap justify-center">
-                {(page.folders ?? []).map((folder) => (
-                  <button
-                    key={folder.id}
-                    onClick={() => setSelectedFolder(folder)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-                      selectedFolder?.id === folder.id
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-card border border-border hover:border-primary/50"
-                    }`}
-                  >
-                    {folder.cover_image_url ? (
-                      <img src={folder.cover_image_url} alt="" loading="lazy" decoding="async" className="w-5 h-5 rounded object-cover" />
-                    ) : (
-                      <FolderOpen className="w-4 h-4" />
-                    )}
-                    {folder.name}
-                    <span className="opacity-50 text-xs">({folder.images.length})</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {selectedFolder && (
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={selectedFolder.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15 }}
-                >
-                  {selectedFolder.description && (
-                    <p className="text-muted-foreground text-center mb-6">{selectedFolder.description}</p>
-                  )}
-
-                  {selectedFolder.images.length === 0 ? (
-                    <div className="text-center py-20 text-muted-foreground">
-                      <Eye className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                      <p>No images in this folder yet</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
-                      {selectedFolder.images.map((img, idx) => {
-                        const isFav = favoritedIds.has(img.id);
-                        return (
-                          <div
-                            key={img.id}
-                            className="group relative aspect-square rounded-xl overflow-hidden cursor-pointer"
-                            onClick={() => setLightbox({ images: selectedFolder.images, index: idx })}
-                          >
+          <AnimatePresence mode="wait">
+            {/* ── Folder cards view ─────────────────────────────────────── */}
+            {!selectedFolder ? (
+              <motion.div
+                key="folders"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                {(page.folders ?? []).length === 0 ? (
+                  <div className="text-center py-20 text-muted-foreground">
+                    <Images className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                    <p>No folders yet</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {(page.folders ?? []).map((folder) => (
+                      <button
+                        key={folder.id}
+                        onClick={() => setSelectedFolder(folder)}
+                        className="group text-left bg-card border border-border rounded-2xl overflow-hidden hover:border-primary/40 transition-colors"
+                      >
+                        {/* Cover image */}
+                        <div className="relative aspect-[16/10] bg-muted/40 overflow-hidden">
+                          {folder.cover_image_url ? (
                             <LazyImage
-                              src={img.url}
-                              alt={img.caption ?? ""}
-                              priority={idx < 8}
-                              className="absolute inset-0 w-full h-full"
+                              src={folder.cover_image_url}
+                              alt={folder.name}
+                              priority
+                              className="absolute inset-0 w-full h-full group-hover:scale-[1.03] transition-transform duration-500"
                             />
-
-                            {/* Hover overlay — caption + gradient only */}
-                            {img.caption && (
-                              <div className="absolute inset-x-0 bottom-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none">
-                                <div className="bg-gradient-to-t from-black/70 via-black/30 to-transparent px-2.5 pb-2 pt-6">
-                                  <p className="text-white text-xs font-medium truncate">{img.caption}</p>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Favorite button */}
-                            {user && (
-                              <button
-                                onClick={(e) => toggleFavorite(e, img.id)}
-                                className={`absolute top-2 right-2 p-1.5 rounded-full backdrop-blur-sm transition-all z-10
-                                  opacity-0 group-hover:opacity-100
-                                  ${isFav ? "!opacity-100 bg-red-500/90 text-white" : "bg-black/40 text-white/80 hover:bg-black/60"}`}
-                              >
-                                <Heart className={`w-3.5 h-3.5 ${isFav ? "fill-current" : ""}`} />
-                              </button>
-                            )}
+                          ) : (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <Images className="w-12 h-12 text-muted-foreground/20" />
+                            </div>
+                          )}
+                          {/* View overlay */}
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-end">
+                            <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white text-xs font-semibold tracking-widest uppercase px-4 pb-3">
+                              View Collection →
+                            </span>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </motion.div>
-              </AnimatePresence>
+                        </div>
+
+                        {/* Info below */}
+                        <div className="px-4 py-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="font-semibold text-base leading-snug">{folder.name}</p>
+                            <span className="shrink-0 text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full mt-0.5">
+                              {folder.images.length} {folder.images.length === 1 ? "photo" : "photos"}
+                            </span>
+                          </div>
+                          {folder.description && (
+                            <p className="text-muted-foreground text-sm mt-1 line-clamp-2">{folder.description}</p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            ) : (
+              /* ── Images grid view ───────────────────────────────────── */
+              <motion.div
+                key={`folder-${selectedFolder.id}`}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                {/* Back + folder header */}
+                <div className="flex items-center gap-3 mb-6">
+                  <button
+                    onClick={() => setSelectedFolder(null)}
+                    className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    All folders
+                  </button>
+                  <span className="text-muted-foreground/30">/</span>
+                  <p className="font-semibold text-sm">{selectedFolder.name}</p>
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {selectedFolder.images.length} {selectedFolder.images.length === 1 ? "photo" : "photos"}
+                  </span>
+                </div>
+
+                {selectedFolder.description && (
+                  <p className="text-muted-foreground text-sm mb-6">{selectedFolder.description}</p>
+                )}
+
+                {selectedFolder.images.length === 0 ? (
+                  <div className="text-center py-20 text-muted-foreground">
+                    <Eye className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                    <p>No images in this folder yet</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                    {selectedFolder.images.map((img, idx) => {
+                      const isFav = favoritedIds.has(img.id);
+                      return (
+                        <div
+                          key={img.id}
+                          className="group relative aspect-square rounded-xl overflow-hidden cursor-pointer"
+                          onClick={() => setLightbox({ images: selectedFolder.images, index: idx })}
+                        >
+                          <LazyImage
+                            src={img.url}
+                            alt={img.caption ?? ""}
+                            priority={idx < 8}
+                            className="absolute inset-0 w-full h-full"
+                          />
+                          {img.caption && (
+                            <div className="absolute inset-x-0 bottom-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none">
+                              <div className="bg-gradient-to-t from-black/70 via-black/30 to-transparent px-2.5 pb-2 pt-6">
+                                <p className="text-white text-xs font-medium truncate">{img.caption}</p>
+                              </div>
+                            </div>
+                          )}
+                          {user && (
+                            <button
+                              onClick={(e) => toggleFavorite(e, img.id)}
+                              className={`absolute top-2 right-2 p-1.5 rounded-full backdrop-blur-sm transition-all z-10
+                                opacity-0 group-hover:opacity-100
+                                ${isFav ? "!opacity-100 bg-red-500/90 text-white" : "bg-black/40 text-white/80 hover:bg-black/60"}`}
+                            >
+                              <Heart className={`w-3.5 h-3.5 ${isFav ? "fill-current" : ""}`} />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </motion.div>
             )}
-          </div>
+          </AnimatePresence>
         )}
       </div>
 
