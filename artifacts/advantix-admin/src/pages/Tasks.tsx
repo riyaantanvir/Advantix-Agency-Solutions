@@ -1,10 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, Search, Pencil, Trash2, X, Calendar, User,
   Building2, CheckCircle2, Circle, Clock, AlertCircle,
-  Loader2, Kanban, List, ArrowRight,
+  Loader2, Kanban, List, ArrowRight, Send, MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,6 +112,51 @@ export default function Tasks() {
     queryKey: ["admin-users"],
     queryFn: () => apiFetch(`${BASE}/api/admin/admins`),
   });
+
+  // ── Task comments ──────────────────────────────────────────────────────────
+  const [commentText, setCommentText] = useState("");
+  const commentsEndRef = useRef<HTMLDivElement>(null);
+
+  type TaskComment = { id: number; taskId: number; authorName: string; content: string; createdAt: string };
+
+  const { data: taskComments = [], isLoading: commentsLoading } = useQuery<TaskComment[]>({
+    queryKey: ["task-comments", detailTask?.id],
+    queryFn: () => apiFetch(`${BASE}/api/admin/tasks/${detailTask!.id}/comments`),
+    enabled: !!detailTask,
+  });
+
+  const postCommentMutation = useMutation({
+    mutationFn: (content: string) =>
+      apiFetch(`${BASE}/api/admin/tasks/${detailTask!.id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["task-comments", detailTask?.id] });
+      qc.invalidateQueries({ queryKey: ["pm-replies"] });
+      qc.invalidateQueries({ queryKey: ["pm-assigned-comments"] });
+      setCommentText("");
+      setTimeout(() => commentsEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    },
+    onError: (e: Error) => toast({ variant: "destructive", title: e.message }),
+  });
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: (commentId: number) =>
+      apiFetch(`${BASE}/api/admin/tasks/${detailTask!.id}/comments/${commentId}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["task-comments", detailTask?.id] }),
+  });
+
+  function timeAgo(date: string) {
+    const diff = Date.now() - new Date(date).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  }
 
   const filtered = useMemo(() => {
     if (!search.trim()) return tasks;
@@ -344,7 +389,80 @@ export default function Tasks() {
                     ))}
                   </div>
                 </div>
+
+                {/* Comments */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3 pt-1">
+                    <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase">
+                      Comments {taskComments.length > 0 && `(${taskComments.length})`}
+                    </p>
+                  </div>
+
+                  {commentsLoading ? (
+                    <div className="flex justify-center py-4">
+                      <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : taskComments.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-6 bg-secondary/20 rounded-xl">
+                      No comments yet. Add the first one below.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {taskComments.map(c => (
+                        <div key={c.id} className="flex items-start gap-2.5 group">
+                          <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                            <span className="text-xs font-bold text-primary">{c.authorName[0]?.toUpperCase()}</span>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-xs font-semibold text-foreground">{c.authorName}</span>
+                              <span className="text-xs text-muted-foreground">{timeAgo(c.createdAt)}</span>
+                              <button
+                                onClick={() => deleteCommentMutation.mutate(c.id)}
+                                className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 hover:text-destructive transition-all"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                            <div className="mt-1 bg-secondary/40 rounded-lg px-3 py-2">
+                              <p className="text-sm text-foreground whitespace-pre-wrap">{c.content}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <div ref={commentsEndRef} />
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Comment input */}
+              <div className="px-4 py-3 border-t border-border/60">
+                <div className="flex gap-2 items-end">
+                  <textarea
+                    className="flex-1 rounded-xl border border-input bg-secondary/30 px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring min-h-[64px] max-h-[120px]"
+                    placeholder="Write a comment… (Ctrl+Enter to send)"
+                    value={commentText}
+                    onChange={e => setCommentText(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                        e.preventDefault();
+                        if (commentText.trim()) postCommentMutation.mutate(commentText.trim());
+                      }
+                    }}
+                  />
+                  <Button
+                    size="icon"
+                    className="h-10 w-10 shrink-0 rounded-xl"
+                    disabled={!commentText.trim() || postCommentMutation.isPending}
+                    onClick={() => { if (commentText.trim()) postCommentMutation.mutate(commentText.trim()); }}
+                  >
+                    {postCommentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </Button>
+                </div>
+              </div>
+
               <div className="p-4 border-t border-border flex gap-2">
                 <Button variant="outline" className="flex-1 gap-2 rounded-xl" onClick={() => openEdit(detailTask)}>
                   <Pencil className="w-4 h-4" /> Edit
