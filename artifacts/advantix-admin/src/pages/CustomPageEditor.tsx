@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, useLocation } from "wouter";
+import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -31,9 +31,11 @@ function slugify(s: string) {
 }
 
 export default function CustomPageEditor() {
-  const { id } = useParams<{ id: string }>();
-  const isNew = id === "new";
   const [, setLocation] = useLocation();
+  const [matchNew] = useRoute("/custom-pages/new");
+  const [, editParams] = useRoute<{ id: string }>("/custom-pages/:id/edit");
+  const isNew = !!matchNew;
+  const id = editParams?.id ?? "new";
   const { toast } = useToast();
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
