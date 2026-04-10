@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useToolsUser } from "@/context/ToolsUserContext";
 import { LoginModal } from "@/components/LoginModal";
 import { BugReportModal } from "@/components/BugReportModal";
+import { useQuery } from "@tanstack/react-query";
 
 const expo = [0.22, 1, 0.36, 1] as const;
 
@@ -22,6 +23,14 @@ export function Navbar() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const { user, isAdmin, logout } = useToolsUser();
+
+  const { data: adminMe } = useQuery<{ authenticated: boolean; username: string }>({
+    queryKey: ["admin-me-navbar"],
+    queryFn: () => fetch("/api/auth/me", { credentials: "include" }).then(r => r.ok ? r.json() : { authenticated: false }),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const isAdminLoggedIn = isAdmin || adminMe?.authenticated === true;
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
@@ -157,7 +166,7 @@ export function Navbar() {
             </div>
 
             {/* Conditional: admin / logged-in user / login button */}
-            {isAdmin ? (
+            {isAdminLoggedIn ? (
               <a href="/admin/" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-semibold text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors duration-200">
                 <Shield className="w-4 h-4" />
                 Admin Panel
@@ -318,7 +327,7 @@ export function Navbar() {
                 transition={{ delay: 0.24, duration: 0.3, ease: expo }}
                 className="pt-2 flex flex-col gap-2"
               >
-                {isAdmin ? (
+                {isAdminLoggedIn ? (
                   <a href="/admin/" className="w-full">
                     <Button variant="outline" className="w-full font-semibold gap-2 border-amber-500/40 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300">
                       <Shield className="w-4 h-4" /> Admin Panel

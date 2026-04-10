@@ -37,6 +37,7 @@ import {
   ClipboardList,
   UserCheck,
   CalendarClock,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -283,7 +284,16 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         )}
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4 space-y-1">
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 w-full px-4 py-2.5 rounded-lg text-muted-foreground hover:bg-secondary/60 hover:text-foreground transition-colors font-medium group text-sm"
+          >
+            <Globe className="w-4 h-4 group-hover:text-foreground transition-colors" />
+            Homepage
+          </a>
           <button
             onClick={handleLogout}
             disabled={logoutMutation.isPending}
