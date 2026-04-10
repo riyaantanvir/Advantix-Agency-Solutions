@@ -798,7 +798,9 @@ export default function Tasks() {
   const qc = useQueryClient();
   const addInputRef = useRef<HTMLInputElement>(null);
 
-  const [view, setView] = useState<ViewMode>("list");
+  const [view, setView] = useState<ViewMode>(() => (localStorage.getItem("tasks-view") as ViewMode) ?? "board");
+
+  function changeView(v: ViewMode) { setView(v); localStorage.setItem("tasks-view", v); }
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [addingTo, setAddingTo] = useState<string | null>(null);
@@ -883,7 +885,7 @@ export default function Tasks() {
         {VIEWS.map(v => (
           <button
             key={v.id}
-            onClick={() => setView(v.id)}
+            onClick={() => changeView(v.id)}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors relative -mb-px ${
               view === v.id
                 ? "text-foreground border-b-2 border-primary"
