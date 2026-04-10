@@ -1,6 +1,6 @@
 import app from "./app.js";
 import { logger } from "./lib/logger.js";
-import { seedAdmin, ensureSessionTable, runMigrations, seedServices } from "./seed.js";
+import { seedAdmin, ensureSessionTable, runMigrations, seedServices, seedTelegramDefaults } from "./seed.js";
 
 const rawPort = process.env["PORT"];
 
@@ -21,6 +21,7 @@ async function start(): Promise<void> {
   await runMigrations();
   await seedAdmin();
   await seedServices();
+  await seedTelegramDefaults();
 
   app.listen(port, (err) => {
     if (err) {

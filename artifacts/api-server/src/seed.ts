@@ -846,3 +846,28 @@ export async function seedServices(): Promise<void> {
   await db.insert(servicesTable).values(initialServices);
   logger.info("Initial services seeded");
 }
+
+const TELEGRAM_DEFAULTS = [
+  { name: "TELEGRAM_BOT_TOKEN",                label: "Telegram Bot Token",               value: "",     category: "Notifications" },
+  { name: "TELEGRAM_CHAT_ID",                   label: "Telegram Chat / Group ID",         value: "",     category: "Notifications" },
+  { name: "TELEGRAM_NOTIFICATIONS_ENABLED",     label: "Telegram Notifications Enabled",   value: "true", category: "Notifications" },
+  { name: "TELEGRAM_NOTIFY_ASSISTANT_REQUEST",  label: "Human Agent Requested",            value: "true", category: "Notifications" },
+  { name: "TELEGRAM_NOTIFY_NEW_CONTACT",        label: "New Contact Form",                 value: "true", category: "Notifications" },
+  { name: "TELEGRAM_NOTIFY_NEW_LEAD",           label: "New Lead",                         value: "true", category: "Notifications" },
+  { name: "TELEGRAM_NOTIFY_BUG_REPORT",         label: "Bug Report",                       value: "true", category: "Notifications" },
+  { name: "TELEGRAM_NOTIFY_TASK_CREATED",       label: "Task Created",                     value: "true", category: "Notifications" },
+  { name: "TELEGRAM_NOTIFY_TASK_ASSIGNED",      label: "Task Assigned",                    value: "true", category: "Notifications" },
+  { name: "TELEGRAM_NOTIFY_TASK_STATUS",        label: "Task Status Changed",              value: "true", category: "Notifications" },
+  { name: "TELEGRAM_NOTIFY_TASK_COMMENT",       label: "Task Comment",                     value: "true", category: "Notifications" },
+];
+
+export async function seedTelegramDefaults(): Promise<void> {
+  for (const row of TELEGRAM_DEFAULTS) {
+    await db.execute(sql`
+      INSERT INTO integrations (name, label, value, category)
+      VALUES (${row.name}, ${row.label}, ${row.value}, ${row.category})
+      ON CONFLICT (name) DO NOTHING
+    `);
+  }
+  logger.info("Telegram notification defaults ensured");
+}
