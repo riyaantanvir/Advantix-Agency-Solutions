@@ -193,6 +193,12 @@ export default function CustomPage() {
         {page.meta_description && <meta name="description" content={page.meta_description} />}
       </Helmet>
 
+      {!page.is_published && (
+        <div className="bg-yellow-500/15 border-b border-yellow-500/30 px-4 py-2.5 text-center text-sm text-yellow-400 font-medium">
+          Draft Preview — this page is not visible to the public yet. Publish it from the admin editor to make it live.
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto px-4 py-12">
         {/* Page header */}
         <div className="mb-10 text-center">

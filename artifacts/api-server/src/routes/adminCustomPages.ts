@@ -83,7 +83,15 @@ router.get("/gallery-img/{*filePath}", async (req: Request, res: Response) => {
 /* ── Public page fetch ───────────────────────────────────────────────────── */
 router.get("/pages/:slug", async (req: Request, res: Response) => {
   const { slug } = req.params;
-  const rows = await db.execute(sql`SELECT * FROM custom_pages WHERE slug = ${slug} AND is_published = true LIMIT 1`);
+  // Allow admins to preview draft pages
+  const session = req.session as { adminId?: number };
+  const isAdmin = !!session?.adminId;
+
+  const rows = await db.execute(
+    isAdmin
+      ? sql`SELECT * FROM custom_pages WHERE slug = ${slug} LIMIT 1`
+      : sql`SELECT * FROM custom_pages WHERE slug = ${slug} AND is_published = true LIMIT 1`
+  );
   const page = rows.rows[0] as Record<string, unknown> | undefined;
   if (!page) { res.status(404).json({ error: "Page not found" }); return; }
 
@@ -121,7 +129,13 @@ router.post("/pages/:slug/verify", async (req: Request, res: Response) => {
   const { password } = req.body as { password?: string };
   if (!password) { res.status(400).json({ error: "Password required" }); return; }
 
-  const rows = await db.execute(sql`SELECT * FROM custom_pages WHERE slug = ${slug} AND is_published = true LIMIT 1`);
+  const session = req.session as { adminId?: number };
+  const isAdmin = !!session?.adminId;
+  const rows = await db.execute(
+    isAdmin
+      ? sql`SELECT * FROM custom_pages WHERE slug = ${slug} LIMIT 1`
+      : sql`SELECT * FROM custom_pages WHERE slug = ${slug} AND is_published = true LIMIT 1`
+  );
   const page = rows.rows[0] as Record<string, unknown> | undefined;
   if (!page) { res.status(404).json({ error: "Page not found" }); return; }
 
