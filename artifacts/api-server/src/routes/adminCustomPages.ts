@@ -67,8 +67,11 @@ async function uploadToGCS(buffer: Buffer, mimetype: string, originalName: strin
 /* ── Public image serving — redirect via sidecar signed URL ─────────────── */
 router.get("/gallery-img/*filePath", async (req: Request, res: Response) => {
   try {
-    const objectName = req.params.filePath as string;
-    if (!objectName) { res.status(400).json({ error: "Missing path" }); return; }
+    const filePath = req.params.filePath as string;
+    if (!filePath) { res.status(400).json({ error: "Missing path" }); return; }
+    // Always prepend the bucket prefix so URLs stored with or without it both work
+    const { prefix } = parseStorageDir();
+    const objectName = prefix && !filePath.startsWith(`${prefix}/`) ? `${prefix}/${filePath}` : filePath;
     const signedUrl = await getSignedUrl(objectName, "GET");
     res.redirect(302, signedUrl);
   } catch (e) {

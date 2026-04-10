@@ -74,8 +74,9 @@ export default function CustomPage() {
 
   useEffect(() => {
     fetch(`${BASE}/api/pages/${slug}`, { credentials: "include" })
-      .then(r => r.json())
-      .then((data: CustomPageData) => {
+      .then(async r => {
+        if (!r.ok) { setNotFound(true); return; }
+        const data: CustomPageData = await r.json();
         if (data.requiresPassword) {
           setRequiresPassword(true);
         } else {
