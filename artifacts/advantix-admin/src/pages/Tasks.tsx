@@ -370,20 +370,63 @@ function QuickCreateCard({
 function BoardView({
   grouped,
   onCreateTask,
+  onMoveTask,
   navigate,
 }: {
   grouped: Record<string, Task[]>;
   onCreateTask: (status: string, data: { title: string; assignedTo?: string; dueDate?: string; priority?: string }) => void;
+  onMoveTask: (taskId: number, newStatus: string) => void;
   navigate: (path: string) => void;
 }) {
   const [addingTo, setAddingTo] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState<string | null>(null);
+
+  function handleDragStart(e: React.DragEvent, taskId: number) {
+    setDraggingId(taskId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("taskId", String(taskId));
+  }
+
+  function handleDragEnd() {
+    setDraggingId(null);
+    setDragOver(null);
+  }
+
+  function handleDragOver(e: React.DragEvent, statusId: string) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOver(statusId);
+  }
+
+  function handleDrop(e: React.DragEvent, statusId: string) {
+    e.preventDefault();
+    const taskId = parseInt(e.dataTransfer.getData("taskId"), 10);
+    if (taskId && draggingId !== null) {
+      const task = Object.values(grouped).flat().find(t => t.id === taskId);
+      if (task && task.status !== statusId) {
+        onMoveTask(taskId, statusId);
+      }
+    }
+    setDraggingId(null);
+    setDragOver(null);
+  }
 
   return (
     <div className="flex gap-3 overflow-x-auto pb-4 min-h-[500px]">
       {STATUSES.map(status => {
         const items = grouped[status.id] ?? [];
+        const isOver = dragOver === status.id;
         return (
-          <div key={status.id} className="flex-shrink-0 w-72 flex flex-col rounded-xl border border-border bg-card overflow-hidden">
+          <div
+            key={status.id}
+            className={`flex-shrink-0 w-72 flex flex-col rounded-xl border-2 bg-card overflow-hidden transition-colors duration-150 ${
+              isOver ? "border-primary/60 bg-primary/5" : "border-border"
+            }`}
+            onDragOver={e => handleDragOver(e, status.id)}
+            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(null); }}
+            onDrop={e => handleDrop(e, status.id)}
+          >
             {/* Column header */}
             <div className="flex items-center justify-between px-3 py-2.5 border-b border-border bg-secondary/20">
               <div className="flex items-center gap-2">
@@ -399,15 +442,28 @@ function BoardView({
               </button>
             </div>
 
+            {/* Drop zone hint */}
+            {isOver && (
+              <div className="mx-2 mt-2 h-1.5 rounded-full bg-primary/40 animate-pulse" />
+            )}
+
             {/* Cards */}
             <div className="flex-1 overflow-y-auto p-2 space-y-2">
               {items.map(task => {
                 const p = PRIORITIES[task.priority] ?? PRIORITIES.medium;
+                const isDragging = draggingId === task.id;
                 return (
                   <div
                     key={task.id}
-                    onClick={() => navigate(`/tasks/${task.id}`)}
-                    className="bg-background border border-border rounded-lg p-3 cursor-pointer hover:border-primary/40 hover:shadow-sm transition-all group"
+                    draggable
+                    onDragStart={e => handleDragStart(e, task.id)}
+                    onDragEnd={handleDragEnd}
+                    onClick={() => !isDragging && navigate(`/tasks/${task.id}`)}
+                    className={`bg-background border rounded-lg p-3 transition-all group select-none ${
+                      isDragging
+                        ? "opacity-40 border-primary scale-95 cursor-grabbing shadow-lg"
+                        : "border-border cursor-grab hover:border-primary/40 hover:shadow-sm active:cursor-grabbing"
+                    }`}
                   >
                     <p className={`text-sm font-medium leading-snug mb-2 ${task.status === "done" ? "line-through text-muted-foreground" : "text-foreground"}`}>
                       {task.title}
@@ -823,6 +879,17 @@ export default function Tasks() {
     onError: (e: Error) => toast({ variant: "destructive", title: e.message }),
   });
 
+  const moveMutation = useMutation({
+    mutationFn: ({ taskId, status }: { taskId: number; status: string }) =>
+      apiFetch(`/api/admin/tasks/${taskId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-tasks"] }),
+    onError: (e: Error) => toast({ variant: "destructive", title: e.message }),
+  });
+
   const grouped = useMemo(() => {
     const q = search.toLowerCase().trim();
     const list = q ? tasks.filter(t =>
@@ -928,6 +995,7 @@ export default function Tasks() {
               onCreateTask={(status, data) => {
                 createMutation.mutate({ title: data.title, status, assignedTo: data.assignedTo, dueDate: data.dueDate, priority: data.priority });
               }}
+              onMoveTask={(taskId, status) => moveMutation.mutate({ taskId, status })}
               navigate={navigate}
             />
           )}
