@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import {
   Plus, Search, ChevronDown, ChevronRight, Flag, MessageSquare, Loader2,
   List, LayoutGrid, Calendar, Table2, GanttChartSquare, ChevronLeft,
-  UserCircle2, CalendarDays, Send,
+  UserCircle2, CalendarDays, Send, Repeat2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,9 @@ type Task = {
   projectId: number | null;
   commentCount: number;
   createdAt: string;
+  isRecurring: boolean;
+  recurrenceType: string | null;
+  recurrenceTime: string | null;
 };
 
 const STATUSES = [
@@ -160,6 +163,12 @@ function ListView({
                         <span className={`text-sm truncate ${task.status === "done" ? "line-through text-muted-foreground" : "text-foreground"}`}>
                           {task.title}
                         </span>
+                        {task.isRecurring && (
+                          <span className="flex items-center gap-0.5 text-primary/70 shrink-0" title={`Repeats daily${task.recurrenceTime ? ` at ${task.recurrenceTime}` : ""}`}>
+                            <Repeat2 className="w-3 h-3" />
+                            {task.recurrenceTime && <span className="text-[10px]">{task.recurrenceTime}</span>}
+                          </span>
+                        )}
                         {task.tags && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary shrink-0 hidden group-hover:inline">
                             {task.tags.split(",")[0].trim()}
@@ -219,7 +228,7 @@ function QuickCreateCard({
   onCancel,
 }: {
   statusId: string;
-  onSave: (data: { title: string; assignedTo?: string; dueDate?: string; priority?: string }) => void;
+  onSave: (data: { title: string; assignedTo?: string; dueDate?: string; priority?: string; isRecurring?: boolean; recurrenceTime?: string }) => void;
   onCancel: () => void;
 }) {
   const titleRef = useRef<HTMLInputElement>(null);
@@ -227,6 +236,8 @@ function QuickCreateCard({
   const [assignedTo, setAssignedTo] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState("");
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrenceTime, setRecurrenceTime] = useState("09:00");
   const [openPicker, setOpenPicker] = useState<"assignee" | "date" | "priority" | null>(null);
 
   const { data: admins = [] } = useQuery<{ id: number; username: string }[]>({
@@ -237,7 +248,14 @@ function QuickCreateCard({
 
   function save() {
     if (!title.trim()) return;
-    onSave({ title: title.trim(), assignedTo: assignedTo || undefined, dueDate: dueDate || undefined, priority: priority || undefined });
+    onSave({
+      title: title.trim(),
+      assignedTo: assignedTo || undefined,
+      dueDate: dueDate || undefined,
+      priority: priority || undefined,
+      isRecurring,
+      recurrenceTime: isRecurring ? recurrenceTime : undefined,
+    });
   }
 
   const togglePicker = (p: "assignee" | "date" | "priority") =>
@@ -361,6 +379,28 @@ function QuickCreateCard({
             </div>
           )}
         </div>
+
+        {/* Repeat daily toggle */}
+        <div className="flex items-center gap-2 px-1 py-1.5">
+          <button
+            type="button"
+            onClick={() => setIsRecurring(r => !r)}
+            className={`flex items-center gap-2 rounded transition-colors text-left ${isRecurring ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <Repeat2 className="w-3.5 h-3.5 shrink-0" />
+            <span className="text-xs font-medium">
+              {isRecurring ? "Repeats daily" : "Repeat daily"}
+            </span>
+          </button>
+          {isRecurring && (
+            <input
+              type="time"
+              value={recurrenceTime}
+              onChange={e => setRecurrenceTime(e.target.value)}
+              className="ml-auto bg-secondary/40 border border-border rounded px-2 py-0.5 text-xs text-foreground outline-none focus:border-primary"
+            />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -374,7 +414,7 @@ function BoardView({
   navigate,
 }: {
   grouped: Record<string, Task[]>;
-  onCreateTask: (status: string, data: { title: string; assignedTo?: string; dueDate?: string; priority?: string }) => void;
+  onCreateTask: (status: string, data: { title: string; assignedTo?: string; dueDate?: string; priority?: string; isRecurring?: boolean; recurrenceTime?: string }) => void;
   onMoveTask: (taskId: number, newStatus: string) => void;
   navigate: (path: string) => void;
 }) {
@@ -470,6 +510,14 @@ function BoardView({
                     </p>
                     {task.clientName && (
                       <p className="text-xs text-muted-foreground mb-2 truncate">{task.clientName}</p>
+                    )}
+                    {task.isRecurring && (
+                      <div className="flex items-center gap-1 mb-2">
+                        <Repeat2 className="w-3 h-3 text-primary/70" />
+                        <span className="text-[10px] text-primary/70 font-medium">
+                          Daily{task.recurrenceTime ? ` · ${task.recurrenceTime}` : ""}
+                        </span>
+                      </div>
                     )}
                     <div className="flex items-center justify-between mt-1">
                       <div className="flex items-center gap-2">
@@ -869,7 +917,7 @@ export default function Tasks() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (d: { title: string; status: string; assignedTo?: string; dueDate?: string; priority?: string }) =>
+    mutationFn: (d: { title: string; status: string; assignedTo?: string; dueDate?: string; priority?: string; isRecurring?: boolean; recurrenceTime?: string }) =>
       apiFetch(`/api/admin/tasks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -993,7 +1041,7 @@ export default function Tasks() {
             <BoardView
               grouped={grouped}
               onCreateTask={(status, data) => {
-                createMutation.mutate({ title: data.title, status, assignedTo: data.assignedTo, dueDate: data.dueDate, priority: data.priority });
+                createMutation.mutate({ title: data.title, status, assignedTo: data.assignedTo, dueDate: data.dueDate, priority: data.priority, isRecurring: data.isRecurring, recurrenceTime: data.recurrenceTime });
               }}
               onMoveTask={(taskId, status) => moveMutation.mutate({ taskId, status })}
               navigate={navigate}

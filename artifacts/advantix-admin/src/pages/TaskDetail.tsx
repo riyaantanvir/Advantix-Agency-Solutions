@@ -4,7 +4,7 @@ import { useParams, useLocation } from "wouter";
 import {
   ArrowLeft, Trash2, Loader2, Send, Flag, Calendar, User, Tag,
   Building2, CheckSquare, Circle, Clock, AlertCircle, MessageSquare,
-  Pencil, Check, X, Plus,
+  Pencil, Check, X, Plus, Repeat2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -27,6 +27,9 @@ type Task = {
   commentCount: number;
   createdAt: string;
   updatedAt: string;
+  isRecurring: boolean;
+  recurrenceType: string | null;
+  recurrenceTime: string | null;
 };
 
 type Comment = { id: number; authorName: string; content: string; createdAt: string };
@@ -373,6 +376,40 @@ export default function TaskDetail() {
                     </td>
                     <td className="px-4 py-2.5">
                       <span className="text-sm text-muted-foreground">{task.createdBy ?? "—"}</span>
+                    </td>
+                  </tr>
+
+                  {/* Recurrence */}
+                  <tr>
+                    <td className="px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide bg-secondary/10">
+                      <div className="flex items-center gap-2"><Repeat2 className="w-3.5 h-3.5" /> Repeat</div>
+                    </td>
+                    <td className="px-4 py-2 col-span-3" colSpan={3}>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => updateMutation.mutate({ isRecurring: !task.isRecurring, recurrenceType: !task.isRecurring ? "daily" : null, recurrenceTime: !task.isRecurring ? (task.recurrenceTime ?? "09:00") : null })}
+                          className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                            task.isRecurring
+                              ? "bg-primary/15 text-primary hover:bg-primary/25"
+                              : "bg-secondary/40 text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                          }`}
+                        >
+                          <Repeat2 className="w-3.5 h-3.5" />
+                          {task.isRecurring ? "Repeats daily" : "Set as daily"}
+                        </button>
+                        {task.isRecurring && (
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+                            <input
+                              type="time"
+                              defaultValue={task.recurrenceTime ?? "09:00"}
+                              onBlur={e => updateMutation.mutate({ recurrenceTime: e.target.value || "09:00" })}
+                              className="bg-secondary/40 border border-border rounded px-2 py-0.5 text-xs text-foreground outline-none focus:border-primary"
+                            />
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 </tbody>

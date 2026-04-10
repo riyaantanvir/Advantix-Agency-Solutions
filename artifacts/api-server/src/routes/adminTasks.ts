@@ -64,7 +64,7 @@ router.get("/admin/tasks/:id", requireAdmin, async (req: Request, res: Response)
 
 /* POST /api/admin/tasks */
 router.post("/admin/tasks", requireAdmin, async (req: Request, res: Response) => {
-  const { title, description, status, priority, type, clientName, assignedTo, dueDate, tags, createdBy, projectId } =
+  const { title, description, status, priority, type, clientName, assignedTo, dueDate, tags, createdBy, projectId, isRecurring, recurrenceType, recurrenceTime } =
     req.body as {
       title?: string;
       description?: string;
@@ -77,6 +77,9 @@ router.post("/admin/tasks", requireAdmin, async (req: Request, res: Response) =>
       tags?: string;
       createdBy?: string;
       projectId?: number | null;
+      isRecurring?: boolean;
+      recurrenceType?: string;
+      recurrenceTime?: string;
     };
 
   if (!title?.trim()) {
@@ -98,6 +101,9 @@ router.post("/admin/tasks", requireAdmin, async (req: Request, res: Response) =>
       tags: tags ?? null,
       projectId: projectId ?? null,
       createdBy: createdBy?.trim() ?? null,
+      isRecurring: isRecurring ?? false,
+      recurrenceType: isRecurring ? (recurrenceType ?? "daily") : null,
+      recurrenceTime: isRecurring ? (recurrenceTime ?? null) : null,
     })
     .returning();
 
@@ -113,7 +119,7 @@ router.post("/admin/tasks", requireAdmin, async (req: Request, res: Response) =>
 /* PUT /api/admin/tasks/:id */
 router.put("/admin/tasks/:id", requireAdmin, async (req: Request, res: Response) => {
   const id = parseInt(String(req.params.id ?? "0"), 10);
-  const { title, description, status, priority, type, clientName, assignedTo, dueDate, tags } =
+  const { title, description, status, priority, type, clientName, assignedTo, dueDate, tags, isRecurring, recurrenceType, recurrenceTime } =
     req.body as {
       title?: string;
       description?: string;
@@ -124,6 +130,9 @@ router.put("/admin/tasks/:id", requireAdmin, async (req: Request, res: Response)
       assignedTo?: string;
       dueDate?: string | null;
       tags?: string;
+      isRecurring?: boolean;
+      recurrenceType?: string;
+      recurrenceTime?: string;
     };
 
   if (!title?.trim()) {
@@ -143,6 +152,9 @@ router.put("/admin/tasks/:id", requireAdmin, async (req: Request, res: Response)
       assignedTo: assignedTo?.trim() ?? null,
       dueDate: dueDate ? new Date(dueDate) : null,
       tags: tags ?? null,
+      isRecurring: isRecurring ?? false,
+      recurrenceType: isRecurring ? (recurrenceType ?? "daily") : null,
+      recurrenceTime: isRecurring ? (recurrenceTime ?? null) : null,
       updatedAt: new Date(),
     })
     .where(eq(tasksTable.id, id))
