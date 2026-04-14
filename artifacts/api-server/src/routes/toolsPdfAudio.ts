@@ -1,6 +1,9 @@
 import { Router } from "express";
 import multer from "multer";
+import { createRequire } from "node:module";
 import { requireToolUser } from "../middleware/toolAuth.js";
+
+const _require = createRequire(import.meta.url);
 
 // Polyfill browser APIs required by pdfjs-dist in Node.js
 if (typeof (globalThis as any).DOMMatrix === "undefined") {
@@ -81,8 +84,7 @@ const upload = multer({
 });
 
 async function extractTextFromBuffer(buffer: Buffer): Promise<{ text: string; title?: string; author?: string; numPages: number }> {
-  const mod = await import("pdf-parse");
-  const pdfParse = (typeof mod.default === "function" ? mod.default : mod) as (buf: Buffer) => Promise<any>;
+  const pdfParse = _require("pdf-parse") as (buf: Buffer) => Promise<any>;
   const data = await pdfParse(buffer);
   return {
     text: data.text,
