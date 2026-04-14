@@ -320,8 +320,8 @@ export default function PdfAudio() {
   const elapsedInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const audioCacheRef = useRef<Map<number, string>>(new Map()); // chunkIdx → blob URL
-  const fetchingRef = useRef<Set<number>>(new Set());          // chunks being fetched
+  const audioCacheRef = useRef<Map<number, string>>(new Map());           // chunkIdx → blob URL
+  const fetchPromisesRef = useRef<Map<number, Promise<string | null>>>(new Map()); // in-flight fetches
 
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
 
@@ -338,7 +338,41 @@ export default function PdfAudio() {
   const clearAudioCache = useCallback(() => {
     audioCacheRef.current.forEach(url => URL.revokeObjectURL(url));
     audioCacheRef.current.clear();
-    fetchingRef.current.clear();
+    fetchPromisesRef.current.clear();
+  }, []);
+
+  // ── Central fetch function — deduplicates in-flight requests ─────────────
+  // Returns a cached blob URL, waits for an in-flight fetch, or starts a new one.
+  const getChunkAudio = useCallback((idx: number, chunk: AudioChunk): Promise<string | null> => {
+    // Already cached → instant
+    const cached = audioCacheRef.current.get(idx);
+    if (cached) return Promise.resolve(cached);
+
+    // Already fetching → wait for same promise (no duplicate network request)
+    const inflight = fetchPromisesRef.current.get(idx);
+    if (inflight) return inflight;
+
+    // Start fresh fetch
+    const encoded = encodeURIComponent(chunk.text.slice(0, 500));
+    const promise = fetch(`/api/tools/tts?text=${encoded}&lang=bn`, { credentials: "include" })
+      .then(r => r.ok ? r.blob() : null)
+      .then(blob => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          audioCacheRef.current.set(idx, url);
+          fetchPromisesRef.current.delete(idx);
+          return url;
+        }
+        fetchPromisesRef.current.delete(idx);
+        return null;
+      })
+      .catch(() => {
+        fetchPromisesRef.current.delete(idx);
+        return null;
+      });
+
+    fetchPromisesRef.current.set(idx, promise);
+    return promise;
   }, []);
 
   useEffect(() => {
@@ -388,23 +422,22 @@ export default function PdfAudio() {
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [currentLineIdx, isPlaying]);
 
+  // Eagerly prefetch first 8 Bengali chunks when book opens, so first play is instant
+  useEffect(() => {
+    if (chunks.length === 0) return;
+    const startIdx = Math.max(0, currentIdx - 1);
+    prefetchAhead(startIdx - 1, chunks, 8);
+  }, [chunks]); // only on book change
+
   // ── Audio prefetching ─────────────────────────────────────────────────────
-  // Fire-and-forget: fetch the next N Bengali chunks and store blob URLs in cache
-  const prefetchAhead = useCallback((fromIdx: number, theChunks: AudioChunk[], count = 3) => {
+  // Fire-and-forget: pre-warm the next N Bengali chunks.
+  // Uses getChunkAudio to avoid duplicate requests for already-in-flight fetches.
+  const prefetchAhead = useCallback((fromIdx: number, theChunks: AudioChunk[], count = 6) => {
     for (let i = fromIdx + 1; i <= fromIdx + count && i < theChunks.length; i++) {
       if (!theChunks[i].isBengali) continue;
-      if (audioCacheRef.current.has(i) || fetchingRef.current.has(i)) continue;
-      fetchingRef.current.add(i);
-      const encoded = encodeURIComponent(theChunks[i].text.slice(0, 500));
-      fetch(`/api/tools/tts?text=${encoded}&lang=bn`, { credentials: "include" })
-        .then(r => r.ok ? r.blob() : null)
-        .then(blob => {
-          if (blob) audioCacheRef.current.set(i, URL.createObjectURL(blob));
-          fetchingRef.current.delete(i);
-        })
-        .catch(() => fetchingRef.current.delete(i));
+      getChunkAudio(i, theChunks[i]); // fire-and-forget; deduplication is inside
     }
-  }, []);
+  }, [getChunkAudio]);
 
   // ── Play a chunk (replaces old speakLine) ─────────────────────────────────
   const playChunk = useCallback(async (
@@ -446,26 +479,19 @@ export default function PdfAudio() {
       }
     };
 
-    // ── Bengali: use server TTS (HuggingFace MMS → Google Translate) ─────
+    // ── Bengali: use server TTS — waits for in-flight prefetch or fetches now ─
     if (chunk.isBengali) {
-      let blobUrl = audioCacheRef.current.get(idx);
-
-      if (!blobUrl) {
-        try {
-          const encoded = encodeURIComponent(chunk.text.slice(0, 500));
-          const resp = await fetch(`/api/tools/tts?text=${encoded}&lang=bn`, { credentials: "include" });
-          if (!resp.ok) throw new Error("TTS failed");
-          const blob = await resp.blob();
-          blobUrl = URL.createObjectURL(blob);
-          audioCacheRef.current.set(idx, blobUrl);
-        } catch {
-          if (isPlayingRef.current) advance(0);
-          return;
-        }
-      }
+      // getChunkAudio deduplicates: if prefetch already started it, we just wait
+      const blobUrl = await getChunkAudio(idx, chunk);
 
       // Check again — user may have paused while we were fetching
       if (!isPlayingRef.current) return;
+
+      if (!blobUrl) {
+        // TTS fetch failed — skip this chunk silently
+        if (isPlayingRef.current) advance(0);
+        return;
+      }
 
       const audioEl = new Audio(blobUrl);
       audioRef.current = audioEl;
@@ -508,7 +534,7 @@ export default function PdfAudio() {
     };
 
     window.speechSynthesis.speak(utt);
-  }, [prefetchAhead]);
+  }, [prefetchAhead, getChunkAudio]);
 
   // ── Controls ──────────────────────────────────────────────────────────────
   const stopAll = () => {
@@ -817,7 +843,7 @@ export default function PdfAudio() {
             {/* Info pill: shows which TTS mode is active */}
             {chunks[currentIdx]?.isBengali && (
               <div className="mb-2 px-3 py-1.5 bg-sky-500/8 border border-sky-500/20 rounded-xl text-[11px] text-sky-400/80 text-center">
-                Google MMS-TTS · Punctuation-aware pauses · {chunks.length} chunks
+                Bengali TTS · Punctuation-aware pauses · {chunks.length} chunks
               </div>
             )}
 
