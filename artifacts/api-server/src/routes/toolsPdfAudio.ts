@@ -1,19 +1,27 @@
 import { Router } from "express";
 import multer from "multer";
 import { requireToolUser } from "../middleware/toolAuth.js";
-import { exec } from "node:child_process";
-import { writeFile, unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { randomBytes } from "node:crypto";
-import { promisify } from "node:util";
+import { createRequire } from "node:module";
 import { db } from "@workspace/db";
 import { toolPdfBooksTable } from "@workspace/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 
-const execAsync = promisify(exec);
-
 const router = Router();
+
+// ── Resolve pdfjs-dist paths at module load (externalized, lives in node_modules) ──
+const _require = createRequire(import.meta.url);
+const pdfjsPkgDir: string = _require.resolve("pdfjs-dist/package.json").replace(/\/package\.json$/, "");
+const pdfjsWorkerSrc: string = `${pdfjsPkgDir}/legacy/build/pdf.worker.mjs`;
+const pdfjsCMapUrl: string = `${pdfjsPkgDir}/cmaps/`;
+
+// ── Lazy-load PDF.js (ESM, externalized) ─────────────────────────────────
+let _pdfjs: any = null;
+async function getPdfjs() {
+  if (_pdfjs) return _pdfjs;
+  _pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  _pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerSrc;
+  return _pdfjs;
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -27,10 +35,9 @@ const upload = multer({
   },
 });
 
-// ── Bengali (Bangla) pre-base vowel reordering ────────────────────────────
-// PDFs that use visual glyph order store pre-base vowels BEFORE the consonant.
-// Unicode logical order requires them AFTER the consonant cluster.
-// Pre-base vowels: ি (U+09BF), ে (U+09C7), ৈ (U+09C8)
+// ── Bengali pre-base vowel reordering ─────────────────────────────────────
+// PDFs using visual glyph order store ে/ি/ৈ BEFORE the consonant.
+// Unicode logical order requires them AFTER. We swap them here.
 function fixBengaliVowelOrder(text: string): string {
   return text.replace(
     /([\u09BF\u09C7\u09C8])([\u0995-\u09B9\u09CE\u09DC-\u09DF\u09F0\u09F1](?:\u09BC)?(?:\u09CD[\u0995-\u09B9\u09CE\u09DC-\u09DF\u09F0\u09F1](?:\u09BC)?)*)/g,
@@ -38,62 +45,91 @@ function fixBengaliVowelOrder(text: string): string {
   );
 }
 
-// ── Clean unmappable / garbage characters from extracted text ─────────────
-// PDFs with custom/embedded fonts sometimes produce:
-//   - U+FFFD replacement characters (shown as □)
-//   - Private Use Area codepoints (U+E000–U+F8FF, U+F0000+) that no font renders
-//   - Lone surrogates or other invalid Unicode
-// We strip those so TTS reads clean text and the UI doesn't show boxes.
+// ── Clean unmappable garbage from extracted text ──────────────────────────
 function cleanExtractedText(text: string): string {
   return text
-    // Remove Unicode replacement character
     .replace(/\uFFFD/g, "")
-    // Remove Private Use Area characters (BMP PUA: U+E000–U+F8FF)
     .replace(/[\uE000-\uF8FF]/g, "")
-    // Remove control characters except newline, carriage return, tab
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
-    // Collapse multiple consecutive spaces/blanks on a line
     .replace(/[^\S\n]+/g, " ")
-    // Collapse 3+ consecutive blank lines into 2
     .replace(/\n{3,}/g, "\n\n");
 }
 
-// ── Extract text via pdftotext (Poppler) ──────────────────────────────────
+// ── PDF.js text extraction ─────────────────────────────────────────────────
+// Uses the same rendering engine as Firefox/Chrome PDF viewer.
+// With CMap support, it properly decodes embedded custom fonts for Indic scripts.
 async function extractTextFromBuffer(buffer: Buffer): Promise<{
   text: string;
   numPages: number;
 }> {
-  const tmpId = randomBytes(8).toString("hex");
-  const inPath = join(tmpdir(), `pdf_in_${tmpId}.pdf`);
-  const outPath = join(tmpdir(), `pdf_out_${tmpId}.txt`);
+  const pdfjs = await getPdfjs();
 
-  try {
-    await writeFile(inPath, buffer);
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(buffer),
+    // CMap tables tell PDF.js how to map glyph IDs → Unicode for embedded fonts
+    cMapUrl: pdfjsCMapUrl,
+    cMapPacked: true,
+    // Disable web-specific features
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    disableFontFace: false,
+    // Use system font data for better Indic script support
+    standardFontDataUrl: `${pdfjsPkgDir}/standard_fonts/`,
+  });
 
-    await execAsync(
-      `pdftotext -enc UTF-8 -nopgbrk "${inPath}" "${outPath}"`,
-      { timeout: 30_000 }
-    );
+  const pdf = await loadingTask.promise;
+  const numPages = pdf.numPages;
 
-    const { stdout: rawText } = await execAsync(`cat "${outPath}"`, { maxBuffer: 50 * 1024 * 1024 });
+  const pageTexts: string[] = [];
 
-    let numPages = 1;
-    try {
-      const { stdout: info } = await execAsync(`pdfinfo "${inPath}" 2>/dev/null || echo "Pages: 1"`, { timeout: 5_000 });
-      const match = info.match(/Pages:\s*(\d+)/);
-      if (match) numPages = parseInt(match[1], 10);
-    } catch { /* ignore */ }
+  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const content = await page.getTextContent({
+      includeMarkedContent: false,
+    });
 
-    const fixed = cleanExtractedText(fixBengaliVowelOrder(rawText));
+    // Reconstruct text lines from positioned text items
+    // Items come in reading order for most PDFs, but some need y-sort + grouping
+    const items = content.items as Array<{
+      str: string;
+      transform: number[];
+      width: number;
+      height: number;
+      hasEOL: boolean;
+    }>;
 
-    return { text: fixed, numPages };
-  } finally {
-    unlink(inPath).catch(() => {});
-    unlink(outPath).catch(() => {});
+    // Group items into lines by y-position (within ~5 pt tolerance)
+    const lineMap = new Map<number, { x: number; text: string }[]>();
+    for (const item of items) {
+      if (!item.str) continue;
+      const x = Math.round(item.transform[4]);
+      const y = Math.round(item.transform[5]);
+      // Round y to nearest 5 to group items on the same line
+      const yKey = Math.round(y / 5) * 5;
+      if (!lineMap.has(yKey)) lineMap.set(yKey, []);
+      lineMap.get(yKey)!.push({ x, text: item.str });
+    }
+
+    // Sort lines top-to-bottom (y descends in PDF coords = ascending in reading order)
+    const sortedYKeys = [...lineMap.keys()].sort((a, b) => b - a);
+
+    const lines: string[] = [];
+    for (const yKey of sortedYKeys) {
+      const lineItems = lineMap.get(yKey)!.sort((a, b) => a.x - b.x);
+      const lineText = lineItems.map(i => i.text).join("").trim();
+      if (lineText) lines.push(lineText);
+    }
+
+    pageTexts.push(lines.join("\n"));
   }
+
+  const rawText = pageTexts.join("\n\n");
+  const cleaned = cleanExtractedText(fixBengaliVowelOrder(rawText));
+
+  return { text: cleaned, numPages };
 }
 
-// ── Helper: save or update book in DB ─────────────────────────────────────
+// ── Helper: save book to DB ────────────────────────────────────────────────
 async function upsertBook(
   userId: number,
   title: string,
@@ -323,7 +359,7 @@ router.delete("/tools/pdf/books/:id", requireToolUser, async (req, res) => {
   }
 });
 
-// ── Shared line-splitter (mirrors frontend cleanAndSplit) ──────────────────
+// ── Shared line-splitter ──────────────────────────────────────────────────
 function splitLines(raw: string): string[] {
   const lines = raw
     .replace(/\r\n/g, "\n")

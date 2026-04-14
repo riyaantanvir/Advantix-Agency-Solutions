@@ -51,6 +51,7 @@ async function buildAll() {
       "mongodb-client-encryption",
       "pdf-parse",
       "pdf2json",
+      "pdfjs-dist",
       "nodemailer",
       "handlebars",
       "knex",
