@@ -119,8 +119,6 @@ router.post("/tools/auth/register", async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const code = generate6DigitCode();
-    const codeExpires = new Date(Date.now() + 15 * 60 * 1000);
 
     const [user] = await db
       .insert(toolUsersTable)
@@ -128,9 +126,7 @@ router.post("/tools/auth/register", async (req, res) => {
         name: name.trim(),
         email: email.toLowerCase().trim(),
         passwordHash,
-        emailVerified: false,
-        verificationCode: code,
-        verificationExpires: codeExpires,
+        emailVerified: true,
       })
       .returning({ id: toolUsersTable.id, name: toolUsersTable.name, email: toolUsersTable.email });
 
@@ -141,10 +137,12 @@ router.post("/tools/auth/register", async (req, res) => {
       ON CONFLICT (email) DO NOTHING
     `).catch(() => {});
 
-    // Send verification code (fire-and-forget — don't fail if email is down)
-    sendVerificationEmail(user.email, user.name, code).catch(() => {});
+    // Log in immediately — no email verification step
+    req.session.toolUserId = user.id;
+    req.session.toolUserEmail = user.email;
+    req.session.toolUserName = user.name;
 
-    res.json({ needsVerification: true, email: user.email });
+    res.json({ user: { id: user.id, name: user.name, email: user.email } });
   } catch (err) {
     console.error("[register]", err);
     res.status(500).json({ error: "Registration failed" });
@@ -255,19 +253,6 @@ router.post("/tools/auth/login", async (req, res) => {
 
     if (!user || !u.password_hash || !(await bcrypt.compare(password, u.password_hash))) {
       res.status(401).json({ error: "Invalid email or password" });
-      return;
-    }
-
-    if (!u.email_verified) {
-      // Resend code and prompt verification
-      const code = generate6DigitCode();
-      const codeExpires = new Date(Date.now() + 15 * 60 * 1000);
-      await db.execute(sql`
-        UPDATE tool_users SET verification_code = ${code}, verification_expires = ${codeExpires}
-        WHERE id = ${user.id}
-      `);
-      sendVerificationEmail(user.email, user.name, code).catch(() => {});
-      res.status(403).json({ error: "Email not verified", needsVerification: true, email: user.email });
       return;
     }
 

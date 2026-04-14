@@ -59,7 +59,7 @@ export const toolsApi = {
         body: JSON.stringify({ email, password, turnstileToken }),
       }),
     register: (name: string, email: string, password: string, turnstileToken?: string) =>
-      request<{ needsVerification: boolean; email: string }>("/tools/auth/register", {
+      request<{ user: ToolUser }>("/tools/auth/register", {
         method: "POST",
         body: JSON.stringify({ name, email, password, turnstileToken }),
       }),

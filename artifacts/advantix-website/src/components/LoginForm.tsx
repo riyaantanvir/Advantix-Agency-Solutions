@@ -135,21 +135,11 @@ export function LoginForm({ onUserSuccess }: LoginFormProps) {
         const { user } = await toolsApi.auth.login(email.trim(), password, turnstileToken);
         onUserSuccess(user);
       } else {
-        const result = await toolsApi.auth.register(name.trim(), email.trim(), password, turnstileToken);
-        if (result.needsVerification) {
-          setVerifyEmail(result.email);
-          setStep("verify");
-          setResendCooldown(60);
-        }
+        const { user } = await toolsApi.auth.register(name.trim(), email.trim(), password, turnstileToken);
+        onUserSuccess(user);
       }
     } catch (err: any) {
-      if (err.needsVerification) {
-        setVerifyEmail(err.email || email.trim());
-        setStep("verify");
-        setResendCooldown(60);
-      } else {
-        setError(err.message ?? "Something went wrong");
-      }
+      setError(err.message ?? "Something went wrong");
     } finally {
       setLoading(false);
     }
