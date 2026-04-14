@@ -677,8 +677,8 @@ export default function PdfAudio() {
                 className="border border-border/50 rounded-2xl p-12 text-center bg-card"
               >
                 <Loader2 className="w-10 h-10 animate-spin text-primary mx-auto mb-4" />
-                <p className="text-sm font-semibold text-foreground mb-1">Extracting text…</p>
-                <p className="text-xs text-muted-foreground">This may take a moment for large PDFs</p>
+                <p className="text-sm font-semibold text-foreground mb-1">Running Bengali OCR…</p>
+                <p className="text-xs text-muted-foreground">Reading each page visually for accurate Bengali text. Large books may take 1–2 minutes.</p>
               </motion.div>
             ) : tab === "upload" ? (
               <motion.div key="upload" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>

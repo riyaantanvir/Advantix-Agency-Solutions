@@ -1,27 +1,17 @@
 import { Router } from "express";
 import multer from "multer";
 import { requireToolUser } from "../middleware/toolAuth.js";
-import { createRequire } from "node:module";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { writeFileSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { db } from "@workspace/db";
 import { toolPdfBooksTable } from "@workspace/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 
 const router = Router();
-
-// ── Resolve pdfjs-dist paths at module load (externalized, lives in node_modules) ──
-const _require = createRequire(import.meta.url);
-const pdfjsPkgDir: string = _require.resolve("pdfjs-dist/package.json").replace(/\/package\.json$/, "");
-const pdfjsWorkerSrc: string = `${pdfjsPkgDir}/legacy/build/pdf.worker.mjs`;
-const pdfjsCMapUrl: string = `${pdfjsPkgDir}/cmaps/`;
-
-// ── Lazy-load PDF.js (ESM, externalized) ─────────────────────────────────
-let _pdfjs: any = null;
-async function getPdfjs() {
-  if (_pdfjs) return _pdfjs;
-  _pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  _pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerSrc;
-  return _pdfjs;
-}
+const execFileAsync = promisify(execFile);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -35,98 +25,83 @@ const upload = multer({
   },
 });
 
-// ── Bengali pre-base vowel reordering ─────────────────────────────────────
-// PDFs using visual glyph order store ে/ি/ৈ BEFORE the consonant.
-// Unicode logical order requires them AFTER. We swap them here.
-function fixBengaliVowelOrder(text: string): string {
-  return text.replace(
-    /([\u09BF\u09C7\u09C8])([\u0995-\u09B9\u09CE\u09DC-\u09DF\u09F0\u09F1](?:\u09BC)?(?:\u09CD[\u0995-\u09B9\u09CE\u09DC-\u09DF\u09F0\u09F1](?:\u09BC)?)*)/g,
-    "$2$1"
-  );
-}
-
-// ── Clean unmappable garbage from extracted text ──────────────────────────
-function cleanExtractedText(text: string): string {
+// ── Clean OCR output ──────────────────────────────────────────────────────
+function cleanOcrText(text: string): string {
   return text
     .replace(/\uFFFD/g, "")
     .replace(/[\uE000-\uF8FF]/g, "")
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
     .replace(/[^\S\n]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n");
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
-// ── PDF.js text extraction ─────────────────────────────────────────────────
-// Uses the same rendering engine as Firefox/Chrome PDF viewer.
-// With CMap support, it properly decodes embedded custom fonts for Indic scripts.
+// ── OCR-based PDF text extraction ─────────────────────────────────────────
+// Uses pdftoppm to render pages → PNG, then Tesseract.js with Bengali language.
+// This is the ONLY reliable way to get correct text from PDFs with custom/private
+// font encodings (common in fan-digitized Bengali books).
+const OCR_CONCURRENCY = 4;
+
 async function extractTextFromBuffer(buffer: Buffer): Promise<{
   text: string;
   numPages: number;
 }> {
-  const pdfjs = await getPdfjs();
+  const { createWorker } = await import("tesseract.js");
 
-  const loadingTask = pdfjs.getDocument({
-    data: new Uint8Array(buffer),
-    // CMap tables tell PDF.js how to map glyph IDs → Unicode for embedded fonts
-    cMapUrl: pdfjsCMapUrl,
-    cMapPacked: true,
-    // Disable web-specific features
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    disableFontFace: false,
-    // Use system font data for better Indic script support
-    standardFontDataUrl: `${pdfjsPkgDir}/standard_fonts/`,
-  });
+  const tmpDir = join(tmpdir(), `pdf_ocr_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+  mkdirSync(tmpDir, { recursive: true });
 
-  const pdf = await loadingTask.promise;
-  const numPages = pdf.numPages;
+  try {
+    // Write PDF buffer to disk so pdftoppm can read it
+    const pdfPath = join(tmpDir, "input.pdf");
+    writeFileSync(pdfPath, buffer);
 
-  const pageTexts: string[] = [];
+    // Convert all PDF pages to PNG images at 150 DPI
+    const outputPrefix = join(tmpDir, "page");
+    await execFileAsync("pdftoppm", [
+      "-r", "150",
+      "-png",
+      pdfPath,
+      outputPrefix,
+    ]);
 
-  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const content = await page.getTextContent({
-      includeMarkedContent: false,
-    });
+    // Collect all generated page images, sorted by page number
+    const images = readdirSync(tmpDir)
+      .filter((f: string) => f.endsWith(".png"))
+      .sort();
 
-    // Reconstruct text lines from positioned text items
-    // Items come in reading order for most PDFs, but some need y-sort + grouping
-    const items = content.items as Array<{
-      str: string;
-      transform: number[];
-      width: number;
-      height: number;
-      hasEOL: boolean;
-    }>;
-
-    // Group items into lines by y-position (within ~5 pt tolerance)
-    const lineMap = new Map<number, { x: number; text: string }[]>();
-    for (const item of items) {
-      if (!item.str) continue;
-      const x = Math.round(item.transform[4]);
-      const y = Math.round(item.transform[5]);
-      // Round y to nearest 5 to group items on the same line
-      const yKey = Math.round(y / 5) * 5;
-      if (!lineMap.has(yKey)) lineMap.set(yKey, []);
-      lineMap.get(yKey)!.push({ x, text: item.str });
+    if (images.length === 0) {
+      throw new Error("pdftoppm produced no images — PDF may be corrupted");
     }
 
-    // Sort lines top-to-bottom (y descends in PDF coords = ascending in reading order)
-    const sortedYKeys = [...lineMap.keys()].sort((a, b) => b - a);
+    const numPages = images.length;
+    const pageTexts: string[] = new Array(numPages).fill("");
 
-    const lines: string[] = [];
-    for (const yKey of sortedYKeys) {
-      const lineItems = lineMap.get(yKey)!.sort((a, b) => a.x - b.x);
-      const lineText = lineItems.map(i => i.text).join("").trim();
-      if (lineText) lines.push(lineText);
+    // OCR pages in parallel batches of OCR_CONCURRENCY
+    for (let i = 0; i < images.length; i += OCR_CONCURRENCY) {
+      const batch = images.slice(i, i + OCR_CONCURRENCY);
+      await Promise.all(batch.map(async (imgFile: string, batchIdx: number) => {
+        const pageIdx = i + batchIdx;
+        const worker = await createWorker("ben", 1, {
+          logger: () => {},
+          errorHandler: () => {},
+        } as any);
+        try {
+          const result = await worker.recognize(join(tmpDir, imgFile));
+          pageTexts[pageIdx] = result.data.text ?? "";
+        } finally {
+          await worker.terminate();
+        }
+      }));
     }
 
-    pageTexts.push(lines.join("\n"));
+    const rawText = pageTexts.join("\n\n");
+    const cleaned = cleanOcrText(rawText);
+
+    return { text: cleaned, numPages };
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
   }
-
-  const rawText = pageTexts.join("\n\n");
-  const cleaned = cleanExtractedText(fixBengaliVowelOrder(rawText));
-
-  return { text: cleaned, numPages };
 }
 
 // ── Helper: save book to DB ────────────────────────────────────────────────

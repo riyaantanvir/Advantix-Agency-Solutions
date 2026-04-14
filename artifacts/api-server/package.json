@@ -38,6 +38,7 @@
     "pino-http": "^10",
     "resend": "^6.10.0",
     "svix": "^1.90.0",
+    "tesseract.js": "^7.0.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

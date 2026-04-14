@@ -52,6 +52,7 @@ async function buildAll() {
       "pdf-parse",
       "pdf2json",
       "pdfjs-dist",
+      "tesseract.js",
       "nodemailer",
       "handlebars",
       "knex",
