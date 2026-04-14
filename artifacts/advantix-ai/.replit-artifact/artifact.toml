@@ -12,7 +12,7 @@ version = "1.0.0"
 [[services]]
 name = "web"
 paths = [ "/ai/" ]
-localPort = 26083
+localPort = 3002
 
 [services.development]
 run = "pnpm --filter @workspace/advantix-ai run dev"
@@ -27,5 +27,5 @@ from = "/*"
 to = "/index.html"
 
 [services.env]
-PORT = "26083"
+PORT = "3002"
 BASE_PATH = "/ai/"

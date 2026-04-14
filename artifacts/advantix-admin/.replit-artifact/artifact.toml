@@ -12,7 +12,7 @@ version = "1.0.0"
 [[services]]
 name = "web"
 paths = [ "/admin/" ]
-localPort = 23910
+localPort = 3001
 
 [services.development]
 run = "pnpm --filter @workspace/advantix-admin run dev"
@@ -27,5 +27,5 @@ from = "/*"
 to = "/index.html"
 
 [services.env]
-PORT = "23910"
+PORT = "3001"
 BASE_PATH = "/admin/"
