@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useLocation } from "wouter";
 import {
@@ -61,8 +61,63 @@ interface PdfResult {
   startLine?: number;
 }
 
+// A speakable chunk — sub-sentence or sentence, with pause after it
+interface AudioChunk {
+  text: string;
+  lineIdx: number;    // which original line this belongs to (for progress tracking)
+  pauseAfter: number; // ms to wait after this chunk before playing the next
+  isBengali: boolean;
+}
+
 // ── Bengali detection ─────────────────────────────────────────────────────────
 function hasBengali(text: string) { return /[\u0980-\u09FF]/.test(text); }
+
+// ── Build audio chunks from lines by Bengali sentence punctuation ─────────────
+// For Bengali: split by ।  ?  !  giving natural pauses.
+// Commas and dashes stay in the text — the TTS engine handles those naturally.
+// For English/other: treat each line as one chunk.
+function buildChunks(lines: string[]): AudioChunk[] {
+  const result: AudioChunk[] = [];
+
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const line = lines[lineIdx].trim();
+    if (!line) continue;
+
+    const isBn = hasBengali(line);
+
+    if (isBn) {
+      // Match everything up to (and including) a sentence-ending character
+      const regex = /([^।?!?!]*[।?!?!])/g;
+      let lastEnd = 0;
+      let m: RegExpExecArray | null;
+
+      while ((m = regex.exec(line)) !== null) {
+        const seg = m[1].trim();
+        if (!seg) { lastEnd = m.index + m[0].length; continue; }
+        const end = seg.slice(-1);
+        const pause = end === "।" ? 1200 : 1000;
+        result.push({ text: seg, lineIdx, pauseAfter: pause, isBengali: true });
+        lastEnd = m.index + m[0].length;
+      }
+
+      // Remaining text (no sentence-ending punctuation)
+      const remaining = line.slice(lastEnd).trim();
+      if (remaining.length > 2) {
+        result.push({ text: remaining, lineIdx, pauseAfter: 400, isBengali: true });
+      }
+    } else {
+      result.push({ text: line, lineIdx, pauseAfter: 350, isBengali: false });
+    }
+  }
+
+  return result;
+}
+
+// Find the first chunk index whose lineIdx >= targetLine
+function findChunkForLine(chunks: AudioChunk[], lineIdx: number): number {
+  const idx = chunks.findIndex(c => c.lineIdx >= lineIdx);
+  return idx >= 0 ? idx : 0;
+}
 
 // ── Get all browser voices, Bengali first ─────────────────────────────────────
 function getAllVoices(): SpeechSynthesisVoice[] {
@@ -70,17 +125,6 @@ function getAllVoices(): SpeechSynthesisVoice[] {
   const bn = all.filter(v => v.lang.startsWith("bn") || v.lang.startsWith("bn-"));
   const others = all.filter(v => !v.lang.startsWith("bn"));
   return [...bn, ...others];
-}
-
-// ── Best Bengali voice available ──────────────────────────────────────────────
-function getBestBengaliVoice(): SpeechSynthesisVoice | null {
-  const all = window.speechSynthesis.getVoices();
-  return (
-    all.find(v => v.lang === "bn-BD") ??
-    all.find(v => v.lang === "bn-IN") ??
-    all.find(v => v.lang.startsWith("bn")) ??
-    null
-  );
 }
 
 // ── Voice Selector ────────────────────────────────────────────────────────────
@@ -190,50 +234,48 @@ function BookCard({
       onClick={() => onOpen(book)}
       className="group relative flex items-center gap-3 bg-card hover:bg-muted/30 border border-border/50 hover:border-border rounded-xl p-3.5 cursor-pointer transition-all duration-200"
     >
-      {/* Book icon */}
       <div className="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center shrink-0">
         <BookOpen className="w-5 h-5 text-rose-400" />
       </div>
 
-      {/* Info */}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-foreground truncate">{book.title}</p>
         <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-xs text-muted-foreground">{book.numPages}p</span>
-          {book.lastLine > 0 && (
+          <span className="text-xs text-muted-foreground">{book.numPages} pages</span>
+          {pct > 0 && pct < 100 && (
             <>
-              <span className="text-muted-foreground/40 text-xs">·</span>
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Clock className="w-3 h-3" />
-                Line {book.lastLine} of {book.totalLines}
-              </span>
+              <span className="text-muted-foreground/40">·</span>
+              <span className="text-xs text-primary font-medium">{pct}% read</span>
+            </>
+          )}
+          {pct === 100 && (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <span className="text-xs text-emerald-400 font-medium">Completed</span>
             </>
           )}
         </div>
-
-        {/* Progress bar */}
-        {book.totalLines > 0 && (
-          <div className="mt-1.5 h-1 bg-muted/60 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-rose-500/70 rounded-full transition-all"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        )}
+        <div className="mt-1.5 h-0.5 bg-muted/40 rounded-full overflow-hidden w-full">
+          <div className="h-full bg-primary/50 rounded-full transition-all" style={{ width: `${pct}%` }} />
+        </div>
       </div>
 
-      {/* Pct + delete */}
-      <div className="flex flex-col items-end gap-1.5 shrink-0">
-        {pct > 0 && (
-          <span className="text-xs font-semibold text-rose-400">{pct}%</span>
+      <div className="flex items-center gap-2 shrink-0">
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-400/10 transition-all"
+          >
+            {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+        {book.lastLine > 0 && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground bg-muted/40 px-2 py-1 rounded-lg">
+            <Clock className="w-3 h-3" />
+            <span>Line {book.lastLine}</span>
+          </div>
         )}
-        <button
-          onClick={handleDelete}
-          disabled={deleting}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-400 p-1 rounded-lg hover:bg-red-400/10"
-        >
-          {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-        </button>
       </div>
     </motion.div>
   );
@@ -261,24 +303,42 @@ export default function PdfAudio() {
   const [pdf, setPdf] = useState<PdfResult | null>(null);
 
   // Player state
+  // currentIdx = index into the `chunks` array (NOT pdf.lines)
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentIdx, setCurrentIdx] = useState(0);
+  const [currentIdx, setCurrentIdx] = useState(0); // chunk index
   const [rate, setRate] = useState(1);
   const [voice, setVoice] = useState<SpeechSynthesisVoice | null>(null);
-  const [hasBengaliVoice, setHasBengaliVoice] = useState<boolean | null>(null);
   const [wordIndex, setWordIndex] = useState<number>(-1);
   const [elapsed, setElapsed] = useState(0);
   const [totalEstimate, setTotalEstimate] = useState(0);
 
+  // Refs
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
   const isPlayingRef = useRef(false);
-  const currentIdxRef = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const elapsedInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const pauseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const audioCacheRef = useRef<Map<number, string>>(new Map()); // chunkIdx → blob URL
+  const fetchingRef = useRef<Set<number>>(new Set());          // chunks being fetched
 
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
-  useEffect(() => { currentIdxRef.current = currentIdx; }, [currentIdx]);
+
+  // ── Audio chunks — derived from pdf.lines by Bengali sentence splitting ──
+  const chunks = useMemo((): AudioChunk[] => {
+    if (!pdf) return [];
+    return buildChunks(pdf.lines);
+  }, [pdf]);
+
+  // currentLineIdx: which original line we're currently on (for display, scroll, saving)
+  const currentLineIdx = chunks[currentIdx]?.lineIdx ?? 0;
+
+  // Clear audio cache on book change (revoke blob URLs to free memory)
+  const clearAudioCache = useCallback(() => {
+    audioCacheRef.current.forEach(url => URL.revokeObjectURL(url));
+    audioCacheRef.current.clear();
+    fetchingRef.current.clear();
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) navigate("/login");
@@ -293,12 +353,14 @@ export default function PdfAudio() {
       .finally(() => setBooksLoading(false));
   }, [user]);
 
+  // Estimate total reading time
   useEffect(() => {
     if (!pdf) return;
     const words = pdf.lines.reduce((s, l) => s + l.split(/\s+/).length, 0);
     setTotalEstimate(Math.ceil((words / (150 * rate)) * 60));
   }, [pdf, rate]);
 
+  // Elapsed time counter
   useEffect(() => {
     if (isPlaying) {
       elapsedInterval.current = setInterval(() => setElapsed(e => e + 1), 1000);
@@ -308,142 +370,160 @@ export default function PdfAudio() {
     return () => { if (elapsedInterval.current) clearInterval(elapsedInterval.current); };
   }, [isPlaying]);
 
-  // Save progress debounced when currentIdx changes
+  // Save progress (debounced) when line changes
   useEffect(() => {
     if (!pdf || !pdf.bookId) return;
     if (progressSaveTimer.current) clearTimeout(progressSaveTimer.current);
     progressSaveTimer.current = setTimeout(() => {
-      toolsApi.pdf.saveProgress(pdf.bookId, currentIdx).catch(() => {});
-      setBooks(prev => prev.map(b => b.id === pdf.bookId ? { ...b, lastLine: currentIdx } : b));
+      toolsApi.pdf.saveProgress(pdf.bookId, currentLineIdx).catch(() => {});
+      setBooks(prev => prev.map(b => b.id === pdf.bookId ? { ...b, lastLine: currentLineIdx } : b));
     }, 2000);
     return () => { if (progressSaveTimer.current) clearTimeout(progressSaveTimer.current); };
-  }, [currentIdx, pdf?.bookId]);
+  }, [currentLineIdx, pdf?.bookId]);
 
-  // ── Auto-select Bengali voice when PDF loads ──────────────────────────────
+  // Auto-scroll current line into view
   useEffect(() => {
-    if (!pdf) return;
-    const sampleText = pdf.lines.slice(0, 5).join(" ");
-    if (!hasBengali(sampleText)) { setHasBengaliVoice(null); return; }
-    const trySelect = () => {
-      const bnVoice = getBestBengaliVoice();
-      setHasBengaliVoice(!!bnVoice);
-      if (bnVoice && !voice) setVoice(bnVoice);
-    };
-    trySelect();
-    window.speechSynthesis.onvoiceschanged = trySelect;
-    return () => { window.speechSynthesis.onvoiceschanged = null; };
-  }, [pdf]);
+    const el = lineRefs.current[currentLineIdx];
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [currentLineIdx, isPlaying]);
 
-  // ── Speak a line ──────────────────────────────────────────────────────────
-  const speakLine = useCallback((idx: number, lines: string[], r: number, v: SpeechSynthesisVoice | null) => {
-    if (idx >= lines.length) {
+  // ── Audio prefetching ─────────────────────────────────────────────────────
+  // Fire-and-forget: fetch the next N Bengali chunks and store blob URLs in cache
+  const prefetchAhead = useCallback((fromIdx: number, theChunks: AudioChunk[], count = 3) => {
+    for (let i = fromIdx + 1; i <= fromIdx + count && i < theChunks.length; i++) {
+      if (!theChunks[i].isBengali) continue;
+      if (audioCacheRef.current.has(i) || fetchingRef.current.has(i)) continue;
+      fetchingRef.current.add(i);
+      const encoded = encodeURIComponent(theChunks[i].text.slice(0, 500));
+      fetch(`/api/tools/tts?text=${encoded}&lang=bn`, { credentials: "include" })
+        .then(r => r.ok ? r.blob() : null)
+        .then(blob => {
+          if (blob) audioCacheRef.current.set(i, URL.createObjectURL(blob));
+          fetchingRef.current.delete(i);
+        })
+        .catch(() => fetchingRef.current.delete(i));
+    }
+  }, []);
+
+  // ── Play a chunk (replaces old speakLine) ─────────────────────────────────
+  const playChunk = useCallback(async (
+    idx: number,
+    theChunks: AudioChunk[],
+    r: number,
+    v: SpeechSynthesisVoice | null
+  ) => {
+    if (idx >= theChunks.length) {
       setIsPlaying(false);
       setCurrentIdx(0);
       setWordIndex(-1);
       return;
     }
 
-    // Stop any ongoing speech or audio
+    // Stop current audio/speech/pause timer
     window.speechSynthesis.cancel();
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    if (pauseTimerRef.current) { clearTimeout(pauseTimerRef.current); pauseTimerRef.current = null; }
 
-    const lineText = lines[idx];
-    const isBengaliText = hasBengali(lineText);
-    const hasBengaliVoice = !!getBestBengaliVoice();
+    setCurrentIdx(idx);
+    const chunk = theChunks[idx];
 
-    // ── Google TTS fallback for Bengali with no browser Bengali voice ──────
-    if (isBengaliText && !hasBengaliVoice) {
-      const encoded = encodeURIComponent(lineText.slice(0, 200));
-      const audioEl = new Audio(`/api/tools/tts?text=${encoded}&lang=bn`);
-      audioRef.current = audioEl;
-      audioEl.playbackRate = Math.min(Math.max(r, 0.5), 2);
+    // Pre-fetch next chunks in background
+    prefetchAhead(idx, theChunks, 3);
 
-      const advance = () => {
-        setWordIndex(-1);
-        const next = idx + 1;
-        setCurrentIdx(next);
-        if (isPlayingRef.current && next < lines.length) {
-          speakLine(next, lines, r, v);
-        } else {
-          setIsPlaying(false);
+    // Helper: wait pauseMs then advance to next chunk
+    const advance = (pauseMs: number) => {
+      const next = idx + 1;
+      if (!isPlayingRef.current) return;
+      const delay = Math.round(pauseMs / Math.max(0.25, r));
+      if (delay > 50) {
+        pauseTimerRef.current = setTimeout(() => {
+          pauseTimerRef.current = null;
+          if (isPlayingRef.current) playChunk(next, theChunks, r, v);
+        }, delay);
+      } else {
+        playChunk(next, theChunks, r, v);
+      }
+    };
+
+    // ── Bengali: use server TTS (HuggingFace MMS → Google Translate) ─────
+    if (chunk.isBengali) {
+      let blobUrl = audioCacheRef.current.get(idx);
+
+      if (!blobUrl) {
+        try {
+          const encoded = encodeURIComponent(chunk.text.slice(0, 500));
+          const resp = await fetch(`/api/tools/tts?text=${encoded}&lang=bn`, { credentials: "include" });
+          if (!resp.ok) throw new Error("TTS failed");
+          const blob = await resp.blob();
+          blobUrl = URL.createObjectURL(blob);
+          audioCacheRef.current.set(idx, blobUrl);
+        } catch {
+          if (isPlayingRef.current) advance(0);
+          return;
         }
-      };
+      }
 
-      audioEl.onended = advance;
+      // Check again — user may have paused while we were fetching
+      if (!isPlayingRef.current) return;
+
+      const audioEl = new Audio(blobUrl);
+      audioRef.current = audioEl;
+      audioEl.playbackRate = Math.min(Math.max(r, 0.25), 4);
+
+      audioEl.onended = () => {
+        audioRef.current = null;
+        advance(chunk.pauseAfter);
+      };
       audioEl.onerror = () => {
-        // On error fall through to Web Speech API
-        setIsPlaying(false);
-        setWordIndex(-1);
+        audioRef.current = null;
+        if (isPlayingRef.current) advance(0);
       };
-
       audioEl.play().catch(() => {
-        setIsPlaying(false);
-        setWordIndex(-1);
+        audioRef.current = null;
+        if (isPlayingRef.current) advance(0);
       });
 
       return;
     }
 
-    // ── Web Speech API (browser voices) ──────────────────────────────────
-    const utt = new SpeechSynthesisUtterance(lineText);
+    // ── Non-Bengali: Web Speech API ───────────────────────────────────────
+    const utt = new SpeechSynthesisUtterance(chunk.text);
     utt.rate = r;
-    if (isBengaliText) utt.lang = "bn-BD";
     if (v) utt.voice = v;
 
     utt.onboundary = (e) => {
       if (e.name === "word") {
-        const before = lines[idx].slice(0, e.charIndex).split(/\s+/);
+        const before = chunk.text.slice(0, e.charIndex).split(/\s+/);
         setWordIndex(before.length - 1);
       }
     };
-
     utt.onend = () => {
       setWordIndex(-1);
-      const next = idx + 1;
-      setCurrentIdx(next);
-      if (isPlayingRef.current && next < lines.length) {
-        speakLine(next, lines, r, v);
-      } else {
-        setIsPlaying(false);
-      }
+      advance(chunk.pauseAfter);
     };
-
     utt.onerror = () => {
-      setIsPlaying(false);
       setWordIndex(-1);
+      if (isPlayingRef.current) advance(0);
     };
 
     window.speechSynthesis.speak(utt);
-  }, []);
-
-  // Auto-scroll current line into view
-  useEffect(() => {
-    const el = lineRefs.current[currentIdx];
-    if (el && isPlaying) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [currentIdx, isPlaying]);
+  }, [prefetchAhead]);
 
   // ── Controls ──────────────────────────────────────────────────────────────
+  const stopAll = () => {
+    window.speechSynthesis.cancel();
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    if (pauseTimerRef.current) { clearTimeout(pauseTimerRef.current); pauseTimerRef.current = null; }
+  };
+
   const togglePlay = () => {
     if (!pdf) return;
     if (isPlaying) {
-      // Pause — stop both speech and any Google TTS audio
-      window.speechSynthesis.pause();
-      if (audioRef.current) audioRef.current.pause();
+      stopAll();
       setIsPlaying(false);
-    } else if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
-      setIsPlaying(true);
-    } else if (audioRef.current && audioRef.current.paused && !audioRef.current.ended) {
-      audioRef.current.play().catch(() => {});
-      setIsPlaying(true);
     } else {
       setIsPlaying(true);
-      speakLine(currentIdx, pdf.lines, rate, voice);
+      playChunk(currentIdx, chunks, rate, voice);
     }
   };
 
@@ -452,29 +532,35 @@ export default function PdfAudio() {
     const next = Math.max(0, currentIdx - 1);
     setCurrentIdx(next);
     setWordIndex(-1);
-    if (isPlaying) speakLine(next, pdf.lines, rate, voice);
+    if (isPlaying) playChunk(next, chunks, rate, voice);
   };
 
   const skipForward = () => {
     if (!pdf) return;
-    const next = Math.min(pdf.lines.length - 1, currentIdx + 1);
+    const next = Math.min(chunks.length - 1, currentIdx + 1);
     setCurrentIdx(next);
     setWordIndex(-1);
-    if (isPlaying) speakLine(next, pdf.lines, rate, voice);
+    if (isPlaying) playChunk(next, chunks, rate, voice);
   };
 
   const changeRate = (r: number) => {
     setRate(r);
-    if (isPlaying && pdf) speakLine(currentIdx, pdf.lines, r, voice);
+    if (isPlaying && pdf) {
+      stopAll();
+      playChunk(currentIdx, chunks, r, voice);
+    }
   };
 
   const changeVoice = (v: SpeechSynthesisVoice) => {
     setVoice(v);
-    if (isPlaying && pdf) speakLine(currentIdx, pdf.lines, rate, v);
+    if (isPlaying && pdf) {
+      stopAll();
+      playChunk(currentIdx, chunks, rate, v);
+    }
   };
 
   const restart = () => {
-    window.speechSynthesis.cancel();
+    stopAll();
     setIsPlaying(false);
     setCurrentIdx(0);
     setWordIndex(-1);
@@ -482,12 +568,13 @@ export default function PdfAudio() {
   };
 
   const closePdf = () => {
-    window.speechSynthesis.cancel();
+    stopAll();
     setIsPlaying(false);
     if (pdf?.bookId) {
-      toolsApi.pdf.saveProgress(pdf.bookId, currentIdx).catch(() => {});
-      setBooks(prev => prev.map(b => b.id === pdf.bookId ? { ...b, lastLine: currentIdx } : b));
+      toolsApi.pdf.saveProgress(pdf.bookId, currentLineIdx).catch(() => {});
+      setBooks(prev => prev.map(b => b.id === pdf.bookId ? { ...b, lastLine: currentLineIdx } : b));
     }
+    clearAudioCache();
     setPdf(null);
     setCurrentIdx(0);
     setWordIndex(-1);
@@ -503,13 +590,30 @@ export default function PdfAudio() {
     filename: string;
     startLine?: number;
   }) => {
+    stopAll();
+    clearAudioCache();
     const lines = cleanAndSplit(data.text);
     setPdf({ ...data, lines });
-    setCurrentIdx(data.startLine ?? 0);
+    // We'll set currentIdx after chunks are computed via useEffect
+    setCurrentIdx(0);
     setWordIndex(-1);
     setElapsed(0);
     setIsPlaying(false);
+    // Store startLine so we can jump after chunks are built
+    pendingStartLineRef.current = data.startLine ?? 0;
   };
+
+  // After chunks are built (useMemo), jump to the pending start line
+  const pendingStartLineRef = useRef<number>(0);
+  useEffect(() => {
+    if (chunks.length === 0) return;
+    const target = pendingStartLineRef.current;
+    if (target > 0) {
+      const chunkIdx = findChunkForLine(chunks, target);
+      setCurrentIdx(chunkIdx);
+      pendingStartLineRef.current = 0;
+    }
+  }, [chunks]);
 
   const handleFile = async (file: File) => {
     if (!file.name.toLowerCase().endsWith(".pdf")) {
@@ -563,7 +667,6 @@ export default function PdfAudio() {
     }
   };
 
-  // ── Open a saved book ──────────────────────────────────────────────────────
   const openBook = async (book: PdfBook) => {
     setOpeningBook(book.id);
     try {
@@ -587,7 +690,10 @@ export default function PdfAudio() {
     setBooks(prev => prev.filter(b => b.id !== id));
   };
 
-  useEffect(() => () => { window.speechSynthesis.cancel(); }, []);
+  useEffect(() => () => {
+    window.speechSynthesis.cancel();
+    clearAudioCache();
+  }, []);
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -596,7 +702,8 @@ export default function PdfAudio() {
   );
   if (!user) return null;
 
-  const progress = pdf ? (currentIdx / Math.max(1, pdf.lines.length - 1)) * 100 : 0;
+  // Progress bar uses currentLineIdx (original line position)
+  const progress = pdf ? (currentLineIdx / Math.max(1, pdf.lines.length - 1)) * 100 : 0;
 
   // ── PDF Reader View ───────────────────────────────────────────────────────
   if (pdf) {
@@ -610,7 +717,7 @@ export default function PdfAudio() {
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm truncate">{pdf.title}</p>
             <p className="text-xs text-muted-foreground">
-              {pdf.numPages} pages · {pdf.lines.length} lines
+              {pdf.numPages} pages · {chunks.length} chunks
             </p>
           </div>
           <button onClick={restart} className="text-muted-foreground hover:text-foreground transition-colors" title="Restart">
@@ -623,8 +730,8 @@ export default function PdfAudio() {
           <div className="max-w-2xl mx-auto">
             <div className="font-reader text-[16px] leading-loose space-y-0.5">
               {pdf.lines.map((line, lIdx) => {
-                const isCurrent = lIdx === currentIdx;
-                const isPast = lIdx < currentIdx;
+                const isCurrent = lIdx === currentLineIdx;
+                const isPast = lIdx < currentLineIdx;
                 const words = line.split(/(\s+)/);
                 let wCount = 0;
 
@@ -633,9 +740,14 @@ export default function PdfAudio() {
                     key={lIdx}
                     ref={el => { lineRefs.current[lIdx] = el; }}
                     onClick={() => {
-                      setCurrentIdx(lIdx);
+                      // Jump to the first chunk of this line
+                      const chunkIdx = findChunkForLine(chunks, lIdx);
+                      setCurrentIdx(chunkIdx);
                       setWordIndex(-1);
-                      if (isPlaying) speakLine(lIdx, pdf.lines, rate, voice);
+                      if (isPlaying) {
+                        stopAll();
+                        playChunk(chunkIdx, chunks, rate, voice);
+                      }
                     }}
                     className={`relative px-3 py-0.5 rounded-lg cursor-pointer transition-all duration-200 group ${
                       isCurrent
@@ -647,8 +759,8 @@ export default function PdfAudio() {
                       <span className="absolute left-0 top-1 bottom-1 w-0.5 bg-primary rounded-full" />
                     )}
                     <span className={`${isPast ? "text-muted-foreground/40" : isCurrent ? "text-foreground" : "text-muted-foreground/75"}`}>
-                      {words.map((chunk, wIdx) => {
-                        if (/^\s+$/.test(chunk)) return <span key={wIdx}>{chunk}</span>;
+                      {words.map((seg, wIdx) => {
+                        if (/^\s+$/.test(seg)) return <span key={wIdx}>{seg}</span>;
                         const wi = wCount++;
                         return (
                           <span
@@ -659,7 +771,7 @@ export default function PdfAudio() {
                                 : ""
                             }
                           >
-                            {chunk}
+                            {seg}
                           </span>
                         );
                       })}
@@ -676,15 +788,17 @@ export default function PdfAudio() {
 
         {/* ── Fixed Player Bar ── */}
         <div className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-xl border-t border-border/60 shadow-2xl z-40">
+          {/* Progress bar (scrub by line) */}
           <div
             className="h-1 bg-muted/60 cursor-pointer"
             onClick={e => {
               const rect = e.currentTarget.getBoundingClientRect();
               const pct = (e.clientX - rect.left) / rect.width;
-              const next = Math.floor(pct * pdf.lines.length);
-              setCurrentIdx(next);
+              const targetLine = Math.floor(pct * pdf.lines.length);
+              const chunkIdx = findChunkForLine(chunks, targetLine);
+              setCurrentIdx(chunkIdx);
               setWordIndex(-1);
-              if (isPlaying) speakLine(next, pdf.lines, rate, voice);
+              if (isPlaying) { stopAll(); playChunk(chunkIdx, chunks, rate, voice); }
             }}
           >
             <div className="h-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
@@ -693,14 +807,16 @@ export default function PdfAudio() {
           <div className="max-w-2xl mx-auto px-4 py-3">
             <div className="flex justify-between text-xs text-muted-foreground mb-2">
               <span>{formatTime(elapsed)}</span>
-              <span className="text-muted-foreground/60">Line {currentIdx + 1} of {pdf.lines.length}</span>
+              <span className="text-muted-foreground/60">
+                Line {currentLineIdx + 1} of {pdf.lines.length}
+              </span>
               <span>{formatTime(Math.max(0, totalEstimate - elapsed))}</span>
             </div>
 
-            {/* Bengali voice notice — shown only for Bengali text with no Bengali voice */}
-            {hasBengaliVoice === false && (
-              <div className="mb-2 px-3 py-2 bg-sky-500/10 border border-sky-500/25 rounded-xl text-xs text-sky-400 text-center">
-                No Bengali voice on this device — using Google TTS automatically. For offline playback, <a href="https://support.google.com/accessibility/android/answer/6006983" target="_blank" rel="noopener noreferrer" className="underline font-semibold">install Google TTS</a>.
+            {/* Info pill: shows which TTS mode is active */}
+            {chunks[currentIdx]?.isBengali && (
+              <div className="mb-2 px-3 py-1.5 bg-sky-500/8 border border-sky-500/20 rounded-xl text-[11px] text-sky-400/80 text-center">
+                Google MMS-TTS · Punctuation-aware pauses · {chunks.length} chunks
               </div>
             )}
 
