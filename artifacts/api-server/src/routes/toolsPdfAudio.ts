@@ -81,7 +81,8 @@ const upload = multer({
 });
 
 async function extractTextFromBuffer(buffer: Buffer): Promise<{ text: string; title?: string; author?: string; numPages: number }> {
-  const pdfParse = (await import("pdf-parse")).default;
+  const mod = await import("pdf-parse");
+  const pdfParse = (typeof mod.default === "function" ? mod.default : mod) as (buf: Buffer) => Promise<any>;
   const data = await pdfParse(buffer);
   return {
     text: data.text,
