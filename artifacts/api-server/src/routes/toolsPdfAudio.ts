@@ -163,7 +163,7 @@ router.post("/tools/pdf/upload", requireToolUser, upload.single("file"), async (
     const title = req.file.originalname.replace(/\.pdf$/i, "");
     const lines = splitLines(result.text);
     const bookId = await upsertBook(
-      (req as any).toolUser.id,
+      (req.session as any).toolUserId as number,
       title,
       req.file.originalname,
       result.text,
@@ -247,7 +247,7 @@ router.post("/tools/pdf/from-url", requireToolUser, async (req, res) => {
     const title = filename.replace(/\.pdf$/i, "");
     const lines = splitLines(result.text);
     const bookId = await upsertBook(
-      (req as any).toolUser.id,
+      (req.session as any).toolUserId as number,
       title,
       filename,
       result.text,
@@ -275,7 +275,7 @@ router.post("/tools/pdf/from-url", requireToolUser, async (req, res) => {
 // ── List user's saved books ────────────────────────────────────────────────
 router.get("/tools/pdf/books", requireToolUser, async (req, res) => {
   try {
-    const userId = (req as any).toolUser.id;
+    const userId = (req.session as any).toolUserId as number;
     const books = await db
       .select({
         id: toolPdfBooksTable.id,
@@ -300,7 +300,7 @@ router.get("/tools/pdf/books", requireToolUser, async (req, res) => {
 // ── Get a single book (with text) ─────────────────────────────────────────
 router.get("/tools/pdf/books/:id", requireToolUser, async (req, res) => {
   try {
-    const userId = (req as any).toolUser.id;
+    const userId = (req.session as any).toolUserId as number;
     const bookId = parseInt(req.params.id, 10);
     if (isNaN(bookId)) { res.status(400).json({ error: "Invalid book id" }); return; }
 
@@ -322,7 +322,7 @@ router.get("/tools/pdf/books/:id", requireToolUser, async (req, res) => {
 // ── Update reading progress ────────────────────────────────────────────────
 router.patch("/tools/pdf/books/:id/progress", requireToolUser, async (req, res) => {
   try {
-    const userId = (req as any).toolUser.id;
+    const userId = (req.session as any).toolUserId as number;
     const bookId = parseInt(req.params.id, 10);
     if (isNaN(bookId)) { res.status(400).json({ error: "Invalid book id" }); return; }
 
@@ -344,7 +344,7 @@ router.patch("/tools/pdf/books/:id/progress", requireToolUser, async (req, res) 
 // ── Delete a book ─────────────────────────────────────────────────────────
 router.delete("/tools/pdf/books/:id", requireToolUser, async (req, res) => {
   try {
-    const userId = (req as any).toolUser.id;
+    const userId = (req.session as any).toolUserId as number;
     const bookId = parseInt(req.params.id, 10);
     if (isNaN(bookId)) { res.status(400).json({ error: "Invalid book id" }); return; }
 
