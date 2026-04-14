@@ -34,6 +34,7 @@ import contestsRouter from "./contests.js";
 import adminProjectsRouter from "./adminProjects.js";
 import adminCustomPagesRouter from "./adminCustomPages.js";
 import toolsPdfAudioRouter from "./toolsPdfAudio.js";
+import toolsTtsRouter from "./toolsTts.js";
 
 const router: IRouter = Router();
 
@@ -72,5 +73,6 @@ router.use(contestsRouter);
 router.use(adminProjectsRouter);
 router.use(adminCustomPagesRouter);
 router.use(toolsPdfAudioRouter);
+router.use(toolsTtsRouter);
 
 export default router;

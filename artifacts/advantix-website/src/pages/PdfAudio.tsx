@@ -61,6 +61,28 @@ interface PdfResult {
   startLine?: number;
 }
 
+// ── Bengali detection ─────────────────────────────────────────────────────────
+function hasBengali(text: string) { return /[\u0980-\u09FF]/.test(text); }
+
+// ── Get all browser voices, Bengali first ─────────────────────────────────────
+function getAllVoices(): SpeechSynthesisVoice[] {
+  const all = window.speechSynthesis.getVoices();
+  const bn = all.filter(v => v.lang.startsWith("bn") || v.lang.startsWith("bn-"));
+  const others = all.filter(v => !v.lang.startsWith("bn"));
+  return [...bn, ...others];
+}
+
+// ── Best Bengali voice available ──────────────────────────────────────────────
+function getBestBengaliVoice(): SpeechSynthesisVoice | null {
+  const all = window.speechSynthesis.getVoices();
+  return (
+    all.find(v => v.lang === "bn-BD") ??
+    all.find(v => v.lang === "bn-IN") ??
+    all.find(v => v.lang.startsWith("bn")) ??
+    null
+  );
+}
+
 // ── Voice Selector ────────────────────────────────────────────────────────────
 function VoiceSelector({ value, onChange }: { value: SpeechSynthesisVoice | null; onChange: (v: SpeechSynthesisVoice) => void }) {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -68,7 +90,7 @@ function VoiceSelector({ value, onChange }: { value: SpeechSynthesisVoice | null
 
   useEffect(() => {
     const load = () => {
-      const vs = window.speechSynthesis.getVoices().filter(v => v.lang.startsWith("en"));
+      const vs = getAllVoices();
       if (vs.length) setVoices(vs);
     };
     load();
@@ -76,14 +98,16 @@ function VoiceSelector({ value, onChange }: { value: SpeechSynthesisVoice | null
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, []);
 
-  const selected = value ?? voices[0];
+  const bengaliVoices = voices.filter(v => v.lang.startsWith("bn"));
+  const otherVoices = voices.filter(v => !v.lang.startsWith("bn"));
+  const selected = value ?? bengaliVoices[0] ?? voices[0];
   if (!voices.length) return null;
 
   return (
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors bg-muted/40 hover:bg-muted/70 px-3 py-1.5 rounded-lg max-w-36 truncate"
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors bg-muted/40 hover:bg-muted/70 px-3 py-1.5 rounded-lg max-w-40 truncate"
       >
         <Volume2 className="w-3.5 h-3.5 shrink-0" />
         <span className="truncate">{selected?.name.replace(/\(.*?\)/g, "").trim() ?? "Voice"}</span>
@@ -96,18 +120,36 @@ function VoiceSelector({ value, onChange }: { value: SpeechSynthesisVoice | null
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute bottom-full mb-2 left-0 bg-card border border-border rounded-xl shadow-2xl py-1 z-50 w-64 max-h-64 overflow-y-auto"
+            className="absolute bottom-full mb-2 left-0 bg-card border border-border rounded-xl shadow-2xl py-1 z-50 w-64 max-h-72 overflow-y-auto"
           >
-            {voices.map(v => (
-              <button
-                key={v.name}
-                onClick={() => { onChange(v); setOpen(false); }}
-                className={`w-full text-left px-3 py-2 text-xs hover:bg-primary/10 transition-colors ${selected?.name === v.name ? "text-primary font-semibold" : "text-foreground"}`}
-              >
-                {v.name.replace(/\(.*?\)/g, "").trim()}
-                {v.localService && <span className="ml-1 text-muted-foreground">(offline)</span>}
-              </button>
-            ))}
+            {bengaliVoices.length > 0 && (
+              <>
+                <p className="px-3 py-1 text-[10px] font-semibold text-primary uppercase tracking-wider">Bengali Voices</p>
+                {bengaliVoices.map(v => (
+                  <button key={v.name} onClick={() => { onChange(v); setOpen(false); }}
+                    className={`w-full text-left px-3 py-2 text-xs hover:bg-primary/10 transition-colors ${selected?.name === v.name ? "text-primary font-semibold" : "text-foreground"}`}>
+                    {v.name.replace(/\(.*?\)/g, "").trim()}
+                    <span className="ml-1 text-muted-foreground text-[10px]">{v.lang}</span>
+                  </button>
+                ))}
+                {otherVoices.length > 0 && <div className="border-t border-border my-1" />}
+              </>
+            )}
+            {bengaliVoices.length === 0 && (
+              <p className="px-3 py-2 text-[10px] text-amber-400">No Bengali voice found on this device.</p>
+            )}
+            {otherVoices.length > 0 && (
+              <>
+                <p className="px-3 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Other Voices</p>
+                {otherVoices.map(v => (
+                  <button key={v.name} onClick={() => { onChange(v); setOpen(false); }}
+                    className={`w-full text-left px-3 py-2 text-xs hover:bg-primary/10 transition-colors ${selected?.name === v.name ? "text-primary font-semibold" : "text-foreground"}`}>
+                    {v.name.replace(/\(.*?\)/g, "").trim()}
+                    <span className="ml-1 text-muted-foreground text-[10px]">{v.lang}</span>
+                  </button>
+                ))}
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -223,6 +265,7 @@ export default function PdfAudio() {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [rate, setRate] = useState(1);
   const [voice, setVoice] = useState<SpeechSynthesisVoice | null>(null);
+  const [hasBengaliVoice, setHasBengaliVoice] = useState<boolean | null>(null);
   const [wordIndex, setWordIndex] = useState<number>(-1);
   const [elapsed, setElapsed] = useState(0);
   const [totalEstimate, setTotalEstimate] = useState(0);
@@ -232,6 +275,7 @@ export default function PdfAudio() {
   const currentIdxRef = useRef(0);
   const elapsedInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { currentIdxRef.current = currentIdx; }, [currentIdx]);
@@ -275,6 +319,21 @@ export default function PdfAudio() {
     return () => { if (progressSaveTimer.current) clearTimeout(progressSaveTimer.current); };
   }, [currentIdx, pdf?.bookId]);
 
+  // ── Auto-select Bengali voice when PDF loads ──────────────────────────────
+  useEffect(() => {
+    if (!pdf) return;
+    const sampleText = pdf.lines.slice(0, 5).join(" ");
+    if (!hasBengali(sampleText)) { setHasBengaliVoice(null); return; }
+    const trySelect = () => {
+      const bnVoice = getBestBengaliVoice();
+      setHasBengaliVoice(!!bnVoice);
+      if (bnVoice && !voice) setVoice(bnVoice);
+    };
+    trySelect();
+    window.speechSynthesis.onvoiceschanged = trySelect;
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, [pdf]);
+
   // ── Speak a line ──────────────────────────────────────────────────────────
   const speakLine = useCallback((idx: number, lines: string[], r: number, v: SpeechSynthesisVoice | null) => {
     if (idx >= lines.length) {
@@ -284,10 +343,54 @@ export default function PdfAudio() {
       return;
     }
 
+    // Stop any ongoing speech or audio
     window.speechSynthesis.cancel();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
 
-    const utt = new SpeechSynthesisUtterance(lines[idx]);
+    const lineText = lines[idx];
+    const isBengaliText = hasBengali(lineText);
+    const hasBengaliVoice = !!getBestBengaliVoice();
+
+    // ── Google TTS fallback for Bengali with no browser Bengali voice ──────
+    if (isBengaliText && !hasBengaliVoice) {
+      const encoded = encodeURIComponent(lineText.slice(0, 200));
+      const audioEl = new Audio(`/api/tools/tts?text=${encoded}&lang=bn`);
+      audioRef.current = audioEl;
+      audioEl.playbackRate = Math.min(Math.max(r, 0.5), 2);
+
+      const advance = () => {
+        setWordIndex(-1);
+        const next = idx + 1;
+        setCurrentIdx(next);
+        if (isPlayingRef.current && next < lines.length) {
+          speakLine(next, lines, r, v);
+        } else {
+          setIsPlaying(false);
+        }
+      };
+
+      audioEl.onended = advance;
+      audioEl.onerror = () => {
+        // On error fall through to Web Speech API
+        setIsPlaying(false);
+        setWordIndex(-1);
+      };
+
+      audioEl.play().catch(() => {
+        setIsPlaying(false);
+        setWordIndex(-1);
+      });
+
+      return;
+    }
+
+    // ── Web Speech API (browser voices) ──────────────────────────────────
+    const utt = new SpeechSynthesisUtterance(lineText);
     utt.rate = r;
+    if (isBengaliText) utt.lang = "bn-BD";
     if (v) utt.voice = v;
 
     utt.onboundary = (e) => {
@@ -328,10 +431,15 @@ export default function PdfAudio() {
   const togglePlay = () => {
     if (!pdf) return;
     if (isPlaying) {
+      // Pause — stop both speech and any Google TTS audio
       window.speechSynthesis.pause();
+      if (audioRef.current) audioRef.current.pause();
       setIsPlaying(false);
     } else if (window.speechSynthesis.paused) {
       window.speechSynthesis.resume();
+      setIsPlaying(true);
+    } else if (audioRef.current && audioRef.current.paused && !audioRef.current.ended) {
+      audioRef.current.play().catch(() => {});
       setIsPlaying(true);
     } else {
       setIsPlaying(true);
@@ -588,6 +696,13 @@ export default function PdfAudio() {
               <span className="text-muted-foreground/60">Line {currentIdx + 1} of {pdf.lines.length}</span>
               <span>{formatTime(Math.max(0, totalEstimate - elapsed))}</span>
             </div>
+
+            {/* Bengali voice notice — shown only for Bengali text with no Bengali voice */}
+            {hasBengaliVoice === false && (
+              <div className="mb-2 px-3 py-2 bg-sky-500/10 border border-sky-500/25 rounded-xl text-xs text-sky-400 text-center">
+                No Bengali voice on this device — using Google TTS automatically. For offline playback, <a href="https://support.google.com/accessibility/android/answer/6006983" target="_blank" rel="noopener noreferrer" className="underline font-semibold">install Google TTS</a>.
+              </div>
+            )}
 
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1 flex items-center">

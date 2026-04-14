@@ -53,6 +53,7 @@ async function buildAll() {
       "pdf2json",
       "pdfjs-dist",
       "tesseract.js",
+      "google-tts-api",
       "nodemailer",
       "handlebars",
       "knex",
