@@ -1,9 +1,14 @@
 import { Router } from "express";
 import multer from "multer";
-import { createRequire } from "node:module";
 import { requireToolUser } from "../middleware/toolAuth.js";
+import { exec } from "node:child_process";
+import { writeFile, unlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { promisify } from "node:util";
 
-const _require = createRequire(import.meta.url);
+const execAsync = promisify(exec);
 
 const router = Router();
 
@@ -19,73 +24,60 @@ const upload = multer({
   },
 });
 
-// ── Extract text using pdf2json (pure Node.js, no browser APIs needed) ───────
-function extractTextFromBuffer(buffer: Buffer): Promise<{
+// ── Bengali (Bangla) pre-base vowel reordering ────────────────────────────
+// PDFs that use visual glyph order store pre-base vowels BEFORE the consonant.
+// Unicode logical order requires them AFTER the consonant cluster.
+// Pre-base vowels: ি (U+09BF), ে (U+09C7), ৈ (U+09C8)
+// Bengali consonants: U+0995–U+09B9, U+09CE, U+09DC–U+09DF, U+09F0–U+09F1
+const PREBASE = /[\u09BF\u09C7\u09C8]/;
+const CONSONANT = /[\u0995-\u09B9\u09CE\u09DC-\u09DF\u09F0\u09F1]/;
+const HASANTA = "\u09CD"; // virama
+
+function fixBengaliVowelOrder(text: string): string {
+  // Regex: (pre-base vowel)(consonant cluster with optional hasanta+consonant chains)
+  return text.replace(
+    /([\u09BF\u09C7\u09C8])([\u0995-\u09B9\u09CE\u09DC-\u09DF\u09F0\u09F1](?:\u09BC)?(?:\u09CD[\u0995-\u09B9\u09CE\u09DC-\u09DF\u09F0\u09F1](?:\u09BC)?)*)/g,
+    "$2$1"
+  );
+}
+
+// ── Extract text via pdftotext (Poppler) ──────────────────────────────────
+async function extractTextFromBuffer(buffer: Buffer): Promise<{
   text: string;
-  title?: string;
-  author?: string;
   numPages: number;
 }> {
-  return new Promise((resolve, reject) => {
-    const PDFParser = _require("pdf2json");
-    const parser = new PDFParser(null, 1);
+  const tmpId = randomBytes(8).toString("hex");
+  const inPath = join(tmpdir(), `pdf_in_${tmpId}.pdf`);
+  const outPath = join(tmpdir(), `pdf_out_${tmpId}.txt`);
 
-    const timeout = setTimeout(() => {
-      reject(new Error("PDF parsing timed out"));
-    }, 30_000);
+  try {
+    await writeFile(inPath, buffer);
 
-    parser.on("pdfParser_dataError", (err: any) => {
-      clearTimeout(timeout);
-      reject(new Error(err?.parserError ?? "Failed to parse PDF"));
-    });
+    // pdftotext is always available in the Replit environment (Poppler)
+    await execAsync(
+      `pdftotext -enc UTF-8 -nopgbrk "${inPath}" "${outPath}"`,
+      { timeout: 30_000 }
+    );
 
-    parser.on("pdfParser_dataReady", (data: any) => {
-      clearTimeout(timeout);
-      try {
-        const pages: any[] = data.Pages ?? [];
-        const lines: string[] = [];
+    const { stdout: rawText } = await execAsync(`cat "${outPath}"`, { maxBuffer: 50 * 1024 * 1024 });
 
-        for (const page of pages) {
-          // Group text items by their Y position (row), then join by X order
-          const rowMap = new Map<number, { x: number; t: string }[]>();
-          for (const textItem of page.Texts ?? []) {
-            const y = Math.round(textItem.y * 10); // round to bucket nearby items
-            const x = textItem.x;
-            const decoded = (textItem.R ?? [])
-              .map((r: any) => decodeURIComponent(r.T))
-              .join("");
-            if (!decoded.trim()) continue;
-            if (!rowMap.has(y)) rowMap.set(y, []);
-            rowMap.get(y)!.push({ x, t: decoded });
-          }
+    // Get page count
+    let numPages = 1;
+    try {
+      const { stdout: info } = await execAsync(`pdfinfo "${inPath}" 2>/dev/null || echo "Pages: 1"`, { timeout: 5_000 });
+      const match = info.match(/Pages:\s*(\d+)/);
+      if (match) numPages = parseInt(match[1], 10);
+    } catch { /* ignore */ }
 
-          // Sort rows by Y, then tokens by X, join into lines
-          const sortedYs = Array.from(rowMap.keys()).sort((a, b) => a - b);
-          for (const y of sortedYs) {
-            const tokens = rowMap.get(y)!.sort((a, b) => a.x - b.x);
-            const line = tokens.map(t => t.t).join(" ").replace(/\s+/g, " ").trim();
-            if (line) lines.push(line);
-          }
+    // Apply Bengali vowel reordering fix
+    const fixed = fixBengaliVowelOrder(rawText);
 
-          lines.push(""); // blank line between pages
-        }
-
-        const text = lines.join("\n").trim();
-        const meta = data.Meta ?? {};
-
-        resolve({
-          text,
-          title: meta.Title?.trim() || undefined,
-          author: meta.Author?.trim() || undefined,
-          numPages: pages.length,
-        });
-      } catch (e: any) {
-        reject(new Error("Failed to extract text: " + e.message));
-      }
-    });
-
-    parser.parseBuffer(buffer);
-  });
+    return { text: fixed, numPages };
+  } finally {
+    // Clean up temp files
+    unlink(inPath).catch(() => {});
+    unlink(outPath).catch(() => {});
+  }
 }
 
 // ── Upload PDF file ─────────────────────────────────────────────────────────
@@ -95,20 +87,22 @@ router.post("/tools/pdf/upload", requireToolUser, upload.single("file"), async (
       res.status(400).json({ error: "No PDF file provided" });
       return;
     }
+
     const result = await extractTextFromBuffer(req.file.buffer);
+
     if (!result.text?.trim()) {
       res.status(422).json({ error: "Could not extract text from this PDF. It may be scanned/image-only." });
       return;
     }
+
     res.json({
       text: result.text,
-      title: result.title || req.file.originalname.replace(/\.pdf$/i, ""),
-      author: result.author,
+      title: req.file.originalname.replace(/\.pdf$/i, ""),
       numPages: result.numPages,
       filename: req.file.originalname,
     });
   } catch (err: any) {
-    console.error("[pdf/upload]", err);
+    console.error("[pdf/upload]", err.message);
     res.status(500).json({ error: err.message ?? "Failed to process PDF" });
   }
 });
@@ -175,8 +169,7 @@ router.post("/tools/pdf/from-url", requireToolUser, async (req, res) => {
     const filename = parsedUrl.pathname.split("/").pop() ?? "document.pdf";
     res.json({
       text: result.text,
-      title: result.title || filename.replace(/\.pdf$/i, ""),
-      author: result.author,
+      title: filename.replace(/\.pdf$/i, ""),
       numPages: result.numPages,
       filename,
     });
@@ -184,7 +177,7 @@ router.post("/tools/pdf/from-url", requireToolUser, async (req, res) => {
     if (err.name === "AbortError") {
       res.status(408).json({ error: "Request timed out fetching the PDF" });
     } else {
-      console.error("[pdf/from-url]", err);
+      console.error("[pdf/from-url]", err.message);
       res.status(500).json({ error: err.message ?? "Failed to process PDF" });
     }
   }
