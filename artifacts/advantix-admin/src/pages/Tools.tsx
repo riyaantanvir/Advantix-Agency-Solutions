@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Link2, Video, ArrowRight, Zap, Sparkles, Shield, ExternalLink, Loader2 } from "lucide-react";
+import { Link2, Video, ArrowRight, Zap, Sparkles, Shield, ExternalLink, Loader2, Headphones } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 
@@ -55,6 +55,18 @@ const tools = [
     badge: "New",
     badgeColor: "bg-red-500/10 text-red-400 border-red-500/20",
     linkLabel: "Open War Update",
+  },
+  {
+    icon: Headphones,
+    name: "PDF to Audio",
+    description: "Upload any PDF or paste a link — the document is read aloud like a podcast. Word-by-word highlighting, speed control, and voice selection included.",
+    href: "/tools/pdf-audio",
+    color: "text-rose-400",
+    bg: "bg-rose-500/10",
+    border: "border-border/50 hover:border-rose-500/40",
+    badge: "New",
+    badgeColor: "bg-rose-500/10 text-rose-400 border-rose-500/20",
+    linkLabel: "Open PDF to Audio",
   },
 ];
 
