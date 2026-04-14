@@ -100,13 +100,14 @@ function buildChunks(lines: string[]): AudioChunk[] {
         lastEnd = m.index + m[0].length;
       }
 
-      // Remaining text (no sentence-ending punctuation)
+      // Remaining text (mid-sentence, no ending punctuation) — no extra pause
       const remaining = line.slice(lastEnd).trim();
       if (remaining.length > 2) {
-        result.push({ text: remaining, lineIdx, pauseAfter: 400, isBengali: true });
+        result.push({ text: remaining, lineIdx, pauseAfter: 0, isBengali: true });
       }
     } else {
-      result.push({ text: line, lineIdx, pauseAfter: 350, isBengali: false });
+      // Non-Bengali line — no extra pause between lines
+      result.push({ text: line, lineIdx, pauseAfter: 0, isBengali: false });
     }
   }
 
