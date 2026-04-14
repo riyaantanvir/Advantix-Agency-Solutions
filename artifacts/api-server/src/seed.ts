@@ -172,6 +172,22 @@ export async function runMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS website text
   `);
 
+  // Auth enhancements — Google OAuth, email verification, password reset
+  await db.execute(sql`ALTER TABLE tool_users ALTER COLUMN password_hash DROP NOT NULL`);
+  await db.execute(sql`
+    ALTER TABLE tool_users
+      ADD COLUMN IF NOT EXISTS google_id text,
+      ADD COLUMN IF NOT EXISTS email_verified boolean DEFAULT true NOT NULL,
+      ADD COLUMN IF NOT EXISTS verification_code text,
+      ADD COLUMN IF NOT EXISTS verification_expires timestamp,
+      ADD COLUMN IF NOT EXISTS reset_token text,
+      ADD COLUMN IF NOT EXISTS reset_token_expires timestamp
+  `);
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tool_users_google_id
+    ON tool_users(google_id) WHERE google_id IS NOT NULL
+  `);
+
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS short_urls (
       id serial PRIMARY KEY,

@@ -40,22 +40,47 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   } catch {
     throw new Error("Server returned an invalid response");
   }
-  if (!res.ok) throw new Error((data.error as string) ?? "Request failed");
+  if (!res.ok) {
+    const err: any = new Error((data.error as string) ?? "Request failed");
+    err.needsVerification = data.needsVerification;
+    err.email = data.email;
+    throw err;
+  }
   return data as T;
 }
 
 export const toolsApi = {
   auth: {
     me: () => request<{ user: ToolUser }>("/tools/auth/me"),
-    login: (email: string, password: string) =>
+    login: (email: string, password: string, turnstileToken?: string) =>
       request<{ user: ToolUser }>("/tools/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, turnstileToken }),
       }),
-    register: (name: string, email: string, password: string) =>
-      request<{ user: ToolUser }>("/tools/auth/register", {
+    register: (name: string, email: string, password: string, turnstileToken?: string) =>
+      request<{ needsVerification: boolean; email: string }>("/tools/auth/register", {
         method: "POST",
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ name, email, password, turnstileToken }),
+      }),
+    verifyEmail: (email: string, code: string) =>
+      request<{ user: ToolUser }>("/tools/auth/verify-email", {
+        method: "POST",
+        body: JSON.stringify({ email, code }),
+      }),
+    resendCode: (email: string) =>
+      request<{ ok: boolean }>("/tools/auth/resend-code", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      }),
+    forgotPassword: (email: string) =>
+      request<{ ok: boolean }>("/tools/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      }),
+    resetPassword: (token: string, password: string) =>
+      request<{ ok: boolean }>("/tools/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ token, password }),
       }),
     logout: () => request<{ ok: boolean }>("/tools/auth/logout", { method: "POST" }),
     profile: () => request<ToolUserProfile>("/tools/auth/profile"),

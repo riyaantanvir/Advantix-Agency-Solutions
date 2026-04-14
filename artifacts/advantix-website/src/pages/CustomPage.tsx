@@ -449,7 +449,6 @@ export default function CustomPage() {
                 setRequiresLogin(false);
                 fetchPage();
               }}
-              onAdminClick={() => {}}
             />
           </div>
         </div>

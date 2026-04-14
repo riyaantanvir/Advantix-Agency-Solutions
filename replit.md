@@ -25,7 +25,7 @@ Full-stack pnpm monorepo for **Advantix Digital** (advantix.digital). A complete
 | Validation | Zod (`zod/v4`), `drizzle-zod` |
 | API codegen | Orval (from OpenAPI spec) |
 | Build | esbuild (ESM bundle) |
-| Auth | express-session + bcryptjs (session-based, PostgreSQL session store) |
+| Auth | express-session + bcryptjs + Google OAuth 2.0 + Cloudflare Turnstile (session-based, PostgreSQL session store) |
 | AI Providers | OpenAI (`gpt-4o-mini`, `gpt-4o`), Anthropic (`claude-sonnet-4-6`), Gemini (`gemini-2.5-flash`) |
 
 ---
