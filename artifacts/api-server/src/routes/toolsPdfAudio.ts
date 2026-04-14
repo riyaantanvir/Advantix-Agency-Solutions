@@ -38,6 +38,26 @@ function fixBengaliVowelOrder(text: string): string {
   );
 }
 
+// ── Clean unmappable / garbage characters from extracted text ─────────────
+// PDFs with custom/embedded fonts sometimes produce:
+//   - U+FFFD replacement characters (shown as □)
+//   - Private Use Area codepoints (U+E000–U+F8FF, U+F0000+) that no font renders
+//   - Lone surrogates or other invalid Unicode
+// We strip those so TTS reads clean text and the UI doesn't show boxes.
+function cleanExtractedText(text: string): string {
+  return text
+    // Remove Unicode replacement character
+    .replace(/\uFFFD/g, "")
+    // Remove Private Use Area characters (BMP PUA: U+E000–U+F8FF)
+    .replace(/[\uE000-\uF8FF]/g, "")
+    // Remove control characters except newline, carriage return, tab
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    // Collapse multiple consecutive spaces/blanks on a line
+    .replace(/[^\S\n]+/g, " ")
+    // Collapse 3+ consecutive blank lines into 2
+    .replace(/\n{3,}/g, "\n\n");
+}
+
 // ── Extract text via pdftotext (Poppler) ──────────────────────────────────
 async function extractTextFromBuffer(buffer: Buffer): Promise<{
   text: string;
@@ -64,7 +84,7 @@ async function extractTextFromBuffer(buffer: Buffer): Promise<{
       if (match) numPages = parseInt(match[1], 10);
     } catch { /* ignore */ }
 
-    const fixed = fixBengaliVowelOrder(rawText);
+    const fixed = cleanExtractedText(fixBengaliVowelOrder(rawText));
 
     return { text: fixed, numPages };
   } finally {

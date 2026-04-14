@@ -513,7 +513,7 @@ export default function PdfAudio() {
         {/* Document reader */}
         <div className="flex-1 overflow-y-auto pb-48 pt-8 px-4">
           <div className="max-w-2xl mx-auto">
-            <div className="font-serif text-[16px] leading-loose space-y-0.5">
+            <div className="font-reader text-[16px] leading-loose space-y-0.5">
               {pdf.lines.map((line, lIdx) => {
                 const isCurrent = lIdx === currentIdx;
                 const isPast = lIdx < currentIdx;
