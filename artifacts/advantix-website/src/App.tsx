@@ -31,6 +31,7 @@ const ContestDetail = lazy(() => import("@/pages/ContestDetail"));
 const CustomPage = lazy(() => import("@/pages/CustomPage"));
 const Favorites = lazy(() => import("@/pages/Favorites"));
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
+const PdfAudio = lazy(() => import("@/pages/PdfAudio"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -74,6 +75,7 @@ function Router() {
               <Route path="/contact" component={Contact} />
               <Route path="/login" component={Login} />
               <Route path="/reset-password" component={ResetPassword} />
+              <Route path="/tools/pdf-audio" component={PdfAudio} />
               <Route path="/tools" component={Tools} />
               <Route path="/tools/dashboard" component={ToolsDashboard} />
               <Route path="/tools/url-shortener" component={UrlShortener} />

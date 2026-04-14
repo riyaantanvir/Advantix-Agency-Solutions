@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link, useLocation } from "wouter";
-import { Link2, BarChart2, Copy, CheckCircle, MessageSquare, ArrowRight, LogOut, Settings, Plus, Zap, Video, Clock, Sparkles, Brain, Heart } from "lucide-react";
+import { Link2, BarChart2, Copy, CheckCircle, MessageSquare, ArrowRight, LogOut, Settings, Plus, Zap, Video, Clock, Sparkles, Brain, Heart, Headphones } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toolsApi, type ShortUrl } from "@/lib/toolsApi";
@@ -120,7 +120,7 @@ export default function ToolsDashboard() {
           {[
             { label: "Total Links", value: urls.length, icon: Link2, color: "text-primary", bg: "bg-primary/10", loading: loadingUrls },
             { label: "Total Clicks", value: totalClicks, icon: BarChart2, color: "text-green-400", bg: "bg-green-500/10", loading: loadingUrls },
-            { label: "Tools Available", value: 3, icon: Zap, color: "text-orange-400", bg: "bg-orange-500/10", loading: false },
+            { label: "Tools Available", value: 4, icon: Zap, color: "text-orange-400", bg: "bg-orange-500/10", loading: false },
             { label: "Recordings", value: recStats.totalRecordings, icon: Video, color: "text-purple-400", bg: "bg-purple-500/10", loading: loadingRec },
             { label: "Mins Recorded", value: totalMinutes, icon: Clock, color: "text-blue-400", bg: "bg-blue-500/10", loading: loadingRec },
           ].map(({ label, value, icon: Icon, color, bg, loading }) => (
@@ -358,6 +358,21 @@ export default function ToolsDashboard() {
                     <p className="text-xs text-muted-foreground">Record up to 10 minutes</p>
                   </div>
                   <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-purple-400 transition-colors" />
+                </div>
+              </Card>
+            </Link>
+
+            <Link href="/tools/pdf-audio">
+              <Card className="p-4 border-border/40 bg-card hover:border-rose-500/30 hover:bg-rose-500/5 transition-all cursor-pointer group">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-rose-500/10 flex items-center justify-center shrink-0">
+                    <Headphones className="w-5 h-5 text-rose-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold">PDF to Audio</p>
+                    <p className="text-xs text-muted-foreground">Listen to any document</p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-rose-400 transition-colors" />
                 </div>
               </Card>
             </Link>
