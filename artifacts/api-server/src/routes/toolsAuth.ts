@@ -378,6 +378,14 @@ router.post("/tools/auth/reset-password", async (req, res) => {
   }
 });
 
+// ── Auth config (public) ──────────────────────────────────────────────────────
+router.get("/tools/auth/config", (_req, res) => {
+  res.json({
+    googleEnabled: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
+    turnstileEnabled: !!process.env.CF_TURNSTILE_SECRET_KEY,
+  });
+});
+
 // ── Google OAuth — start ──────────────────────────────────────────────────────
 router.get("/tools/auth/google", (req, res) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;

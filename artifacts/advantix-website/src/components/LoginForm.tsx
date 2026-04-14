@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toolsApi, type ToolUser } from "@/lib/toolsApi";
+import { useQuery } from "@tanstack/react-query";
 
 export const expo = [0.22, 1, 0.36, 1] as const;
 
@@ -77,6 +78,13 @@ export interface LoginFormProps {
 }
 
 export function LoginForm({ onUserSuccess }: LoginFormProps) {
+  const { data: authConfig } = useQuery({
+    queryKey: ["auth-config"],
+    queryFn: () => toolsApi.auth.config(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const googleEnabled = authConfig?.googleEnabled ?? false;
+
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [step, setStep] = useState<Step>("main");
 
@@ -343,22 +351,25 @@ export function LoginForm({ onUserSuccess }: LoginFormProps) {
         exit={{ opacity: 0, y: -8 }}
         transition={{ duration: 0.2, ease: expo }}
       >
-        {/* Google Sign-In */}
-        <button
-          type="button"
-          onClick={handleGoogleSignIn}
-          className="w-full flex items-center justify-center gap-3 h-11 px-4 bg-background border border-border/70 rounded-xl text-sm font-medium hover:bg-muted/50 transition-all duration-200 hover:border-border mb-4"
-        >
-          <GoogleIcon />
-          Continue with Google
-        </button>
+        {/* Google Sign-In (only shown when configured) */}
+        {googleEnabled && (
+          <>
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              className="w-full flex items-center justify-center gap-3 h-11 px-4 bg-background border border-border/70 rounded-xl text-sm font-medium hover:bg-muted/50 transition-all duration-200 hover:border-border mb-4"
+            >
+              <GoogleIcon />
+              Continue with Google
+            </button>
 
-        {/* Divider */}
-        <div className="flex items-center gap-3 mb-4">
-          <div className="flex-1 h-px bg-border/50" />
-          <span className="text-xs text-muted-foreground">or</span>
-          <div className="flex-1 h-px bg-border/50" />
-        </div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-1 h-px bg-border/50" />
+              <span className="text-xs text-muted-foreground">or</span>
+              <div className="flex-1 h-px bg-border/50" />
+            </div>
+          </>
+        )}
 
         {/* Mode toggle */}
         <div className="flex gap-1.5 mb-5 bg-muted/40 p-1 rounded-xl">

@@ -51,6 +51,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export const toolsApi = {
   auth: {
+    config: () => request<{ googleEnabled: boolean; turnstileEnabled: boolean }>("/tools/auth/config"),
     me: () => request<{ user: ToolUser }>("/tools/auth/me"),
     login: (email: string, password: string, turnstileToken?: string) =>
       request<{ user: ToolUser }>("/tools/auth/login", {
