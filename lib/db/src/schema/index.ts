@@ -35,3 +35,4 @@ export * from "./contestSubmissions";
 export * from "./projects";
 export * from "./projectMembers";
 export * from "./taskComments";
+export * from "./toolPdfBooks";

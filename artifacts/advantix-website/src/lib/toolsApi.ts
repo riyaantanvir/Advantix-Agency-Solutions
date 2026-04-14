@@ -27,6 +27,20 @@ export interface ShortUrl {
   createdAt: string;
 }
 
+export interface PdfBook {
+  id: number;
+  title: string;
+  filename: string;
+  numPages: number;
+  totalLines: number;
+  lastLine: number;
+  createdAt: string;
+}
+
+export interface PdfBookWithText extends PdfBook {
+  text: string;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     credentials: "include",
@@ -95,6 +109,17 @@ export const toolsApi = {
         method: "POST",
         body: JSON.stringify({ currentPassword, newPassword }),
       }),
+  },
+  pdf: {
+    books: () => request<PdfBook[]>("/tools/pdf/books"),
+    getBook: (id: number) => request<PdfBookWithText>(`/tools/pdf/books/${id}`),
+    saveProgress: (id: number, lastLine: number) =>
+      request<{ ok: boolean }>(`/tools/pdf/books/${id}/progress`, {
+        method: "PATCH",
+        body: JSON.stringify({ lastLine }),
+      }),
+    deleteBook: (id: number) =>
+      request<{ ok: boolean }>(`/tools/pdf/books/${id}`, { method: "DELETE" }),
   },
   recordings: {
     save: (durationSeconds: number) =>

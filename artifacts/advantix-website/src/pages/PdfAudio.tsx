@@ -3,9 +3,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Link, useLocation } from "wouter";
 import {
   Upload, Link2, Loader2, ArrowLeft, Play, Pause, SkipBack, SkipForward,
-  Volume2, ChevronDown, RotateCcw, X, Headphones
+  Volume2, ChevronDown, RotateCcw, X, Headphones, BookOpen, Trash2, Clock
 } from "lucide-react";
 import { useToolsUser } from "@/context/ToolsUserContext";
+import { toolsApi, type PdfBook } from "@/lib/toolsApi";
 
 const expo = [0.22, 1, 0.36, 1] as const;
 
@@ -13,16 +14,14 @@ const expo = [0.22, 1, 0.36, 1] as const;
 function cleanAndSplit(raw: string): string[] {
   const lines = raw
     .replace(/\r\n/g, "\n")
-    .replace(/([a-z])-\n([a-z])/g, "$1$2")   // dehyphenate split words
+    .replace(/([a-z])-\n([a-z])/g, "$1$2")
     .split("\n")
     .map(l => l.replace(/\s+/g, " ").trim())
-    .filter(l => l.length > 3);               // drop very short/empty lines
+    .filter(l => l.length > 3);
 
-  // Merge lines that are clearly continuation (no sentence ending before them)
   const merged: string[] = [];
   for (const line of lines) {
     const prev = merged[merged.length - 1];
-    // If previous line doesn't end with punctuation and current starts lowercase → merge
     if (prev && !/[.!?:;\u2026]$/.test(prev) && /^[a-z]/.test(line)) {
       merged[merged.length - 1] = prev + " " + line;
     } else {
@@ -30,7 +29,6 @@ function cleanAndSplit(raw: string): string[] {
     }
   }
 
-  // Split very long lines into sentences
   const result: string[] = [];
   for (const line of merged) {
     if (line.length > 250) {
@@ -54,12 +52,13 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface PdfResult {
+  bookId: number;
   text: string;
   title: string;
-  author?: string;
   numPages: number;
   filename: string;
   lines: string[];
+  startLine?: number;
 }
 
 // ── Voice Selector ────────────────────────────────────────────────────────────
@@ -116,6 +115,88 @@ function VoiceSelector({ value, onChange }: { value: SpeechSynthesisVoice | null
   );
 }
 
+// ── Book Card ─────────────────────────────────────────────────────────────────
+function BookCard({
+  book,
+  onOpen,
+  onDelete,
+}: {
+  book: PdfBook;
+  onOpen: (book: PdfBook) => void;
+  onDelete: (id: number) => void;
+}) {
+  const pct = book.totalLines > 0 ? Math.round((book.lastLine / book.totalLines) * 100) : 0;
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeleting(true);
+    try {
+      await toolsApi.pdf.deleteBook(book.id);
+      onDelete(book.id);
+    } catch {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      onClick={() => onOpen(book)}
+      className="group relative flex items-center gap-3 bg-card hover:bg-muted/30 border border-border/50 hover:border-border rounded-xl p-3.5 cursor-pointer transition-all duration-200"
+    >
+      {/* Book icon */}
+      <div className="w-10 h-10 rounded-lg bg-rose-500/10 flex items-center justify-center shrink-0">
+        <BookOpen className="w-5 h-5 text-rose-400" />
+      </div>
+
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-foreground truncate">{book.title}</p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className="text-xs text-muted-foreground">{book.numPages}p</span>
+          {book.lastLine > 0 && (
+            <>
+              <span className="text-muted-foreground/40 text-xs">·</span>
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Line {book.lastLine} of {book.totalLines}
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* Progress bar */}
+        {book.totalLines > 0 && (
+          <div className="mt-1.5 h-1 bg-muted/60 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-rose-500/70 rounded-full transition-all"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Pct + delete */}
+      <div className="flex flex-col items-end gap-1.5 shrink-0">
+        {pct > 0 && (
+          <span className="text-xs font-semibold text-rose-400">{pct}%</span>
+        )}
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-400 p-1 rounded-lg hover:bg-red-400/10"
+        >
+          {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
 // ── Main Component ───────────────────────────────────────────────────────────
 export default function PdfAudio() {
   const { user, loading } = useToolsUser();
@@ -128,6 +209,11 @@ export default function PdfAudio() {
   const [fetchError, setFetchError] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Book library
+  const [books, setBooks] = useState<PdfBook[]>([]);
+  const [booksLoading, setBooksLoading] = useState(true);
+  const [openingBook, setOpeningBook] = useState<number | null>(null);
 
   // PDF result
   const [pdf, setPdf] = useState<PdfResult | null>(null);
@@ -145,6 +231,7 @@ export default function PdfAudio() {
   const isPlayingRef = useRef(false);
   const currentIdxRef = useRef(0);
   const elapsedInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { currentIdxRef.current = currentIdx; }, [currentIdx]);
@@ -152,6 +239,15 @@ export default function PdfAudio() {
   useEffect(() => {
     if (!loading && !user) navigate("/login");
   }, [user, loading]);
+
+  // Load books
+  useEffect(() => {
+    if (!user) return;
+    toolsApi.pdf.books()
+      .then(setBooks)
+      .catch(() => {})
+      .finally(() => setBooksLoading(false));
+  }, [user]);
 
   useEffect(() => {
     if (!pdf) return;
@@ -167,6 +263,17 @@ export default function PdfAudio() {
     }
     return () => { if (elapsedInterval.current) clearInterval(elapsedInterval.current); };
   }, [isPlaying]);
+
+  // Save progress debounced when currentIdx changes
+  useEffect(() => {
+    if (!pdf || !pdf.bookId) return;
+    if (progressSaveTimer.current) clearTimeout(progressSaveTimer.current);
+    progressSaveTimer.current = setTimeout(() => {
+      toolsApi.pdf.saveProgress(pdf.bookId, currentIdx).catch(() => {});
+      setBooks(prev => prev.map(b => b.id === pdf.bookId ? { ...b, lastLine: currentIdx } : b));
+    }, 2000);
+    return () => { if (progressSaveTimer.current) clearTimeout(progressSaveTimer.current); };
+  }, [currentIdx, pdf?.bookId]);
 
   // ── Speak a line ──────────────────────────────────────────────────────────
   const speakLine = useCallback((idx: number, lines: string[], r: number, v: SpeechSynthesisVoice | null) => {
@@ -269,6 +376,10 @@ export default function PdfAudio() {
   const closePdf = () => {
     window.speechSynthesis.cancel();
     setIsPlaying(false);
+    if (pdf?.bookId) {
+      toolsApi.pdf.saveProgress(pdf.bookId, currentIdx).catch(() => {});
+      setBooks(prev => prev.map(b => b.id === pdf.bookId ? { ...b, lastLine: currentIdx } : b));
+    }
     setPdf(null);
     setCurrentIdx(0);
     setWordIndex(-1);
@@ -276,10 +387,17 @@ export default function PdfAudio() {
   };
 
   // ── PDF loading ───────────────────────────────────────────────────────────
-  const processPdfData = (data: { text: string; title: string; author?: string; numPages: number; filename: string }) => {
+  const openPdfData = (data: {
+    bookId: number;
+    text: string;
+    title: string;
+    numPages: number;
+    filename: string;
+    startLine?: number;
+  }) => {
     const lines = cleanAndSplit(data.text);
     setPdf({ ...data, lines });
-    setCurrentIdx(0);
+    setCurrentIdx(data.startLine ?? 0);
     setWordIndex(-1);
     setElapsed(0);
     setIsPlaying(false);
@@ -298,7 +416,12 @@ export default function PdfAudio() {
       const res = await fetch("/api/tools/pdf/upload", { method: "POST", body: fd, credentials: "include" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Upload failed");
-      processPdfData(data);
+      openPdfData(data);
+      setBooks(prev => {
+        const existing = prev.find(b => b.id === data.bookId);
+        if (existing) return prev;
+        return [{ id: data.bookId, title: data.title, filename: data.filename, numPages: data.numPages, totalLines: cleanAndSplit(data.text).length, lastLine: 0, createdAt: new Date().toISOString() }, ...prev];
+      });
     } catch (err: any) {
       setFetchError(err.message ?? "Failed to process PDF");
     } finally {
@@ -319,12 +442,41 @@ export default function PdfAudio() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to fetch PDF");
-      processPdfData(data);
+      openPdfData(data);
+      setBooks(prev => {
+        const existing = prev.find(b => b.id === data.bookId);
+        if (existing) return prev;
+        return [{ id: data.bookId, title: data.title, filename: data.filename, numPages: data.numPages, totalLines: cleanAndSplit(data.text).length, lastLine: 0, createdAt: new Date().toISOString() }, ...prev];
+      });
     } catch (err: any) {
       setFetchError(err.message ?? "Failed to load PDF from URL");
     } finally {
       setFetching(false);
     }
+  };
+
+  // ── Open a saved book ──────────────────────────────────────────────────────
+  const openBook = async (book: PdfBook) => {
+    setOpeningBook(book.id);
+    try {
+      const full = await toolsApi.pdf.getBook(book.id);
+      openPdfData({
+        bookId: full.id,
+        text: full.text,
+        title: full.title,
+        numPages: full.numPages,
+        filename: full.filename,
+        startLine: full.lastLine,
+      });
+    } catch {
+      setFetchError("Failed to open book.");
+    } finally {
+      setOpeningBook(null);
+    }
+  };
+
+  const deleteBook = (id: number) => {
+    setBooks(prev => prev.filter(b => b.id !== id));
   };
 
   useEffect(() => () => { window.speechSynthesis.cancel(); }, []);
@@ -350,7 +502,7 @@ export default function PdfAudio() {
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm truncate">{pdf.title}</p>
             <p className="text-xs text-muted-foreground">
-              {pdf.author ? `${pdf.author} · ` : ""}{pdf.numPages} pages · {pdf.lines.length} lines
+              {pdf.numPages} pages · {pdf.lines.length} lines
             </p>
           </div>
           <button onClick={restart} className="text-muted-foreground hover:text-foreground transition-colors" title="Restart">
@@ -361,7 +513,6 @@ export default function PdfAudio() {
         {/* Document reader */}
         <div className="flex-1 overflow-y-auto pb-48 pt-8 px-4">
           <div className="max-w-2xl mx-auto">
-            {/* Document-style lines */}
             <div className="font-serif text-[16px] leading-loose space-y-0.5">
               {pdf.lines.map((line, lIdx) => {
                 const isCurrent = lIdx === currentIdx;
@@ -384,11 +535,9 @@ export default function PdfAudio() {
                         : "hover:bg-muted/30"
                     }`}
                   >
-                    {/* Current line indicator bar */}
                     {isCurrent && (
                       <span className="absolute left-0 top-1 bottom-1 w-0.5 bg-primary rounded-full" />
                     )}
-
                     <span className={`${isPast ? "text-muted-foreground/40" : isCurrent ? "text-foreground" : "text-muted-foreground/75"}`}>
                       {words.map((chunk, wIdx) => {
                         if (/^\s+$/.test(chunk)) return <span key={wIdx}>{chunk}</span>;
@@ -411,7 +560,6 @@ export default function PdfAudio() {
                 );
               })}
             </div>
-
             <div className="h-4 mt-8 text-center">
               <p className="text-xs text-muted-foreground/40">— End of document —</p>
             </div>
@@ -420,7 +568,6 @@ export default function PdfAudio() {
 
         {/* ── Fixed Player Bar ── */}
         <div className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-xl border-t border-border/60 shadow-2xl z-40">
-          {/* Progress bar */}
           <div
             className="h-1 bg-muted/60 cursor-pointer"
             onClick={e => {
@@ -436,43 +583,28 @@ export default function PdfAudio() {
           </div>
 
           <div className="max-w-2xl mx-auto px-4 py-3">
-            {/* Time row */}
             <div className="flex justify-between text-xs text-muted-foreground mb-2">
               <span>{formatTime(elapsed)}</span>
-              <span className="text-muted-foreground/60">
-                Line {currentIdx + 1} of {pdf.lines.length}
-              </span>
+              <span className="text-muted-foreground/60">Line {currentIdx + 1} of {pdf.lines.length}</span>
               <span>{formatTime(Math.max(0, totalEstimate - elapsed))}</span>
             </div>
 
-            {/* Controls */}
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1 flex items-center">
                 <VoiceSelector value={voice} onChange={changeVoice} />
               </div>
 
               <div className="flex items-center gap-3">
-                <button
-                  onClick={skipBack}
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all"
-                >
+                <button onClick={skipBack} className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all">
                   <SkipBack className="w-5 h-5" />
                 </button>
-
-                <button
-                  onClick={togglePlay}
-                  className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-lg hover:bg-primary/90 transition-all active:scale-95"
-                >
+                <button onClick={togglePlay} className="w-14 h-14 rounded-full bg-primary flex items-center justify-center shadow-lg hover:bg-primary/90 transition-all active:scale-95">
                   {isPlaying
                     ? <Pause className="w-6 h-6 text-primary-foreground fill-current" />
                     : <Play className="w-6 h-6 text-primary-foreground fill-current ml-0.5" />
                   }
                 </button>
-
-                <button
-                  onClick={skipForward}
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all"
-                >
+                <button onClick={skipForward} className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all">
                   <SkipForward className="w-5 h-5" />
                 </button>
               </div>
@@ -571,57 +703,95 @@ export default function PdfAudio() {
                   </div>
                   <p className="font-bold text-foreground mb-1">Drop your PDF here</p>
                   <p className="text-sm text-muted-foreground mb-4">or click to browse</p>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-border bg-background text-sm font-semibold hover:bg-muted/40 transition-colors"
-                  >
-                    <Upload className="w-4 h-4" /> Choose PDF
-                  </button>
-                  <p className="text-xs text-muted-foreground mt-3">Max 30MB · Text-based PDFs only</p>
+                  <span className="inline-block text-xs bg-muted/60 text-muted-foreground px-3 py-1.5 rounded-full">Max 30MB · PDF only</span>
                 </div>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
-                />
+                <input ref={fileRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }} />
               </motion.div>
             ) : (
-              <motion.div key="url" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }} className="space-y-3">
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={urlInput}
-                    onChange={e => setUrlInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") handleUrlLoad(); }}
-                    placeholder="https://example.com/document.pdf"
-                    className="flex-1 bg-card border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/50"
-                  />
-                  <button
-                    onClick={handleUrlLoad}
-                    disabled={!urlInput.trim()}
-                    className="px-5 py-3 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-40 transition-all"
-                  >
-                    Load
-                  </button>
+              <motion.div key="url" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
+                <div className="bg-card border border-border/50 rounded-2xl p-6">
+                  <label className="block text-sm font-semibold text-foreground mb-2">PDF URL</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={urlInput}
+                      onChange={e => setUrlInput(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleUrlLoad()}
+                      placeholder="https://example.com/document.pdf"
+                      className="flex-1 bg-muted/30 border border-border/50 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 placeholder:text-muted-foreground/50"
+                    />
+                    <button
+                      onClick={handleUrlLoad}
+                      disabled={!urlInput.trim()}
+                      className="px-5 py-2.5 bg-primary text-primary-foreground text-sm font-semibold rounded-xl disabled:opacity-40 hover:bg-primary/90 transition-all"
+                    >
+                      Load
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">The PDF must be publicly accessible.</p>
                 </div>
-                <p className="text-xs text-muted-foreground text-center">Paste a direct link to a PDF file. The PDF must be publicly accessible.</p>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Error */}
           {fetchError && (
-            <motion.div
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mt-4 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-sm"
-            >
-              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10" strokeWidth="2"/><path strokeLinecap="round" d="M12 8v4m0 4h.01" strokeWidth="2"/></svg>
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-4 text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3">
               {fetchError}
-            </motion.div>
+            </motion.p>
           )}
+
+          {/* ── My Library ── */}
+          <div className="mt-10">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-rose-400" />
+                My Library
+              </h2>
+              {books.length > 0 && (
+                <span className="text-xs text-muted-foreground">{books.length} book{books.length !== 1 ? "s" : ""}</span>
+              )}
+            </div>
+
+            {booksLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : books.length === 0 ? (
+              <div className="text-center py-10 bg-muted/20 rounded-2xl border border-border/30">
+                <BookOpen className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">No books yet. Upload a PDF to get started.</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                <AnimatePresence>
+                  {books.map(book => (
+                    <BookCard
+                      key={book.id}
+                      book={book}
+                      onOpen={openBook}
+                      onDelete={deleteBook}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
+
+          {/* Opening book overlay */}
+          <AnimatePresence>
+            {openingBook !== null && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-3"
+              >
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <p className="text-sm font-semibold text-foreground">Opening book…</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
         </motion.div>
       </div>
     </div>
