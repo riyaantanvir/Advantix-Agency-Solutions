@@ -5,70 +5,6 @@ import { requireToolUser } from "../middleware/toolAuth.js";
 
 const _require = createRequire(import.meta.url);
 
-// Polyfill browser APIs required by pdfjs-dist in Node.js
-if (typeof (globalThis as any).DOMMatrix === "undefined") {
-  (globalThis as any).DOMMatrix = class DOMMatrix {
-    a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
-    m11 = 1; m12 = 0; m13 = 0; m14 = 0;
-    m21 = 0; m22 = 1; m23 = 0; m24 = 0;
-    m31 = 0; m32 = 0; m33 = 1; m34 = 0;
-    m41 = 0; m42 = 0; m43 = 0; m44 = 1;
-    is2D = true; isIdentity = true;
-    constructor(_init?: any) {}
-    multiply(_o: any) { return this; }
-    translate(_x: number, _y: number, _z?: number) { return this; }
-    scale(_sx: number, _sy?: number, _sz?: number, _ox?: number, _oy?: number, _oz?: number) { return this; }
-    rotate(_rx: number, _ry?: number, _rz?: number) { return this; }
-    rotateAxisAngle(_x: number, _y: number, _z: number, _a: number) { return this; }
-    rotateFromVector(_x: number, _y: number) { return this; }
-    skewX(_s: number) { return this; }
-    skewY(_s: number) { return this; }
-    flipX() { return this; }
-    flipY() { return this; }
-    inverse() { return this; }
-    transformPoint(_p?: any) { return { x: 0, y: 0, z: 0, w: 1 }; }
-    toFloat32Array() { return new Float32Array(16); }
-    toFloat64Array() { return new Float64Array(16); }
-    toString() { return `matrix(${this.a},${this.b},${this.c},${this.d},${this.e},${this.f})`; }
-  };
-}
-
-if (typeof (globalThis as any).ImageData === "undefined") {
-  (globalThis as any).ImageData = class ImageData {
-    data: Uint8ClampedArray;
-    width: number;
-    height: number;
-    colorSpace = "srgb";
-    constructor(widthOrData: number | Uint8ClampedArray, height: number) {
-      if (typeof widthOrData === "number") {
-        this.width = widthOrData;
-        this.height = height;
-        this.data = new Uint8ClampedArray(widthOrData * height * 4);
-      } else {
-        this.data = widthOrData;
-        this.width = height;
-        this.height = widthOrData.length / height / 4;
-      }
-    }
-  };
-}
-
-if (typeof (globalThis as any).Path2D === "undefined") {
-  (globalThis as any).Path2D = class Path2D {
-    constructor(_path?: any) {}
-    addPath(_p: any) {}
-    closePath() {}
-    moveTo(_x: number, _y: number) {}
-    lineTo(_x: number, _y: number) {}
-    bezierCurveTo(_cp1x: number, _cp1y: number, _cp2x: number, _cp2y: number, _x: number, _y: number) {}
-    quadraticCurveTo(_cpx: number, _cpy: number, _x: number, _y: number) {}
-    arc(_x: number, _y: number, _r: number, _sa: number, _ea: number, _ac?: boolean) {}
-    arcTo(_x1: number, _y1: number, _x2: number, _y2: number, _r: number) {}
-    ellipse(_x: number, _y: number, _rx: number, _ry: number, _rot: number, _sa: number, _ea: number, _ac?: boolean) {}
-    rect(_x: number, _y: number, _w: number, _h: number) {}
-  };
-}
-
 const router = Router();
 
 const upload = multer({
@@ -83,15 +19,73 @@ const upload = multer({
   },
 });
 
-async function extractTextFromBuffer(buffer: Buffer): Promise<{ text: string; title?: string; author?: string; numPages: number }> {
-  const pdfParse = _require("pdf-parse") as (buf: Buffer) => Promise<any>;
-  const data = await pdfParse(buffer);
-  return {
-    text: data.text,
-    title: (data.info?.Title as string) || undefined,
-    author: (data.info?.Author as string) || undefined,
-    numPages: data.numpages,
-  };
+// ── Extract text using pdf2json (pure Node.js, no browser APIs needed) ───────
+function extractTextFromBuffer(buffer: Buffer): Promise<{
+  text: string;
+  title?: string;
+  author?: string;
+  numPages: number;
+}> {
+  return new Promise((resolve, reject) => {
+    const PDFParser = _require("pdf2json");
+    const parser = new PDFParser(null, 1);
+
+    const timeout = setTimeout(() => {
+      reject(new Error("PDF parsing timed out"));
+    }, 30_000);
+
+    parser.on("pdfParser_dataError", (err: any) => {
+      clearTimeout(timeout);
+      reject(new Error(err?.parserError ?? "Failed to parse PDF"));
+    });
+
+    parser.on("pdfParser_dataReady", (data: any) => {
+      clearTimeout(timeout);
+      try {
+        const pages: any[] = data.Pages ?? [];
+        const lines: string[] = [];
+
+        for (const page of pages) {
+          // Group text items by their Y position (row), then join by X order
+          const rowMap = new Map<number, { x: number; t: string }[]>();
+          for (const textItem of page.Texts ?? []) {
+            const y = Math.round(textItem.y * 10); // round to bucket nearby items
+            const x = textItem.x;
+            const decoded = (textItem.R ?? [])
+              .map((r: any) => decodeURIComponent(r.T))
+              .join("");
+            if (!decoded.trim()) continue;
+            if (!rowMap.has(y)) rowMap.set(y, []);
+            rowMap.get(y)!.push({ x, t: decoded });
+          }
+
+          // Sort rows by Y, then tokens by X, join into lines
+          const sortedYs = Array.from(rowMap.keys()).sort((a, b) => a - b);
+          for (const y of sortedYs) {
+            const tokens = rowMap.get(y)!.sort((a, b) => a.x - b.x);
+            const line = tokens.map(t => t.t).join(" ").replace(/\s+/g, " ").trim();
+            if (line) lines.push(line);
+          }
+
+          lines.push(""); // blank line between pages
+        }
+
+        const text = lines.join("\n").trim();
+        const meta = data.Meta ?? {};
+
+        resolve({
+          text,
+          title: meta.Title?.trim() || undefined,
+          author: meta.Author?.trim() || undefined,
+          numPages: pages.length,
+        });
+      } catch (e: any) {
+        reject(new Error("Failed to extract text: " + e.message));
+      }
+    });
+
+    parser.parseBuffer(buffer);
+  });
 }
 
 // ── Upload PDF file ─────────────────────────────────────────────────────────
@@ -114,6 +108,7 @@ router.post("/tools/pdf/upload", requireToolUser, upload.single("file"), async (
       filename: req.file.originalname,
     });
   } catch (err: any) {
+    console.error("[pdf/upload]", err);
     res.status(500).json({ error: err.message ?? "Failed to process PDF" });
   }
 });
@@ -189,6 +184,7 @@ router.post("/tools/pdf/from-url", requireToolUser, async (req, res) => {
     if (err.name === "AbortError") {
       res.status(408).json({ error: "Request timed out fetching the PDF" });
     } else {
+      console.error("[pdf/from-url]", err);
       res.status(500).json({ error: err.message ?? "Failed to process PDF" });
     }
   }
