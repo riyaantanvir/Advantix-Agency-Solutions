@@ -163,8 +163,7 @@ router.post("/tools/auth/verify-email", async (req, res) => {
 
     if (!user) { res.status(404).json({ error: "Account not found" }); return; }
 
-    const u = user as any;
-    if (u.email_verified) {
+    if (user.emailVerified) {
       // Already verified — just log them in
       req.session.toolUserId = user.id;
       req.session.toolUserEmail = user.email;
@@ -173,12 +172,12 @@ router.post("/tools/auth/verify-email", async (req, res) => {
       return;
     }
 
-    if (!u.verification_code || u.verification_code !== code.trim()) {
+    if (!user.verificationCode || user.verificationCode !== code.trim()) {
       res.status(400).json({ error: "Invalid verification code" });
       return;
     }
 
-    if (u.verification_expires && new Date(u.verification_expires) < new Date()) {
+    if (user.verificationExpires && new Date(user.verificationExpires) < new Date()) {
       res.status(400).json({ error: "Verification code has expired. Please request a new one." });
       return;
     }
@@ -249,9 +248,7 @@ router.post("/tools/auth/login", async (req, res) => {
       .where(eq(toolUsersTable.email, (email as string).toLowerCase().trim()))
       .limit(1);
 
-    const u = user as any;
-
-    if (!user || !u.password_hash || !(await bcrypt.compare(password, u.password_hash))) {
+    if (!user || !user.passwordHash || !(await bcrypt.compare(password, user.passwordHash))) {
       res.status(401).json({ error: "Invalid email or password" });
       return;
     }
@@ -344,8 +341,7 @@ router.post("/tools/auth/reset-password", async (req, res) => {
 
     if (!user) { res.status(400).json({ error: "Invalid or expired reset link" }); return; }
 
-    const u = user as any;
-    if (!u.reset_token_expires || new Date(u.reset_token_expires) < new Date()) {
+    if (!user.resetTokenExpires || new Date(user.resetTokenExpires) < new Date()) {
       res.status(400).json({ error: "Reset link has expired. Please request a new one." });
       return;
     }
@@ -459,9 +455,7 @@ router.get("/tools/auth/google/callback", async (req, res) => {
       .limit(1);
 
     if (user) {
-      // Link google_id if not already linked
-      const u = user as any;
-      if (!u.google_id) {
+      if (!user.googleId) {
         await db.execute(sql`
           UPDATE tool_users SET google_id = ${googleUser.sub}, email_verified = true
           WHERE id = ${user.id}
@@ -548,10 +542,9 @@ router.post("/tools/auth/change-password", async (req, res) => {
     const [user] = await db.select().from(toolUsersTable).where(eq(toolUsersTable.id, req.session.toolUserId)).limit(1);
     if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-    const u = user as any;
-    if (!u.password_hash) { res.status(400).json({ error: "Account uses Google sign-in. Set a password via forgot password." }); return; }
+    if (!user.passwordHash) { res.status(400).json({ error: "Account uses Google sign-in. Set a password via forgot password." }); return; }
 
-    const valid = await bcrypt.compare(currentPassword, u.password_hash);
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
     if (!valid) { res.status(400).json({ error: "Current password is incorrect" }); return; }
 
     const newHash = await bcrypt.hash(newPassword, 12);
