@@ -271,10 +271,16 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const SidebarContent = () => (
     <>
       <div className="p-6 shrink-0">
-        <div className="flex items-center gap-3">
-          <img src="/images/logo-icon.svg" alt="Advantix" className="w-8 h-8 object-contain" />
-          <span className="font-display font-bold text-xl tracking-tight text-foreground">Advantix</span>
-        </div>
+        <a
+          href="/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 group"
+          title="Go to homepage"
+        >
+          <img src="/images/logo-icon.svg" alt="Advantix" className="w-8 h-8 object-contain group-hover:opacity-80 transition-opacity" />
+          <span className="font-display font-bold text-xl tracking-tight text-foreground group-hover:text-primary transition-colors">Advantix</span>
+        </a>
       </div>
 
       <nav className="flex-1 px-3 space-y-1 mt-2 overflow-y-auto">
