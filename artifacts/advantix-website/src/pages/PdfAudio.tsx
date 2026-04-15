@@ -50,6 +50,9 @@ function formatTime(seconds: number): string {
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
+// Number of original pdf.lines displayed together as one visual block
+const GROUP_SIZE = 3;
+
 // ── Types ────────────────────────────────────────────────────────────────────
 interface PdfResult {
   bookId: number;
@@ -334,6 +337,9 @@ export default function PdfAudio() {
   // currentLineIdx: which original line we're currently on (for display, scroll, saving)
   const currentLineIdx = chunks[currentIdx]?.lineIdx ?? 0;
 
+  // Which visual group (of GROUP_SIZE lines) is currently active
+  const currentGroupIdx = Math.floor(currentLineIdx / GROUP_SIZE);
+
   // Clear audio cache on book change (revoke blob URLs to free memory)
   const clearAudioCache = useCallback(() => {
     audioCacheRef.current.forEach(url => URL.revokeObjectURL(url));
@@ -416,11 +422,11 @@ export default function PdfAudio() {
     return () => { if (progressSaveTimer.current) clearTimeout(progressSaveTimer.current); };
   }, [currentLineIdx, pdf?.bookId]);
 
-  // Auto-scroll current line into view
+  // Auto-scroll current group into view
   useEffect(() => {
-    const el = lineRefs.current[currentLineIdx];
+    const el = lineRefs.current[currentGroupIdx];
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [currentLineIdx, isPlaying]);
+  }, [currentGroupIdx, isPlaying]);
 
   // Eagerly prefetch first 8 Bengali chunks when book opens, so first play is instant
   useEffect(() => {
@@ -756,49 +762,54 @@ export default function PdfAudio() {
         <div className="flex-1 overflow-y-auto pb-48 pt-8 px-4">
           <div className="max-w-2xl mx-auto">
             <div className="font-reader text-[16px] leading-loose space-y-0.5">
-              {pdf.lines.map((line, lIdx) => {
-                const isCurrent = lIdx === currentLineIdx;
-                const isPast = lIdx < currentLineIdx;
-                const words = line.split(/(\s+)/);
-                let wCount = 0;
+              {Array.from({ length: Math.ceil(pdf.lines.length / GROUP_SIZE) }, (_, gIdx) => {
+                const startLineIdx = gIdx * GROUP_SIZE;
+                const groupLines = pdf.lines.slice(startLineIdx, startLineIdx + GROUP_SIZE);
+                const isCurrent = gIdx === currentGroupIdx;
+                const isPast = gIdx < currentGroupIdx;
 
                 return (
                   <div
-                    key={lIdx}
-                    ref={el => { lineRefs.current[lIdx] = el; }}
+                    key={gIdx}
+                    ref={el => { lineRefs.current[gIdx] = el; }}
                     onClick={() => {
-                      // Jump to the first chunk of this line
-                      const chunkIdx = findChunkForLine(chunks, lIdx);
+                      const chunkIdx = findChunkForLine(chunks, startLineIdx);
                       setCurrentIdx(chunkIdx);
                       setWordIndex(-1);
-                      if (isPlaying) {
-                        stopAll();
-                        playChunk(chunkIdx, chunks, rate, voice);
-                      }
+                      if (isPlaying) { stopAll(); playChunk(chunkIdx, chunks, rate, voice); }
                     }}
-                    className={`relative px-3 py-0.5 rounded-lg cursor-pointer transition-all duration-200 group ${
-                      isCurrent
-                        ? "bg-primary/12 ring-1 ring-primary/25"
-                        : "hover:bg-muted/30"
+                    className={`relative px-3 py-1 rounded-lg cursor-pointer transition-all duration-200 ${
+                      isCurrent ? "bg-primary/12 ring-1 ring-primary/25" : "hover:bg-muted/30"
                     }`}
                   >
                     {isCurrent && (
-                      <span className="absolute left-0 top-1 bottom-1 w-0.5 bg-primary rounded-full" />
+                      <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 bg-primary rounded-full" />
                     )}
-                    <span className={`${isPast ? "text-muted-foreground/40" : isCurrent ? "text-foreground" : "text-muted-foreground/75"}`}>
-                      {words.map((seg, wIdx) => {
-                        if (/^\s+$/.test(seg)) return <span key={wIdx}>{seg}</span>;
-                        const wi = wCount++;
+                    <span className={isPast ? "text-muted-foreground/40" : isCurrent ? "text-foreground" : "text-muted-foreground/75"}>
+                      {groupLines.map((line, lineInGroup) => {
+                        const lIdx = startLineIdx + lineInGroup;
+                        const isCurrentLine = lIdx === currentLineIdx;
+                        const words = line.split(/(\s+)/);
+                        let wCount = 0;
                         return (
-                          <span
-                            key={wIdx}
-                            className={
-                              isCurrent && isPlaying && wi === wordIndex
-                                ? "bg-primary text-primary-foreground rounded px-0.5 transition-all"
-                                : ""
-                            }
-                          >
-                            {seg}
+                          <span key={lIdx}>
+                            {lineInGroup > 0 && " "}
+                            {words.map((seg, wIdx) => {
+                              if (/^\s+$/.test(seg)) return <span key={wIdx}>{seg}</span>;
+                              const wi = wCount++;
+                              return (
+                                <span
+                                  key={wIdx}
+                                  className={
+                                    isCurrentLine && isPlaying && wi === wordIndex
+                                      ? "bg-primary text-primary-foreground rounded px-0.5 transition-all"
+                                      : ""
+                                  }
+                                >
+                                  {seg}
+                                </span>
+                              );
+                            })}
                           </span>
                         );
                       })}
