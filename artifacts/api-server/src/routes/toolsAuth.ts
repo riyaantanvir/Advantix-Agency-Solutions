@@ -503,9 +503,9 @@ router.get("/tools/auth/profile", async (req, res) => {
       id: user.id,
       name: user.name,
       email: user.email,
-      companyName: (user as any).company_name ?? null,
-      phone: (user as any).phone ?? null,
-      website: (user as any).website ?? null,
+      companyName: user.companyName ?? null,
+      phone: user.phone ?? null,
+      website: user.website ?? null,
     });
   } catch { res.status(500).json({ error: "Server error" }); }
 });
