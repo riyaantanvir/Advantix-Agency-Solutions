@@ -43,6 +43,7 @@ const AssignedToMePage  = lazy(() => import("./pages/AssignedToMePage"));
 const TodayOverduePage  = lazy(() => import("./pages/TodayOverduePage"));
 const PMRepliesPage     = lazy(() => import("./pages/PMRepliesPage"));
 const AssignedCommentsPage = lazy(() => import("./pages/AssignedCommentsPage"));
+const SocialMedia = lazy(() => import("./pages/SocialMedia"));
 const CustomPages = lazy(() => import("./pages/CustomPages"));
 const CustomPageEditor = lazy(() => import("./pages/CustomPageEditor"));
 const NotFound = lazy(() => import("./pages/not-found"));
@@ -221,6 +222,10 @@ function Router() {
 
       <Route path="/bug-reports">
         <ProtectedLayout><BugReports /></ProtectedLayout>
+      </Route>
+
+      <Route path="/social-media">
+        <ProtectedLayout><SocialMedia /></ProtectedLayout>
       </Route>
 
       <Route path="/website-analytics">

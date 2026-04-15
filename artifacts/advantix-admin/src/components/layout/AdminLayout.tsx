@@ -38,6 +38,7 @@ import {
   UserCheck,
   CalendarClock,
   Globe,
+  Share2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -103,6 +104,7 @@ const navItems: NavItem[] = [
       { path: "/team", label: "Team", icon: Users },
     ],
   },
+  { path: "/social-media", label: "AD Social Media", icon: Share2 },
   { path: "/website-analytics", label: "Website Analytics", icon: BarChart2 },
   {
     label: "System",
