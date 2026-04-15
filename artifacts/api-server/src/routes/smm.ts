@@ -3,6 +3,7 @@ import { eq, like, desc, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { integrationsTable, pageEventsTable, smmScheduledPostsTable } from "@workspace/db/schema";
 import { requireAdmin } from "../middleware/auth.js";
+import { schedulePost, cancelScheduledPost } from "../lib/smmPublisher.js";
 import multer from "multer";
 import { randomUUID } from "crypto";
 import path from "path";
@@ -412,17 +413,23 @@ router.post("/smm/scheduled", requireAdmin, async (req: Request, res: Response) 
     scheduledAt: new Date(scheduledAt),
     createdBy: (req as any).session?.adminId ? "admin" : "admin",
   }).returning();
+
+  // Set a setTimeout so the post is published automatically at the right time
+  schedulePost(row);
+
   res.json(row);
 });
 
 router.delete("/smm/scheduled/:id", requireAdmin, async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
+  cancelScheduledPost(id);
   await db.delete(smmScheduledPostsTable).where(eq(smmScheduledPostsTable.id, id));
   res.json({ success: true });
 });
 
 router.patch("/smm/scheduled/:id/cancel", requireAdmin, async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
+  cancelScheduledPost(id);
   const [row] = await db.update(smmScheduledPostsTable)
     .set({ status: "cancelled" })
     .where(eq(smmScheduledPostsTable.id, id))

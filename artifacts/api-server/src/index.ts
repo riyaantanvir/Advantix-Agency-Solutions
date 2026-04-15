@@ -1,6 +1,7 @@
 import app from "./app.js";
 import { logger } from "./lib/logger.js";
 import { seedAdmin, ensureSessionTable, runMigrations, seedServices, seedTelegramDefaults } from "./seed.js";
+import { startSmmScheduler } from "./lib/smmPublisher.js";
 
 const rawPort = process.env["PORT"];
 
@@ -30,6 +31,10 @@ async function start(): Promise<void> {
     }
 
     logger.info({ port }, "Server listening");
+
+    // Start SMM scheduler after server is ready — picks up any missed posts
+    // and sets precise setTimeout timers for upcoming ones (no polling needed)
+    startSmmScheduler().catch(e => logger.error({ err: e }, "SMM scheduler init failed"));
   });
 }
 
