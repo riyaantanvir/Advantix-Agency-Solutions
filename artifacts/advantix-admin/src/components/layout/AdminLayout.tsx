@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useLogout } from "@workspace/api-client-react";
+import { useLogout, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -156,9 +156,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
 
   const { data: me } = useQuery<{ authenticated: boolean; username: string; isSuperAdmin: boolean }>({
-    queryKey: ["auth-me"],
+    queryKey: getGetMeQueryKey(), // same key as ProtectedRoute — shares the cached result
     queryFn: () => fetch("/api/auth/me", { credentials: "include" }).then(r => r.json()),
-    staleTime: Infinity,
+    staleTime: 60_000,
   });
 
   const { data: replies = [] } = useQuery<{ id: number }[]>({
@@ -287,7 +287,8 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
         {navItems
           .filter((item) => {
             if (isGroup(item) && item.label === "Admin Settings") {
-              return me?.isSuperAdmin === true;
+              // Show while loading (me undefined), hide only when confirmed non-superadmin
+              return me?.isSuperAdmin !== false;
             }
             return true;
           })

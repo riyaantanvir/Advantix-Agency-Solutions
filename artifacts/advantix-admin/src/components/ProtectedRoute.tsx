@@ -8,7 +8,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { data: session, isLoading, error } = useGetMe({
     query: {
       queryKey: getGetMeQueryKey(),
-      retry: false,
+      staleTime: 60_000,   // reuse cached auth for 60s — avoids refetch on every navigation
+      retry: 1,            // one retry before giving up, prevents false logouts on transient errors
     }
   });
 
