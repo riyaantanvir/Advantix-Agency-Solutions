@@ -54,3 +54,7 @@ Thumbs.db
 
 # Dev session secret — persisted locally so server restarts don't log out users
 .session-secret
+
+# User-uploaded files (blog images, gallery, etc.)
+# In production these live in a mounted volume — don't commit them
+uploads/

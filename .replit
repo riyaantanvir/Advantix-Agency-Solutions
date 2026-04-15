@@ -53,3 +53,5 @@ channel = "stable-25_05"
 
 [userenv.shared]
 ADMIN_PASSWORD = "2816"
+SITE_URL = "https://advantix.digital"
+ALLOWED_ORIGINS = "https://advantix.digital"
