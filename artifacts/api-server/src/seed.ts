@@ -305,6 +305,9 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  // ── page_events — ensure language column exists (added after initial release)
+  await db.execute(sql`ALTER TABLE page_events ADD COLUMN IF NOT EXISTS language text`);
+
   // ── page_events indexes for analytics performance ─────────────────────────
   await db.execute(sql`
     CREATE INDEX IF NOT EXISTS idx_page_events_event_type_created_at

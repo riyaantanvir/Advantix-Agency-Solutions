@@ -50,16 +50,25 @@ router.post("/analytics/track", async (req, res) => {
 router.get("/analytics/website", requireAdmin, async (req, res) => {
   const fromParam = req.query.from as string | undefined;
   const toParam   = req.query.to   as string | undefined;
-  const days      = parseInt(String(req.query.days ?? "30"));
+  const rawDays   = parseInt(String(req.query.days ?? "30"));
+  // Sanitize days — always a safe integer, never NaN
+  const days = isNaN(rawDays) || rawDays <= 0 ? 30 : Math.min(rawDays, 3650);
 
   // Build WHERE time clause
+  // NOTE: Use sql.raw() for the days integer to avoid PostgreSQL type-inference
+  // errors with parameterized `$1 * INTERVAL '1 day'` on some server versions.
   let timeFilter: ReturnType<typeof sql>;
   let cacheKey: string;
   if (fromParam && toParam) {
-    timeFilter = sql`created_at >= ${fromParam}::date AND created_at < (${toParam}::date + INTERVAL '1 day')`;
-    cacheKey = `analytics:website:${fromParam}:${toParam}`;
+    // Sanitize date strings to prevent injection (must match YYYY-MM-DD)
+    const safeFrom = /^\d{4}-\d{2}-\d{2}$/.test(fromParam) ? fromParam : "";
+    const safeTo   = /^\d{4}-\d{2}-\d{2}$/.test(toParam)   ? toParam   : "";
+    if (!safeFrom || !safeTo) { res.status(400).json({ error: "Invalid date range" }); return; }
+    timeFilter = sql.raw(`created_at >= '${safeFrom}'::date AND created_at < ('${safeTo}'::date + INTERVAL '1 day')`);
+    cacheKey = `analytics:website:${safeFrom}:${safeTo}`;
   } else {
-    timeFilter = sql`created_at >= NOW() - ${days} * INTERVAL '1 day'`;
+    // Embed sanitized integer directly — safe because days is always parseInt-validated above
+    timeFilter = sql.raw(`created_at >= NOW() - INTERVAL '${days} days'`);
     cacheKey = `analytics:website:${days}`;
   }
 
