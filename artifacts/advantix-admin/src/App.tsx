@@ -182,12 +182,12 @@ function Router() {
         <ProtectedLayout><Integrations /></ProtectedLayout>
       </Route>
 
-      <Route path="/tasks">
-        <ProtectedLayout><Tasks /></ProtectedLayout>
-      </Route>
-
       <Route path="/tasks/:id">
         <ProtectedLayout><TaskDetail /></ProtectedLayout>
+      </Route>
+
+      <Route path="/tasks">
+        <ProtectedLayout><Tasks /></ProtectedLayout>
       </Route>
 
       <Route path="/notifications">
@@ -226,16 +226,16 @@ function Router() {
         <ProtectedLayout><BugReports /></ProtectedLayout>
       </Route>
 
-      <Route path="/social-media">
-        <ProtectedLayout><SocialMedia /></ProtectedLayout>
-      </Route>
-
       <Route path="/social-media/schedule">
         <ProtectedLayout><SocialMediaSchedule /></ProtectedLayout>
       </Route>
 
       <Route path="/social-media/settings">
         <ProtectedLayout><SocialMediaSettings /></ProtectedLayout>
+      </Route>
+
+      <Route path="/social-media">
+        <ProtectedLayout><SocialMedia /></ProtectedLayout>
       </Route>
 
       <Route path="/website-analytics">
