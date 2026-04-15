@@ -48,6 +48,7 @@ const SocialMediaSchedule = lazy(() => import("./pages/SocialMediaSchedule"));
 const SocialMediaSettings = lazy(() => import("./pages/SocialMediaSettings"));
 const CustomPages = lazy(() => import("./pages/CustomPages"));
 const CustomPageEditor = lazy(() => import("./pages/CustomPageEditor"));
+const InvoiceGenerator = lazy(() => import("./pages/InvoiceGenerator"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -314,6 +315,10 @@ function Router() {
 
       <Route path="/pm/assigned-comments">
         <ProtectedLayout><AssignedCommentsPage /></ProtectedLayout>
+      </Route>
+
+      <Route path="/finance/invoice-generator">
+        <ProtectedLayout><InvoiceGenerator /></ProtectedLayout>
       </Route>
 
       <Route>

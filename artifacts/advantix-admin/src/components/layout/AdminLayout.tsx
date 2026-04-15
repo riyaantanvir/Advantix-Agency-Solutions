@@ -39,6 +39,8 @@ import {
   CalendarClock,
   Globe,
   Share2,
+  Landmark,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -114,6 +116,13 @@ const navItems: NavItem[] = [
     ],
   },
   { path: "/website-analytics", label: "Website Analytics", icon: BarChart2 },
+  {
+    label: "Advantix Finance",
+    icon: Landmark,
+    children: [
+      { path: "/finance/invoice-generator", label: "Invoice Generator", icon: FileText },
+    ],
+  },
   {
     label: "System",
     icon: Settings,
