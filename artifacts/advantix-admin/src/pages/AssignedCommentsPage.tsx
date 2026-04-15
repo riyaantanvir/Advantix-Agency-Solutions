@@ -15,7 +15,7 @@ type Comment = {
 
 async function apiFetch(url: string) {
   const res = await fetch(url, { credentials: "include" });
-  if (res.status === 401) { window.location.href = "/admin/"; return []; }
+  if (res.status === 401) { window.dispatchEvent(new CustomEvent("admin-unauthorized")); return []; }
   if (!res.ok) return [];
   return res.json();
 }

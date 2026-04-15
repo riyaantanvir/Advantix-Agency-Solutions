@@ -1,5 +1,5 @@
-import { Component, lazy, Suspense } from "react";
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Component, lazy, Suspense, useEffect } from "react";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -130,6 +130,21 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 
 /* ── Router ──────────────────────────────────────────────────────────────── */
 function Router() {
+  const [, setLocation] = useLocation();
+
+  // Any page that gets a 401 from an API call fires "admin-unauthorized".
+  // We catch it here (inside Wouter context) and navigate to /login within
+  // the SPA — no full-page reload, no session race condition.
+  useEffect(() => {
+    function handleUnauthorized() {
+      queryClient.removeQueries({ queryKey: ["auth-me"] });
+      queryClient.clear();
+      setLocation("/login");
+    }
+    window.addEventListener("admin-unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("admin-unauthorized", handleUnauthorized);
+  }, [setLocation]);
+
   return (
     <Switch>
       <Route path="/login">

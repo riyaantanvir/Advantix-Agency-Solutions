@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 
 async function apiFetch(url: string, opts?: RequestInit) {
   const res = await fetch(url, { credentials: "include", ...opts });
-  if (res.status === 401) { window.location.href = "/admin/"; throw new Error("Unauthorized"); }
+  if (res.status === 401) { window.dispatchEvent(new CustomEvent("admin-unauthorized")); throw new Error("Unauthorized"); }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Request failed");
   return res.json();
 }

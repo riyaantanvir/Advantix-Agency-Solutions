@@ -27,7 +27,7 @@ interface AdminUser {
 
 async function apiFetch(url: string, options?: RequestInit) {
   const res = await fetch(url, { credentials: "include", ...options });
-  if (res.status === 401) { window.location.href = "/admin/"; return; }
+  if (res.status === 401) { window.dispatchEvent(new CustomEvent("admin-unauthorized")); return; }
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "Request failed");
   return data;

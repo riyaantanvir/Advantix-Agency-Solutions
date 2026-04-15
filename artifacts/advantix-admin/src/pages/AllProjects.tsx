@@ -29,7 +29,7 @@ const COLORS = [
 
 async function apiFetch(url: string, opts?: RequestInit) {
   const res = await fetch(url, { credentials: "include", ...opts });
-  if (res.status === 401) { window.location.href = "/admin/"; return; }
+  if (res.status === 401) { window.dispatchEvent(new CustomEvent("admin-unauthorized")); return; }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Request failed");
   return res.json();
 }

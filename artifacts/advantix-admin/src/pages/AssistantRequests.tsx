@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 const POLL_INTERVAL = 3000;
 
 function handle401(res: Response) {
-  if (res.status === 401) { window.location.href = "/admin/"; return true; }
+  if (res.status === 401) { window.dispatchEvent(new CustomEvent("admin-unauthorized")); return true; }
   return false;
 }
 
