@@ -1,5 +1,58 @@
 uploads = []
-generated = []
+
+[[generated]]
+id = "DKL5Dyte0ac9pUsy0NmUe"
+uri = "file://uploads/blog/cover-website-mistakes.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "Y60edKAVN6G0ROeLjkGF-"
+uri = "file://uploads/blog/cover-crm-vs-spreadsheet.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "Q7t6Zl2aifIoRNSTC5CK0"
+uri = "file://uploads/blog/cover-crm-automation.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "nKJpbu3XcSUGKHG8VsC9G"
+uri = "file://uploads/blog/cover-ai-tasks.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "ycGZN7-wapC27I9T-fjli"
+uri = "file://uploads/blog/cover-ecommerce.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "qxu7SJB4DqzdiThZWpDM_"
+uri = "file://uploads/blog/cover-branding.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "1m2LidDnb4ka4XaOy98Dv"
+uri = "file://uploads/blog/cover-facebook-campaigns.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "q3albZR-okydFrNSyqNHj"
+uri = "file://uploads/blog/cover-virtual-assistant.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "j31mXWUm3DzyiT8mdmYcs"
+uri = "file://uploads/blog/cover-system-business.png"
+type = "image"
+title = "generated_image"
 
 [[outputs]]
 id = "zTMwU36cTHWShQMoCKnbi"
