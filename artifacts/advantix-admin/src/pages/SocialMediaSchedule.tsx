@@ -1,19 +1,33 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  CalendarDays, Send, Trash2, Clock, CheckCircle2, XCircle,
-  Instagram, Facebook, Twitter, Youtube, Linkedin, Loader2, Pin,
-  AlertCircle, Plus,
+  ChevronLeft, ChevronRight, Plus, X, Send, Trash2, Clock,
+  CheckCircle2, XCircle, Instagram, Facebook, Twitter, Youtube,
+  Linkedin, Loader2, Pin, CalendarDays, ImageIcon, Type,
+  AlertCircle,
 } from "lucide-react";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 const API = "/api";
+
+// ── platform config ──────────────────────────────────────────────────────────
+
+const PLATFORMS = [
+  { key: "instagram", label: "Instagram",   Icon: Instagram, dot: "bg-pink-500",   ring: "ring-pink-500/40",   btn: "border-pink-500/40 data-[on=true]:bg-pink-500/15 data-[on=true]:border-pink-500 data-[on=true]:text-pink-400" },
+  { key: "facebook",  label: "Facebook",    Icon: Facebook,  dot: "bg-blue-500",   ring: "ring-blue-500/40",   btn: "border-blue-500/40 data-[on=true]:bg-blue-500/15 data-[on=true]:border-blue-500 data-[on=true]:text-blue-400" },
+  { key: "twitter",   label: "X / Twitter", Icon: Twitter,   dot: "bg-sky-400",    ring: "ring-sky-400/40",    btn: "border-sky-400/40 data-[on=true]:bg-sky-400/15 data-[on=true]:border-sky-400 data-[on=true]:text-sky-400" },
+  { key: "linkedin",  label: "LinkedIn",    Icon: Linkedin,  dot: "bg-blue-700",   ring: "ring-blue-700/40",   btn: "border-blue-700/40 data-[on=true]:bg-blue-700/15 data-[on=true]:border-blue-700 data-[on=true]:text-blue-400" },
+  { key: "youtube",   label: "YouTube",     Icon: Youtube,   dot: "bg-red-500",    ring: "ring-red-500/40",    btn: "border-red-500/40 data-[on=true]:bg-red-500/15 data-[on=true]:border-red-500 data-[on=true]:text-red-400" },
+  { key: "pinterest", label: "Pinterest",   Icon: Pin,       dot: "bg-rose-500",   ring: "ring-rose-500/40",   btn: "border-rose-500/40 data-[on=true]:bg-rose-500/15 data-[on=true]:border-rose-500 data-[on=true]:text-rose-400" },
+] as const;
+
+type PlatformKey = typeof PLATFORMS[number]["key"];
 
 type ScheduledPost = {
   id: number;
@@ -28,56 +42,94 @@ type ScheduledPost = {
   createdAt: string;
 };
 
-const PLATFORMS = [
-  { key: "instagram", label: "Instagram", Icon: Instagram, color: "from-pink-500 to-rose-500" },
-  { key: "facebook",  label: "Facebook",  Icon: Facebook,  color: "from-blue-600 to-blue-500" },
-  { key: "twitter",   label: "X / Twitter", Icon: Twitter, color: "from-sky-400 to-sky-500" },
-  { key: "linkedin",  label: "LinkedIn",  Icon: Linkedin,  color: "from-blue-700 to-blue-600" },
-  { key: "youtube",   label: "YouTube",   Icon: Youtube,   color: "from-red-500 to-red-600" },
-  { key: "pinterest", label: "Pinterest", Icon: Pin,       color: "from-rose-500 to-pink-600" },
-] as const;
+// ── date helpers ─────────────────────────────────────────────────────────────
 
-function statusBadge(status: string) {
-  switch (status) {
-    case "pending":   return <Badge variant="secondary" className="text-amber-400 border-amber-400/30 bg-amber-400/10"><Clock className="w-3 h-3 mr-1" />Scheduled</Badge>;
-    case "published": return <Badge variant="secondary" className="text-emerald-400 border-emerald-400/30 bg-emerald-400/10"><CheckCircle2 className="w-3 h-3 mr-1" />Published</Badge>;
-    case "failed":    return <Badge variant="secondary" className="text-red-400 border-red-400/30 bg-red-400/10"><XCircle className="w-3 h-3 mr-1" />Failed</Badge>;
-    case "cancelled": return <Badge variant="secondary" className="text-muted-foreground border-border"><XCircle className="w-3 h-3 mr-1" />Cancelled</Badge>;
-    default:          return <Badge variant="secondary">{status}</Badge>;
-  }
+function toYMD(date: Date) {
+  return date.toISOString().slice(0, 10);
 }
+
+function parseLocalDate(ymd: string) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function sameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+}
+
+function monthDays(year: number, month: number): (Date | null)[] {
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startPad = (firstDay.getDay() + 6) % 7; // Monday = 0
+  const cells: (Date | null)[] = Array(startPad).fill(null);
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    cells.push(new Date(year, month, d));
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+// ── status chip ──────────────────────────────────────────────────────────────
+
+function StatusChip({ status }: { status: string }) {
+  if (status === "pending")
+    return <span className="flex items-center gap-1 text-[10px] font-medium text-amber-400"><Clock className="w-3 h-3" />Scheduled</span>;
+  if (status === "published")
+    return <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-400"><CheckCircle2 className="w-3 h-3" />Published</span>;
+  if (status === "failed")
+    return <span className="flex items-center gap-1 text-[10px] font-medium text-red-400"><XCircle className="w-3 h-3" />Failed</span>;
+  return <span className="text-[10px] text-muted-foreground">{status}</span>;
+}
+
+// ── time picker helpers ──────────────────────────────────────────────────────
+
+function defaultScheduledAt(selectedDay: string | null) {
+  const base = selectedDay ? parseLocalDate(selectedDay) : new Date();
+  if (!selectedDay) base.setHours(base.getHours() + 1, 0, 0, 0);
+  else { base.setHours(9, 0, 0, 0); }
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${toYMD(base)}T${pad(base.getHours())}:${pad(base.getMinutes())}`;
+}
+
+// ── main component ───────────────────────────────────────────────────────────
 
 export default function SocialMediaSchedule() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [selectedDay, setSelectedDay] = useState<string | null>(toYMD(today));
+  const [composing, setComposing] = useState(false);
+
+  // Compose form state
+  const [selPlatforms, setSelPlatforms] = useState<PlatformKey[]>([]);
   const [content, setContent] = useState("");
   const [imageUrl, setImageUrl] = useState("");
-  const [scheduledAt, setScheduledAt] = useState(() => {
-    const d = new Date(Date.now() + 60 * 60 * 1000);
-    return d.toISOString().slice(0, 16);
-  });
+  const [scheduledAt, setScheduledAt] = useState(() => defaultScheduledAt(toYMD(today)));
 
-  const { data: posts, isLoading } = useQuery<ScheduledPost[]>({
+  const { data: posts = [], isLoading } = useQuery<ScheduledPost[]>({
     queryKey: ["smm-scheduled"],
     queryFn: () => fetch(`${API}/smm/scheduled`, { credentials: "include" }).then(r => r.json()),
   });
 
   const createMutation = useMutation({
-    mutationFn: (body: { platforms: string[]; content: string; imageUrl?: string; scheduledAt: string }) =>
+    mutationFn: (body: object) =>
       fetch(`${API}/smm/scheduled`, {
-        method: "POST",
-        credentials: "include",
+        method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }).then(r => r.json()),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["smm-scheduled"] });
-      setContent("");
-      setImageUrl("");
-      setSelectedPlatforms([]);
-      toast({ title: "Post scheduled!", description: "It will be published at the selected time." });
+      setContent(""); setImageUrl(""); setSelPlatforms([]); setComposing(false);
+      toast({ title: "Post scheduled!" });
     },
     onError: () => toast({ title: "Failed to schedule", variant: "destructive" }),
   });
@@ -85,10 +137,7 @@ export default function SocialMediaSchedule() {
   const deleteMutation = useMutation({
     mutationFn: (id: number) =>
       fetch(`${API}/smm/scheduled/${id}`, { method: "DELETE", credentials: "include" }).then(r => r.json()),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["smm-scheduled"] });
-      toast({ title: "Post removed" });
-    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["smm-scheduled"] }),
   });
 
   const cancelMutation = useMutation({
@@ -97,244 +146,425 @@ export default function SocialMediaSchedule() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["smm-scheduled"] }),
   });
 
-  const togglePlatform = (key: string) => {
-    setSelectedPlatforms(prev =>
+  // Map posts by day YMD
+  const postsByDay = useMemo(() => {
+    const map = new Map<string, ScheduledPost[]>();
+    for (const p of posts) {
+      const ymd = new Date(p.scheduledAt).toLocaleDateString("en-CA");
+      if (!map.has(ymd)) map.set(ymd, []);
+      map.get(ymd)!.push(p);
+    }
+    return map;
+  }, [posts]);
+
+  const cells = useMemo(() => monthDays(viewYear, viewMonth), [viewYear, viewMonth]);
+
+  const selectedPosts = selectedDay ? (postsByDay.get(selectedDay) ?? []) : [];
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
+    else setViewMonth(m => m - 1);
+  }
+  function nextMonth() {
+    if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
+    else setViewMonth(m => m + 1);
+  }
+
+  function openCompose(day?: string) {
+    const d = day ?? selectedDay ?? toYMD(today);
+    setSelectedDay(d);
+    setScheduledAt(defaultScheduledAt(d));
+    setComposing(true);
+  }
+
+  function togglePlatform(key: PlatformKey) {
+    setSelPlatforms(prev =>
       prev.includes(key) ? prev.filter(p => p !== key) : [...prev, key]
     );
-  };
+  }
 
-  const handleSubmit = () => {
-    if (!selectedPlatforms.length) { toast({ title: "Select at least one platform", variant: "destructive" }); return; }
-    if (!content.trim()) { toast({ title: "Content is required", variant: "destructive" }); return; }
+  function handleSubmit() {
+    if (!selPlatforms.length) { toast({ title: "Select at least one platform", variant: "destructive" }); return; }
+    if (!content.trim()) { toast({ title: "Add some content", variant: "destructive" }); return; }
     createMutation.mutate({
-      platforms: selectedPlatforms,
+      platforms: selPlatforms,
       content,
       imageUrl: imageUrl.trim() || undefined,
       scheduledAt: new Date(scheduledAt).toISOString(),
     });
-  };
+  }
 
-  const charCount = content.length;
-  const charLimit = 280; // Twitter limit (most restrictive)
+  const pendingCount = posts.filter(p => p.status === "pending").length;
+  const thisMonthCount = posts.filter(p => {
+    const d = new Date(p.scheduledAt);
+    return d.getFullYear() === viewYear && d.getMonth() === viewMonth;
+  }).length;
 
   return (
-    <div className="space-y-8 pb-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2.5">
-          <CalendarDays className="w-6 h-6 text-primary" />
-          Schedule Post
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Write once, schedule to multiple platforms at once.
-        </p>
+    <div className="flex flex-col h-[calc(100vh-80px)] gap-0 -mx-6 -mt-2 overflow-hidden">
+      {/* ── Top bar ─────────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border/50 shrink-0">
+        <div className="flex items-center gap-6">
+          <div>
+            <h1 className="text-lg font-bold tracking-tight text-foreground flex items-center gap-2">
+              <CalendarDays className="w-5 h-5 text-primary" />
+              Schedule Post
+            </h1>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <span><span className="text-foreground font-semibold">{pendingCount}</span> pending</span>
+            <span className="w-px h-3 bg-border" />
+            <span><span className="text-foreground font-semibold">{thisMonthCount}</span> this month</span>
+          </div>
+        </div>
+        <Button size="sm" className="gap-2 h-8 text-xs" onClick={() => openCompose()}>
+          <Plus className="w-3.5 h-3.5" />
+          New Post
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Compose form */}
-        <Card className="p-6 space-y-5 lg:col-span-3">
-          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-            <Plus className="w-4 h-4 text-primary" />
-            Compose Post
-          </h2>
+      {/* ── Body ────────────────────────────────────────────────────────────── */}
+      <div className="flex flex-1 overflow-hidden">
 
-          {/* Platform selection */}
-          <div>
-            <Label className="text-xs font-medium text-muted-foreground mb-2 block">Select Platforms</Label>
-            <div className="flex flex-wrap gap-2">
-              {PLATFORMS.map(({ key, label, Icon, color }) => {
-                const active = selectedPlatforms.includes(key);
-                return (
-                  <button
-                    key={key}
-                    onClick={() => togglePlatform(key)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-all ${
-                      active
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border text-muted-foreground hover:border-primary/50"
-                    }`}
-                  >
-                    <div className={`w-5 h-5 rounded bg-gradient-to-br ${color} flex items-center justify-center`}>
-                      <Icon className="w-3 h-3 text-white" />
-                    </div>
-                    {label}
-                  </button>
-                );
-              })}
+        {/* Calendar */}
+        <div className="flex-1 flex flex-col overflow-hidden px-6 py-4">
+          {/* Month nav */}
+          <div className="flex items-center justify-between mb-5 shrink-0">
+            <h2 className="text-base font-semibold text-foreground">
+              {MONTHS[viewMonth]} <span className="text-muted-foreground font-normal">{viewYear}</span>
+            </h2>
+            <div className="flex items-center gap-1">
+              <button onClick={prevMonth} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); setSelectedDay(toYMD(today)); }}
+                className="h-7 px-3 text-[11px] font-medium rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Today
+              </button>
+              <button onClick={nextMonth} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors">
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
 
-          {/* Content */}
-          <div>
-            <Label className="text-xs font-medium text-muted-foreground mb-2 block">Post Content</Label>
-            <Textarea
-              value={content}
-              onChange={e => setContent(e.target.value)}
-              placeholder="Write your post content here... #hashtags @mentions"
-              rows={5}
-              className="resize-none"
-            />
-            <div className="flex items-center justify-between mt-1.5">
-              <p className="text-[11px] text-muted-foreground">Twitter/X limit: 280 chars</p>
-              <p className={`text-[11px] font-medium ${charCount > charLimit ? "text-red-400" : "text-muted-foreground"}`}>
-                {charCount} / {charLimit}
-              </p>
-            </div>
+          {/* Weekday headers */}
+          <div className="grid grid-cols-7 mb-2 shrink-0">
+            {WEEKDAYS.map(d => (
+              <div key={d} className="text-center text-[11px] font-medium text-muted-foreground/60 pb-2">{d}</div>
+            ))}
           </div>
 
-          {/* Image URL */}
-          <div>
-            <Label className="text-xs font-medium text-muted-foreground mb-2 block">Image URL (optional)</Label>
-            <Input
-              value={imageUrl}
-              onChange={e => setImageUrl(e.target.value)}
-              placeholder="https://example.com/image.jpg"
-            />
-          </div>
+          {/* Calendar grid */}
+          <div className="grid grid-cols-7 flex-1 gap-px bg-border/30 rounded-xl overflow-hidden border border-border/30">
+            {cells.map((day, i) => {
+              if (!day) return <div key={i} className="bg-background/30" />;
+              const ymd = toYMD(day);
+              const dayPosts = postsByDay.get(ymd) ?? [];
+              const isToday = sameDay(day, today);
+              const isSelected = ymd === selectedDay;
+              const isCurrentMonth = day.getMonth() === viewMonth;
+              const platformDots = [...new Set(dayPosts.flatMap(p => p.platforms.split(",").map(s => s.trim())))];
 
-          {/* Schedule time */}
-          <div>
-            <Label className="text-xs font-medium text-muted-foreground mb-2 block">Schedule Date & Time</Label>
-            <Input
-              type="datetime-local"
-              value={scheduledAt}
-              onChange={e => setScheduledAt(e.target.value)}
-              min={new Date().toISOString().slice(0, 16)}
-            />
-          </div>
-
-          {/* Warning about auto-publish */}
-          <div className="flex gap-2 p-3 bg-amber-500/8 border border-amber-500/20 rounded-lg">
-            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-400/90">
-              <strong>Note:</strong> Scheduled posts are stored here for reference. Auto-publishing requires a background job or webhook setup per platform's API requirements.
-            </p>
-          </div>
-
-          <Button
-            className="w-full gap-2"
-            onClick={handleSubmit}
-            disabled={createMutation.isPending || !selectedPlatforms.length || !content.trim()}
-          >
-            {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            Schedule Post
-          </Button>
-        </Card>
-
-        {/* Upcoming */}
-        <Card className="p-6 lg:col-span-2">
-          <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-primary" />
-            Scheduled Queue
-            {posts && <span className="text-xs font-normal text-muted-foreground ml-1">({posts.filter(p => p.status === "pending").length} pending)</span>}
-          </h2>
-
-          {isLoading ? (
-            <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
-          ) : !posts?.length ? (
-            <div className="text-center py-8 text-sm text-muted-foreground">No posts scheduled yet</div>
-          ) : (
-            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-              {posts.map(post => {
-                const platforms = post.platforms.split(",").map(s => s.trim());
-                return (
-                  <div key={post.id} className="border border-border/60 rounded-lg p-3 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-xs text-foreground line-clamp-2 flex-1">{post.content}</p>
-                      <div className="shrink-0">{statusBadge(post.status)}</div>
-                    </div>
-
-                    {/* Platform icons */}
-                    <div className="flex items-center gap-1.5">
-                      {platforms.map(key => {
-                        const cfg = PLATFORMS.find(p => p.key === key);
-                        if (!cfg) return null;
-                        const { Icon, color } = cfg;
-                        return (
-                          <div key={key} className={`w-5 h-5 rounded bg-gradient-to-br ${color} flex items-center justify-center`}>
-                            <Icon className="w-2.5 h-2.5 text-white" />
-                          </div>
-                        );
-                      })}
-                      <span className="text-[11px] text-muted-foreground ml-1">
-                        {new Date(post.scheduledAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    </div>
-
-                    {post.errorMessage && (
-                      <p className="text-[11px] text-red-400">{post.errorMessage}</p>
-                    )}
-
-                    <div className="flex items-center gap-2">
-                      {post.status === "pending" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs text-muted-foreground"
-                          onClick={() => cancelMutation.mutate(post.id)}
-                          disabled={cancelMutation.isPending}
-                        >
-                          Cancel
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-red-400 hover:text-red-300 hover:bg-red-400/10 ml-auto"
-                        onClick={() => deleteMutation.mutate(post.id)}
-                        disabled={deleteMutation.isPending}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* History */}
-      {posts && posts.filter(p => p.status !== "pending").length > 0 && (
-        <div>
-          <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-primary" />
-            Post History
-          </h2>
-          <Card className="divide-y divide-border/60">
-            {posts.filter(p => p.status !== "pending").map(post => {
-              const platforms = post.platforms.split(",").map(s => s.trim());
               return (
-                <div key={post.id} className="flex items-center gap-4 px-5 py-3">
-                  <div className="flex items-center gap-1">
-                    {platforms.map(key => {
-                      const cfg = PLATFORMS.find(p => p.key === key);
-                      if (!cfg) return null;
-                      const { Icon, color } = cfg;
-                      return (
-                        <div key={key} className={`w-6 h-6 rounded bg-gradient-to-br ${color} flex items-center justify-center`}>
-                          <Icon className="w-3 h-3 text-white" />
-                        </div>
-                      );
-                    })}
+                <div
+                  key={ymd}
+                  onClick={() => { setSelectedDay(ymd); setComposing(false); }}
+                  className={cn(
+                    "relative flex flex-col p-2 cursor-pointer transition-colors group",
+                    "bg-background hover:bg-muted/20",
+                    isSelected && "bg-primary/8 hover:bg-primary/10 ring-1 ring-inset ring-primary/30",
+                  )}
+                >
+                  {/* Day number */}
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={cn(
+                      "w-6 h-6 flex items-center justify-center rounded-full text-xs font-medium transition-colors",
+                      isToday && "bg-primary text-primary-foreground font-bold",
+                      !isToday && isSelected && "text-primary font-semibold",
+                      !isToday && !isSelected && isCurrentMonth && "text-foreground/80",
+                      !isCurrentMonth && "text-muted-foreground/30",
+                    )}>
+                      {day.getDate()}
+                    </span>
+                    {dayPosts.length > 0 && (
+                      <span className="text-[10px] text-muted-foreground/60 font-medium">{dayPosts.length}</span>
+                    )}
                   </div>
-                  <p className="flex-1 text-sm text-foreground line-clamp-1">{post.content}</p>
-                  <div className="shrink-0">{statusBadge(post.status)}</div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0 text-muted-foreground hover:text-red-400 shrink-0"
-                    onClick={() => deleteMutation.mutate(post.id)}
+
+                  {/* Platform dots */}
+                  {platformDots.length > 0 && (
+                    <div className="flex flex-wrap gap-0.5 mt-auto">
+                      {platformDots.slice(0, 5).map(key => {
+                        const cfg = PLATFORMS.find(p => p.key === key);
+                        return cfg ? (
+                          <span key={key} className={cn("w-1.5 h-1.5 rounded-full", cfg.dot)} />
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+
+                  {/* Post count chips for days with posts */}
+                  {dayPosts.length > 0 && (
+                    <div className="mt-1 space-y-0.5">
+                      {dayPosts.slice(0, 2).map(post => (
+                        <div
+                          key={post.id}
+                          className={cn(
+                            "text-[10px] truncate px-1 py-0.5 rounded font-medium leading-tight",
+                            post.status === "pending"   && "bg-amber-400/10 text-amber-400",
+                            post.status === "published" && "bg-emerald-400/10 text-emerald-400",
+                            post.status === "cancelled" && "bg-muted/40 text-muted-foreground",
+                            post.status === "failed"    && "bg-red-400/10 text-red-400",
+                          )}
+                        >
+                          {post.content.slice(0, 20)}…
+                        </div>
+                      ))}
+                      {dayPosts.length > 2 && (
+                        <div className="text-[10px] text-muted-foreground/60 px-1">+{dayPosts.length - 2} more</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Quick add on hover */}
+                  <button
+                    onClick={e => { e.stopPropagation(); openCompose(ymd); }}
+                    className="absolute top-1.5 right-1.5 w-5 h-5 rounded-md bg-primary/80 text-primary-foreground opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
+                    <Plus className="w-3 h-3" />
+                  </button>
                 </div>
               );
             })}
-          </Card>
+          </div>
         </div>
-      )}
+
+        {/* ── Right panel ─────────────────────────────────────────────────── */}
+        <div className="w-80 border-l border-border/50 flex flex-col bg-background/50 shrink-0 overflow-hidden">
+
+          {composing ? (
+            /* ── Compose form ─────────────────────────────────────────── */
+            <>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 shrink-0">
+                <p className="text-sm font-semibold text-foreground">
+                  New Post
+                  {selectedDay && (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      {parseLocalDate(selectedDay).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                  )}
+                </p>
+                <button onClick={() => setComposing(false)} className="text-muted-foreground hover:text-foreground">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                {/* Platform buttons */}
+                <div>
+                  <Label className="text-[11px] uppercase tracking-wide text-muted-foreground/60 font-semibold mb-2.5 block">Platforms</Label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {PLATFORMS.map(({ key, label, Icon, btn }) => {
+                      const on = selPlatforms.includes(key);
+                      return (
+                        <button
+                          key={key}
+                          data-on={on}
+                          onClick={() => togglePlatform(key)}
+                          className={cn(
+                            "flex flex-col items-center gap-1 py-2.5 rounded-xl border text-[10px] font-medium transition-all",
+                            "text-muted-foreground border-border/50 hover:border-border",
+                            btn,
+                          )}
+                        >
+                          <Icon className="w-4 h-4" />
+                          {label.split(" /")[0].split(" ")[0]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selPlatforms.length === 0 && (
+                    <p className="text-[11px] text-muted-foreground/60 mt-1.5">Select at least one platform</p>
+                  )}
+                </div>
+
+                {/* Content */}
+                <div>
+                  <Label className="text-[11px] uppercase tracking-wide text-muted-foreground/60 font-semibold mb-2.5 block flex items-center gap-1.5">
+                    <Type className="w-3 h-3" /> Content
+                  </Label>
+                  <Textarea
+                    value={content}
+                    onChange={e => setContent(e.target.value)}
+                    placeholder="What do you want to share?"
+                    rows={4}
+                    className="resize-none text-sm bg-muted/20 border-border/50 focus:border-primary/50"
+                  />
+                  <div className="flex justify-end mt-1">
+                    <span className={cn("text-[11px] font-medium", content.length > 280 ? "text-red-400" : "text-muted-foreground/60")}>
+                      {content.length}/280
+                    </span>
+                  </div>
+                </div>
+
+                {/* Image URL */}
+                <div>
+                  <Label className="text-[11px] uppercase tracking-wide text-muted-foreground/60 font-semibold mb-2.5 block flex items-center gap-1.5">
+                    <ImageIcon className="w-3 h-3" /> Image URL <span className="text-muted-foreground/40 font-normal normal-case tracking-normal">(optional)</span>
+                  </Label>
+                  <Input
+                    value={imageUrl}
+                    onChange={e => setImageUrl(e.target.value)}
+                    placeholder="https://…"
+                    className="text-sm bg-muted/20 border-border/50 focus:border-primary/50"
+                  />
+                </div>
+
+                {/* Date/time */}
+                <div>
+                  <Label className="text-[11px] uppercase tracking-wide text-muted-foreground/60 font-semibold mb-2.5 block">Schedule</Label>
+                  <Input
+                    type="datetime-local"
+                    value={scheduledAt}
+                    onChange={e => setScheduledAt(e.target.value)}
+                    min={new Date().toISOString().slice(0, 16)}
+                    className="text-sm bg-muted/20 border-border/50 focus:border-primary/50"
+                  />
+                </div>
+
+                {/* Note */}
+                <div className="flex gap-2 p-3 bg-amber-400/5 border border-amber-400/15 rounded-xl">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-400/70 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-amber-400/70 leading-relaxed">
+                    Posts are queued for tracking. Auto-publish requires platform API approval.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 border-t border-border/50 shrink-0">
+                <Button
+                  className="w-full gap-2 h-9 text-sm"
+                  onClick={handleSubmit}
+                  disabled={createMutation.isPending || !selPlatforms.length || !content.trim()}
+                >
+                  {createMutation.isPending
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <Send className="w-4 h-4" />
+                  }
+                  Schedule Post
+                </Button>
+              </div>
+            </>
+
+          ) : (
+            /* ── Day posts view ──────────────────────────────────────── */
+            <>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 shrink-0">
+                <p className="text-sm font-semibold text-foreground">
+                  {selectedDay
+                    ? parseLocalDate(selectedDay).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+                    : "Select a day"
+                  }
+                </p>
+                {selectedDay && (
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openCompose()}>
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
+                )}
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+                {isLoading ? (
+                  <div className="flex justify-center pt-8"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+                ) : selectedPosts.length === 0 ? (
+                  <div className="text-center py-10">
+                    <div className="w-10 h-10 rounded-2xl bg-muted/40 flex items-center justify-center mx-auto mb-3">
+                      <CalendarDays className="w-5 h-5 text-muted-foreground/40" />
+                    </div>
+                    <p className="text-sm text-muted-foreground">No posts for this day</p>
+                    <button onClick={() => openCompose()} className="text-xs text-primary hover:underline mt-1">
+                      + Schedule one
+                    </button>
+                  </div>
+                ) : (
+                  selectedPosts.map(post => {
+                    const platformKeys = post.platforms.split(",").map(s => s.trim()) as PlatformKey[];
+                    const time = new Date(post.scheduledAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+                    return (
+                      <div key={post.id} className="group rounded-xl border border-border/50 bg-card/30 p-3.5 hover:border-border transition-colors">
+                        {/* Platforms + time */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-1">
+                            {platformKeys.map(key => {
+                              const cfg = PLATFORMS.find(p => p.key === key);
+                              return cfg ? (
+                                <div key={key} className={cn("w-5 h-5 rounded-md flex items-center justify-center", cfg.dot)}>
+                                  <cfg.Icon className="w-3 h-3 text-white" />
+                                </div>
+                              ) : null;
+                            })}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-muted-foreground">{time}</span>
+                            <StatusChip status={post.status} />
+                          </div>
+                        </div>
+
+                        {/* Content preview */}
+                        <p className="text-xs text-foreground/80 line-clamp-3 leading-relaxed">{post.content}</p>
+
+                        {/* Image preview */}
+                        {post.imageUrl && (
+                          <div className="mt-2 w-full h-16 rounded-lg overflow-hidden bg-muted/40">
+                            <img src={post.imageUrl} alt="" className="w-full h-full object-cover" />
+                          </div>
+                        )}
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {post.status === "pending" && (
+                            <button
+                              onClick={() => cancelMutation.mutate(post.id)}
+                              className="text-[11px] text-muted-foreground hover:text-foreground px-2 py-1 rounded-lg hover:bg-muted/40 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                          <button
+                            onClick={() => deleteMutation.mutate(post.id)}
+                            className="ml-auto flex items-center gap-1 text-[11px] text-red-400/70 hover:text-red-400 px-2 py-1 rounded-lg hover:bg-red-400/10 transition-colors"
+                          >
+                            <Trash2 className="w-3 h-3" /> Delete
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Mini legend */}
+              <div className="px-5 py-3 border-t border-border/50 shrink-0">
+                <div className="flex items-center gap-3 flex-wrap">
+                  {[
+                    { color: "bg-amber-400", label: "Scheduled" },
+                    { color: "bg-emerald-400", label: "Published" },
+                    { color: "bg-red-400", label: "Failed" },
+                    { color: "bg-muted", label: "Cancelled" },
+                  ].map(({ color, label }) => (
+                    <div key={label} className="flex items-center gap-1.5">
+                      <span className={cn("w-1.5 h-1.5 rounded-full", color)} />
+                      <span className="text-[10px] text-muted-foreground">{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
