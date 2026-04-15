@@ -142,7 +142,14 @@ router.post("/tools/auth/register", async (req, res) => {
     req.session.toolUserEmail = user.email;
     req.session.toolUserName = user.name;
 
-    res.json({ user: { id: user.id, name: user.name, email: user.email } });
+    req.session.save((err) => {
+      if (err) {
+        console.error("[register] session save error:", err);
+        res.status(500).json({ error: "Registration failed" });
+        return;
+      }
+      res.json({ user: { id: user.id, name: user.name, email: user.email } });
+    });
   } catch (err) {
     console.error("[register]", err);
     res.status(500).json({ error: "Registration failed" });
@@ -168,7 +175,10 @@ router.post("/tools/auth/verify-email", async (req, res) => {
       req.session.toolUserId = user.id;
       req.session.toolUserEmail = user.email;
       req.session.toolUserName = user.name;
-      res.json({ user: { id: user.id, name: user.name, email: user.email } });
+      req.session.save((err) => {
+        if (err) { res.status(500).json({ error: "Login failed" }); return; }
+        res.json({ user: { id: user.id, name: user.name, email: user.email } });
+      });
       return;
     }
 
@@ -192,7 +202,10 @@ router.post("/tools/auth/verify-email", async (req, res) => {
     req.session.toolUserEmail = user.email;
     req.session.toolUserName = user.name;
 
-    res.json({ user: { id: user.id, name: user.name, email: user.email } });
+    req.session.save((err) => {
+      if (err) { res.status(500).json({ error: "Verification failed" }); return; }
+      res.json({ user: { id: user.id, name: user.name, email: user.email } });
+    });
   } catch {
     res.status(500).json({ error: "Verification failed" });
   }
@@ -257,7 +270,14 @@ router.post("/tools/auth/login", async (req, res) => {
     req.session.toolUserEmail = user.email;
     req.session.toolUserName = user.name;
 
-    res.json({ user: { id: user.id, name: user.name, email: user.email } });
+    req.session.save((err) => {
+      if (err) {
+        console.error("[login] session save error:", err);
+        res.status(500).json({ error: "Login failed" });
+        return;
+      }
+      res.json({ user: { id: user.id, name: user.name, email: user.email } });
+    });
   } catch {
     res.status(500).json({ error: "Login failed" });
   }
@@ -486,7 +506,10 @@ router.get("/tools/auth/google/callback", async (req, res) => {
     req.session.toolUserEmail = user.email;
     req.session.toolUserName = user.name;
 
-    res.redirect(`${frontendBase}/tools/dashboard`);
+    req.session.save((saveErr) => {
+      if (saveErr) console.error("[google/callback] session save error:", saveErr);
+      res.redirect(`${frontendBase}/tools/dashboard`);
+    });
   } catch (err) {
     console.error("[google/callback]", err);
     res.redirect(`${frontendBase}/login?error=google_failed`);

@@ -32,7 +32,14 @@ router.post("/auth/login", async (req, res) => {
   session.username = admin.username;
   session.isSuperAdmin = admin.isSuperAdmin;
 
-  res.json({ success: true, username: admin.username, isSuperAdmin: admin.isSuperAdmin });
+  req.session.save((err) => {
+    if (err) {
+      console.error("[admin/login] session save error:", err);
+      res.status(500).json({ error: "Login failed" });
+      return;
+    }
+    res.json({ success: true, username: admin.username, isSuperAdmin: admin.isSuperAdmin });
+  });
 });
 
 router.post("/auth/logout", (req, res) => {
