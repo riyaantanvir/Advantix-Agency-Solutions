@@ -51,3 +51,6 @@ Thumbs.db
 # Local environment
 .env
 .env.local
+
+# Dev session secret — persisted locally so server restarts don't log out users
+.session-secret

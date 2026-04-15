@@ -27,9 +27,19 @@ export function ToolsUserProvider({ children }: { children: ReactNode }) {
         setUser(user);
         setIsAdmin(false);
       }
-    } catch {
-      setUser(null);
-      setIsAdmin(false);
+    } catch (err: unknown) {
+      // Only clear the user on an explicit authentication failure (401/403).
+      // Network errors (server restart, connection refused) should not log
+      // the user out — the session is still valid, the server just isn't
+      // reachable momentarily.
+      const status = (err as any)?.status ?? (err as any)?.response?.status;
+      const isAuthFailure = status === 401 || status === 403;
+
+      if (isAuthFailure) {
+        setUser(null);
+        setIsAdmin(false);
+      }
+      // For network/server errors: preserve whatever state we already have.
     } finally {
       setLoading(false);
     }

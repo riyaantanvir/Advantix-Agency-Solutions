@@ -16,13 +16,29 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 if (!process.env.SESSION_SECRET) {
   const { randomBytes } = await import("node:crypto");
-  const generated = randomBytes(32).toString("hex");
-  process.env.SESSION_SECRET = generated;
-  // Print prominently so the value can be copied into DigitalOcean / any host env vars
+
+  // In development: persist the secret to a local file so server restarts
+  // don't invalidate existing sessions. In production this file won't exist
+  // and the operator MUST provide SESSION_SECRET via env vars.
+  const secretFile = path.resolve(__dirname, "../../../.session-secret");
+  let secret: string;
+
+  try {
+    if (fs.existsSync(secretFile)) {
+      secret = fs.readFileSync(secretFile, "utf8").trim();
+    } else {
+      secret = randomBytes(32).toString("hex");
+      fs.writeFileSync(secretFile, secret, { encoding: "utf8", mode: 0o600 });
+    }
+  } catch {
+    secret = randomBytes(32).toString("hex");
+  }
+
+  process.env.SESSION_SECRET = secret;
   console.error("\n" + "=".repeat(72));
-  console.error("  ⚠  SESSION_SECRET is not set — sessions will expire on every restart.");
-  console.error("  Set this value as SESSION_SECRET in your deployment environment:");
-  console.error("  " + generated);
+  console.error("  ⚠  SESSION_SECRET is not set as an environment variable.");
+  console.error("  For production (DigitalOcean), set SESSION_SECRET to:");
+  console.error("  " + secret);
   console.error("=".repeat(72) + "\n");
 }
 
@@ -112,9 +128,9 @@ app.use(
       ttl: SESSION_MAX_AGE_MS / 1000, // connect-pg-simple uses seconds
     }),
     secret: process.env.SESSION_SECRET,
-    resave: false,
+    resave: true,          // Must be true when rolling:true so the store expire time is updated
     saveUninitialized: false,
-    rolling: true, // Reset expiry on every request so active users stay logged in
+    rolling: true,         // Reset cookie maxAge on every response so active users stay logged in
     cookie: {
       secure: isProd || isReplit,
       httpOnly: true,
