@@ -15,12 +15,15 @@ import { sql } from "drizzle-orm";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 if (!process.env.SESSION_SECRET) {
-  // Auto-generate a random secret so the server starts.
-  // WARNING: Sessions will be invalidated on every restart.
-  // Set SESSION_SECRET env var in production for persistent sessions.
   const { randomBytes } = await import("node:crypto");
-  process.env.SESSION_SECRET = randomBytes(32).toString("hex");
-  logger.warn("SESSION_SECRET not set — auto-generated a random secret. Sessions will NOT persist across restarts. Set SESSION_SECRET in your environment variables.");
+  const generated = randomBytes(32).toString("hex");
+  process.env.SESSION_SECRET = generated;
+  // Print prominently so the value can be copied into DigitalOcean / any host env vars
+  console.error("\n" + "=".repeat(72));
+  console.error("  ⚠  SESSION_SECRET is not set — sessions will expire on every restart.");
+  console.error("  Set this value as SESSION_SECRET in your deployment environment:");
+  console.error("  " + generated);
+  console.error("=".repeat(72) + "\n");
 }
 
 if (!process.env.DATABASE_URL) {
@@ -98,17 +101,25 @@ app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
 const isReplit = !isProd && Boolean(process.env.REPLIT_DOMAINS);
 
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
 app.use(
   session({
-    store: new PgSession({ pool }),
+    store: new PgSession({
+      pool,
+      // Prune expired sessions every hour; store TTL matches the cookie maxAge
+      pruningInterval: 60 * 60,
+      ttl: SESSION_MAX_AGE_MS / 1000, // connect-pg-simple uses seconds
+    }),
     secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    rolling: true, // Reset expiry on every request so active users stay logged in
     cookie: {
       secure: isProd || isReplit,
       httpOnly: true,
       sameSite: isReplit ? "none" as const : "lax" as const,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: SESSION_MAX_AGE_MS,
     },
   }),
 );
