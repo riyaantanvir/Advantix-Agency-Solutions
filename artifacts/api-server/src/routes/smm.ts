@@ -3,8 +3,78 @@ import { eq, like, desc, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { integrationsTable, pageEventsTable, smmScheduledPostsTable } from "@workspace/db/schema";
 import { requireAdmin } from "../middleware/auth.js";
+import multer from "multer";
+import { randomUUID } from "crypto";
+import path from "path";
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
+
+// ── image upload helpers (mirrors gallery pattern) ────────────────────────────
+
+function isReplitStorage(): boolean {
+  return !!process.env.PRIVATE_OBJECT_DIR;
+}
+
+function parseStorageDir(): { bucketName: string; prefix: string } {
+  const dir = process.env.PRIVATE_OBJECT_DIR || "";
+  const clean = dir.startsWith("gs://") ? dir.slice(5) : dir.replace(/^\//, "");
+  const parts = clean.split("/").filter(Boolean);
+  if (!parts[0]) throw new Error("Object storage not configured");
+  return { bucketName: parts[0], prefix: parts.slice(1).join("/") };
+}
+
+async function getSidecarSignedUrl(objectName: string, method: "GET" | "PUT"): Promise<string> {
+  const SIDECAR = "http://127.0.0.1:1106";
+  const { bucketName } = parseStorageDir();
+  const body = { bucket_name: bucketName, object_name: objectName, method, expires_at: new Date(Date.now() + 3600 * 1000).toISOString() };
+  const res = await fetch(`${SIDECAR}/object-storage/signed-object-url`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`Sidecar error: ${res.status}`);
+  const { signed_url } = await res.json() as { signed_url: string };
+  return signed_url;
+}
+
+async function uploadSmmImage(buffer: Buffer, mimetype: string, originalName: string): Promise<string> {
+  if (isReplitStorage()) {
+    const { prefix } = parseStorageDir();
+    const ext = path.extname(originalName) || ".jpg";
+    const objectName = [prefix, `smm/${randomUUID()}${ext}`].filter(Boolean).join("/");
+    const putUrl = await getSidecarSignedUrl(objectName, "PUT");
+    const uploadRes = await fetch(putUrl, {
+      method: "PUT",
+      headers: { "Content-Type": mimetype },
+      body: buffer,
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!uploadRes.ok) throw new Error(`GCS upload failed: ${uploadRes.status}`);
+    return `/api/gallery-img/${objectName}`;
+  } else {
+    const result = await db.execute(sql`
+      INSERT INTO gallery_image_blobs (data, mime_type)
+      VALUES (${buffer}, ${mimetype})
+      RETURNING id
+    `);
+    const blobId = (result.rows[0] as Record<string, unknown>).id;
+    return `/api/gallery-img/db/${blobId}`;
+  }
+}
+
+// ── POST /smm/upload ──────────────────────────────────────────────────────────
+router.post("/smm/upload", requireAdmin, upload.single("image"), async (req: Request, res: Response) => {
+  try {
+    if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
+    const url = await uploadSmmImage(req.file.buffer, req.file.mimetype, req.file.originalname);
+    res.json({ url });
+  } catch (err) {
+    req.log.error({ err }, "SMM image upload failed");
+    res.status(500).json({ error: "Upload failed" });
+  }
+});
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

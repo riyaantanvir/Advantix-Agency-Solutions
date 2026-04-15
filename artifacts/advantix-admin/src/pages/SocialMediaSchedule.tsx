@@ -1,10 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft, ChevronRight, Plus, X, Send, Trash2, Clock,
   CheckCircle2, XCircle, Instagram, Facebook, Twitter, Youtube,
   Linkedin, Loader2, Pin, CalendarDays, ImageIcon, Type,
-  AlertCircle, LayoutList,
+  AlertCircle, LayoutList, Upload, Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -110,7 +110,49 @@ function ComposeForm({
   const [selPlatforms, setSelPlatforms] = useState<PlatformKey[]>([]);
   const [content, setContent] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [urlMode, setUrlMode] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [scheduledAt, setScheduledAt] = useState(() => defaultScheduledAt(selectedDay));
+
+  const handleFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Only image files are allowed", variant: "destructive" });
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      toast({ title: "Image must be under 15 MB", variant: "destructive" });
+      return;
+    }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      const res = await fetch(`${API}/smm/upload`, {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const { url } = await res.json();
+      setImageUrl(url);
+    } catch {
+      toast({ title: "Image upload failed", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  }, [toast]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  }, [handleFile]);
+
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setDragOver(true); };
+  const handleDragLeave = () => setDragOver(false);
 
   const createMutation = useMutation({
     mutationFn: (body: object) =>
@@ -206,17 +248,94 @@ function ComposeForm({
           </div>
         </div>
 
-        {/* Image URL */}
+        {/* Image upload */}
         <div>
-          <Label className="text-[11px] uppercase tracking-wide text-muted-foreground/60 font-semibold mb-2.5 block flex items-center gap-1.5">
-            <ImageIcon className="w-3 h-3" /> Image URL <span className="text-muted-foreground/40 font-normal normal-case tracking-normal">(optional)</span>
-          </Label>
-          <Input
-            value={imageUrl}
-            onChange={e => setImageUrl(e.target.value)}
-            placeholder="https://example.com/image.jpg"
-            className="text-sm bg-muted/20 border-border/50 focus:border-primary/50"
+          <div className="flex items-center justify-between mb-2.5">
+            <Label className="text-[11px] uppercase tracking-wide text-muted-foreground/60 font-semibold flex items-center gap-1.5">
+              <ImageIcon className="w-3 h-3" /> Image <span className="text-muted-foreground/40 font-normal normal-case tracking-normal">(optional)</span>
+            </Label>
+            <button
+              onClick={() => setUrlMode(v => !v)}
+              className="flex items-center gap-1 text-[11px] text-muted-foreground/60 hover:text-primary transition-colors"
+            >
+              <Link2 className="w-3 h-3" />
+              {urlMode ? "Use upload" : "Paste URL"}
+            </button>
+          </div>
+
+          {/* hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
           />
+
+          {urlMode ? (
+            <Input
+              value={imageUrl}
+              onChange={e => setImageUrl(e.target.value)}
+              placeholder="https://example.com/image.jpg"
+              className="text-sm bg-muted/20 border-border/50 focus:border-primary/50"
+            />
+          ) : imageUrl && !uploading ? (
+            /* Preview */
+            <div className="relative group rounded-xl overflow-hidden border border-border/50 bg-muted/20 h-36">
+              <img src={imageUrl} alt="" className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3 py-1.5 rounded-lg bg-white/20 text-white text-xs font-medium hover:bg-white/30 transition-colors"
+                >
+                  Change
+                </button>
+                <button
+                  onClick={() => setImageUrl("")}
+                  className="px-3 py-1.5 rounded-lg bg-red-500/60 text-white text-xs font-medium hover:bg-red-500/80 transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Drag & drop zone */
+            <div
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onClick={() => !uploading && fileInputRef.current?.click()}
+              className={cn(
+                "relative flex flex-col items-center justify-center gap-2 h-28 rounded-xl border-2 border-dashed cursor-pointer transition-all",
+                dragOver
+                  ? "border-primary bg-primary/8 scale-[1.01]"
+                  : "border-border/40 bg-muted/10 hover:border-border hover:bg-muted/20",
+                uploading && "pointer-events-none",
+              )}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <span className="text-xs text-muted-foreground">Uploading…</span>
+                </>
+              ) : (
+                <>
+                  <div className={cn(
+                    "w-9 h-9 rounded-xl flex items-center justify-center transition-colors",
+                    dragOver ? "bg-primary/20" : "bg-muted/40",
+                  )}>
+                    <Upload className={cn("w-4 h-4 transition-colors", dragOver ? "text-primary" : "text-muted-foreground/60")} />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs font-medium text-foreground/70">
+                      {dragOver ? "Drop to upload" : "Drag & drop or click to browse"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/50 mt-0.5">PNG, JPG, GIF, WebP — max 15 MB</p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Date & time */}
