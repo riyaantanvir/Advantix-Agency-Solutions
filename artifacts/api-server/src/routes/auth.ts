@@ -52,13 +52,32 @@ router.post("/auth/logout", (req, res) => {
   });
 });
 
-router.get("/auth/me", (req, res) => {
+router.get("/auth/me", async (req, res) => {
   const session = req.session as { adminId?: number; username?: string; isSuperAdmin?: boolean };
-  if (session.adminId) {
-    res.json({ authenticated: true, username: session.username, isSuperAdmin: session.isSuperAdmin === true });
-  } else {
+  if (!session.adminId) {
     res.status(401).json({ error: "Not authenticated" });
+    return;
   }
+
+  // Always fetch fresh isSuperAdmin from DB so promotions take effect without re-login.
+  const [admin] = await db
+    .select({ username: adminsTable.username, isSuperAdmin: adminsTable.isSuperAdmin })
+    .from(adminsTable)
+    .where(eq(adminsTable.id, session.adminId))
+    .limit(1);
+
+  if (!admin) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  // Keep session in sync so requireSuperAdmin middleware reflects the promotion immediately.
+  if (session.isSuperAdmin !== admin.isSuperAdmin) {
+    session.isSuperAdmin = admin.isSuperAdmin;
+    req.session.save(() => {});
+  }
+
+  res.json({ authenticated: true, username: admin.username, isSuperAdmin: admin.isSuperAdmin });
 });
 
 export default router;
