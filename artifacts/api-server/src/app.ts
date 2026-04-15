@@ -96,11 +96,11 @@ const PgSession = connectPgSimple(session);
 
 const app: Express = express();
 
-// DigitalOcean App Platform runs behind multiple proxy layers (load balancer + VXLAN).
-// Setting trust proxy to true tells Express to trust X-Forwarded-* headers from any proxy,
+// Replit and other hosting platforms run behind proxy layers (load balancer, etc.).
+// Setting trust proxy to 1 tells Express to trust the first X-Forwarded-For hop,
 // which is needed for correct req.ip, req.protocol (https), and secure cookie behavior.
-// This is safe because DO manages the network layer and we don't expose the container directly.
-app.set("trust proxy", true);
+// Using 1 (not true) is required to satisfy express-rate-limit's proxy safety check.
+app.set("trust proxy", 1);
 
 // ── Security headers (Helmet) ─────────────────────────────────────────────────
 // Sets many protective HTTP headers automatically:
