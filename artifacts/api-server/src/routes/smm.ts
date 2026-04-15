@@ -308,64 +308,79 @@ async function fetchPinterest(accessToken: string): Promise<PlatformResult> {
 // ── GET /api/smm/platforms ───────────────────────────────────────────────────
 
 router.get("/smm/platforms", requireAdmin, async (req: Request, res: Response) => {
-  const keys = await getSmmKeys();
+  try {
+    const keys = await getSmmKeys();
 
-  const [facebook, instagram, twitter, linkedin, youtube, pinterest] = await Promise.all([
-    keys.SMM_META_ACCESS_TOKEN && keys.SMM_META_PAGE_ID
-      ? fetchFacebook(keys.SMM_META_ACCESS_TOKEN, keys.SMM_META_PAGE_ID)
-      : Promise.resolve<PlatformResult>({ connected: false }),
-    keys.SMM_META_ACCESS_TOKEN && keys.SMM_META_IG_USER_ID
-      ? fetchInstagram(keys.SMM_META_ACCESS_TOKEN, keys.SMM_META_IG_USER_ID)
-      : Promise.resolve<PlatformResult>({ connected: false }),
-    keys.SMM_TWITTER_BEARER_TOKEN && keys.SMM_TWITTER_USER_ID
-      ? fetchTwitter(keys.SMM_TWITTER_BEARER_TOKEN, keys.SMM_TWITTER_USER_ID)
-      : Promise.resolve<PlatformResult>({ connected: false }),
-    keys.SMM_LINKEDIN_ACCESS_TOKEN
-      ? fetchLinkedIn(keys.SMM_LINKEDIN_ACCESS_TOKEN, keys.SMM_LINKEDIN_ORG_ID ?? "")
-      : Promise.resolve<PlatformResult>({ connected: false }),
-    keys.SMM_YOUTUBE_API_KEY && keys.SMM_YOUTUBE_CHANNEL_ID
-      ? fetchYouTube(keys.SMM_YOUTUBE_API_KEY, keys.SMM_YOUTUBE_CHANNEL_ID)
-      : Promise.resolve<PlatformResult>({ connected: false }),
-    keys.SMM_PINTEREST_ACCESS_TOKEN
-      ? fetchPinterest(keys.SMM_PINTEREST_ACCESS_TOKEN)
-      : Promise.resolve<PlatformResult>({ connected: false }),
-  ]);
+    const [facebook, instagram, twitter, linkedin, youtube, pinterest] = await Promise.all([
+      keys.SMM_META_ACCESS_TOKEN && keys.SMM_META_PAGE_ID
+        ? fetchFacebook(keys.SMM_META_ACCESS_TOKEN, keys.SMM_META_PAGE_ID)
+        : Promise.resolve<PlatformResult>({ connected: false }),
+      keys.SMM_META_ACCESS_TOKEN && keys.SMM_META_IG_USER_ID
+        ? fetchInstagram(keys.SMM_META_ACCESS_TOKEN, keys.SMM_META_IG_USER_ID)
+        : Promise.resolve<PlatformResult>({ connected: false }),
+      keys.SMM_TWITTER_BEARER_TOKEN && keys.SMM_TWITTER_USER_ID
+        ? fetchTwitter(keys.SMM_TWITTER_BEARER_TOKEN, keys.SMM_TWITTER_USER_ID)
+        : Promise.resolve<PlatformResult>({ connected: false }),
+      keys.SMM_LINKEDIN_ACCESS_TOKEN
+        ? fetchLinkedIn(keys.SMM_LINKEDIN_ACCESS_TOKEN, keys.SMM_LINKEDIN_ORG_ID ?? "")
+        : Promise.resolve<PlatformResult>({ connected: false }),
+      keys.SMM_YOUTUBE_API_KEY && keys.SMM_YOUTUBE_CHANNEL_ID
+        ? fetchYouTube(keys.SMM_YOUTUBE_API_KEY, keys.SMM_YOUTUBE_CHANNEL_ID)
+        : Promise.resolve<PlatformResult>({ connected: false }),
+      keys.SMM_PINTEREST_ACCESS_TOKEN
+        ? fetchPinterest(keys.SMM_PINTEREST_ACCESS_TOKEN)
+        : Promise.resolve<PlatformResult>({ connected: false }),
+    ]);
 
-  res.json({ facebook, instagram, twitter, linkedin, youtube, pinterest });
+    res.json({ facebook, instagram, twitter, linkedin, youtube, pinterest });
+  } catch (err) {
+    req.log.error({ err }, "SMM platforms fetch failed");
+    // Always return a valid shape so the frontend never crashes
+    const notConnected: PlatformResult = { connected: false };
+    res.json({
+      facebook: notConnected, instagram: notConnected, twitter: notConnected,
+      linkedin: notConnected, youtube: notConnected, pinterest: notConnected,
+    });
+  }
 });
 
 // ── GET /api/smm/traffic ─────────────────────────────────────────────────────
 
 router.get("/smm/traffic", requireAdmin, async (req: Request, res: Response) => {
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const emptyTraffic = { platforms: { instagram: 0, facebook: 0, twitter: 0, linkedin: 0, youtube: 0, pinterest: 0 }, total: 0 };
+  try {
+    // Use sql.raw for the date to avoid parameterized-date type-inference issues on PostgreSQL
+    const rows = await db
+      .select({ referrer: pageEventsTable.referrer, count: sql<number>`count(*)`.as("count") })
+      .from(pageEventsTable)
+      .where(
+        sql.raw(`event_type = 'pageview' AND created_at >= NOW() - INTERVAL '30 days' AND referrer IS NOT NULL
+            AND (referrer ILIKE '%instagram%' OR referrer ILIKE '%facebook%'
+              OR referrer ILIKE '%t.co%' OR referrer ILIKE '%twitter.com%' OR referrer ILIKE '%x.com%'
+              OR referrer ILIKE '%linkedin%' OR referrer ILIKE '%youtube%' OR referrer ILIKE '%pinterest%')`)
+      )
+      .groupBy(pageEventsTable.referrer)
+      .orderBy(sql`count(*) DESC`)
+      .limit(100);
 
-  const rows = await db
-    .select({ referrer: pageEventsTable.referrer, count: sql<number>`count(*)`.as("count") })
-    .from(pageEventsTable)
-    .where(
-      sql`event_type = 'pageview' AND created_at >= ${since} AND referrer IS NOT NULL
-          AND (referrer ILIKE '%instagram%' OR referrer ILIKE '%facebook%'
-            OR referrer ILIKE '%t.co%' OR referrer ILIKE '%twitter.com%' OR referrer ILIKE '%x.com%'
-            OR referrer ILIKE '%linkedin%' OR referrer ILIKE '%youtube%' OR referrer ILIKE '%pinterest%')`
-    )
-    .groupBy(pageEventsTable.referrer)
-    .orderBy(sql`count(*) DESC`)
-    .limit(100);
-
-  const platforms: Record<string, number> = {
-    instagram: 0, facebook: 0, twitter: 0, linkedin: 0, youtube: 0, pinterest: 0,
-  };
-  for (const row of rows) {
-    const ref = (row.referrer ?? "").toLowerCase();
-    if (ref.includes("instagram")) platforms.instagram += Number(row.count);
-    else if (ref.includes("facebook")) platforms.facebook += Number(row.count);
-    else if (ref.includes("t.co") || ref.includes("twitter") || ref.includes("x.com")) platforms.twitter += Number(row.count);
-    else if (ref.includes("linkedin")) platforms.linkedin += Number(row.count);
-    else if (ref.includes("youtube")) platforms.youtube += Number(row.count);
-    else if (ref.includes("pinterest")) platforms.pinterest += Number(row.count);
+    const platforms: Record<string, number> = {
+      instagram: 0, facebook: 0, twitter: 0, linkedin: 0, youtube: 0, pinterest: 0,
+    };
+    for (const row of rows) {
+      const ref = (row.referrer ?? "").toLowerCase();
+      if (ref.includes("instagram")) platforms.instagram += Number(row.count);
+      else if (ref.includes("facebook")) platforms.facebook += Number(row.count);
+      else if (ref.includes("t.co") || ref.includes("twitter") || ref.includes("x.com")) platforms.twitter += Number(row.count);
+      else if (ref.includes("linkedin")) platforms.linkedin += Number(row.count);
+      else if (ref.includes("youtube")) platforms.youtube += Number(row.count);
+      else if (ref.includes("pinterest")) platforms.pinterest += Number(row.count);
+    }
+    const total = Object.values(platforms).reduce((a, b) => a + b, 0);
+    res.json({ platforms, total });
+  } catch (err) {
+    req.log.error({ err }, "SMM traffic fetch failed");
+    res.json(emptyTraffic);
   }
-  const total = Object.values(platforms).reduce((a, b) => a + b, 0);
-  res.json({ platforms, total });
 });
 
 // ── GET /api/smm/scheduled ───────────────────────────────────────────────────

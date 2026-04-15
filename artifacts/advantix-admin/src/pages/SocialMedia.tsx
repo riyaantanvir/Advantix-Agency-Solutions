@@ -58,10 +58,12 @@ const PLATFORMS = [
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function fmtNum(n: number) {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
-  return n.toString();
+function fmtNum(n: number | undefined | null): string {
+  const num = Number(n ?? 0);
+  if (!isFinite(num)) return "0";
+  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + "M";
+  if (num >= 1_000) return (num / 1_000).toFixed(1) + "K";
+  return num.toString();
 }
 
 function PlatformIcon({ platformKey, className }: { platformKey: string; className?: string }) {
@@ -183,7 +185,7 @@ export default function SocialMedia() {
         }
       }
     }
-    allPosts.sort((a, b) => b.date.localeCompare(a.date));
+    allPosts.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
   }
 
   return (
