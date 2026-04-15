@@ -49,6 +49,8 @@ const SocialMediaSettings = lazy(() => import("./pages/SocialMediaSettings"));
 const CustomPages = lazy(() => import("./pages/CustomPages"));
 const CustomPageEditor = lazy(() => import("./pages/CustomPageEditor"));
 const InvoiceGenerator = lazy(() => import("./pages/InvoiceGenerator"));
+const PostComposer  = lazy(() => import("./pages/PostComposer"));
+const ImageStudio   = lazy(() => import("./pages/ImageStudio"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -319,6 +321,14 @@ function Router() {
 
       <Route path="/finance/invoice-generator">
         <ProtectedLayout><InvoiceGenerator /></ProtectedLayout>
+      </Route>
+
+      <Route path="/content/post-composer">
+        <ProtectedLayout><PostComposer /></ProtectedLayout>
+      </Route>
+
+      <Route path="/content/image-studio">
+        <ProtectedLayout><ImageStudio /></ProtectedLayout>
       </Route>
 
       <Route>

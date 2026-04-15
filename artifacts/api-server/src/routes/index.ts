@@ -36,6 +36,7 @@ import adminCustomPagesRouter from "./adminCustomPages.js";
 import toolsPdfAudioRouter from "./toolsPdfAudio.js";
 import toolsTtsRouter from "./toolsTts.js";
 import smmRouter from "./smm.js";
+import contentStudioRouter from "./contentStudio.js";
 
 const router: IRouter = Router();
 
@@ -76,5 +77,6 @@ router.use(adminCustomPagesRouter);
 router.use(toolsPdfAudioRouter);
 router.use(toolsTtsRouter);
 router.use(smmRouter);
+router.use(contentStudioRouter);
 
 export default router;
