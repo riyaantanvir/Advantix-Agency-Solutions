@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { SEO } from "@/components/SEO";
 import { motion } from "framer-motion";
 import { useListServices } from "@workspace/api-client-react";
@@ -29,7 +30,12 @@ function ServiceIcon({ name, className }: { name: string; className?: string }) 
 }
 
 export default function Services() {
-  const { data: services, isLoading } = useListServices();
+  const { data: services, isPending } = useListServices();
+
+  // Detect if data was already in cache when this component first mounted
+  // (e.g., pre-loaded by the Home page). If so, skip the "hidden → show"
+  // animation to avoid the one-frame invisible flash on SPA navigation.
+  const wasPreloaded = useRef(services !== undefined);
 
   const activeServices = services?.filter((s) => s.isActive) ?? [];
 
@@ -100,7 +106,7 @@ export default function Services() {
       {/* Services Grid */}
       <section className="pb-28">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          {isLoading ? (
+          {isPending ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="bg-card rounded-2xl p-8 border border-border/50">
@@ -114,7 +120,7 @@ export default function Services() {
           ) : (
             <motion.div
               variants={grid}
-              initial="hidden"
+              initial={wasPreloaded.current ? "show" : "hidden"}
               animate="show"
               className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
             >
