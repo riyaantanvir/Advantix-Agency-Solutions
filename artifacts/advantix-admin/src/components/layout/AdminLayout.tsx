@@ -104,7 +104,15 @@ const navItems: NavItem[] = [
       { path: "/team", label: "Team", icon: Users },
     ],
   },
-  { path: "/social-media", label: "AD Social Media", icon: Share2 },
+  {
+    label: "AD Social Media",
+    icon: Share2,
+    children: [
+      { path: "/social-media", label: "Overview", icon: Share2 },
+      { path: "/social-media/schedule", label: "Schedule Post", icon: CalendarDays },
+      { path: "/social-media/settings", label: "AD SMM Settings", icon: Settings2 },
+    ],
+  },
   { path: "/website-analytics", label: "Website Analytics", icon: BarChart2 },
   {
     label: "System",
