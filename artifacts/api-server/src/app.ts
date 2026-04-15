@@ -1,5 +1,6 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
@@ -9,6 +10,7 @@ import { fileURLToPath } from "url";
 import router from "./routes/index.js";
 import redirectRouter from "./routes/shortRedirect.js";
 import { logger } from "./lib/logger.js";
+import { apiLimiter } from "./lib/rateLimiter.js";
 import { pool, db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
@@ -100,6 +102,23 @@ const app: Express = express();
 // This is safe because DO manages the network layer and we don't expose the container directly.
 app.set("trust proxy", true);
 
+// ── Security headers (Helmet) ─────────────────────────────────────────────────
+// Sets many protective HTTP headers automatically:
+//   X-Content-Type-Options: nosniff       — blocks MIME-type sniffing attacks
+//   X-Frame-Options: SAMEORIGIN           — prevents clickjacking in iframes
+//   Strict-Transport-Security             — forces HTTPS on modern browsers (HSTS)
+//   Cross-Origin-Opener-Policy            — prevents cross-origin window access
+//   Referrer-Policy: no-referrer          — don't leak URL to third parties
+//   X-Powered-By removed                  — hides "Express" from attackers
+// CSP is intentionally disabled here because the SPAs inject inline scripts at
+// build time. Add a nonce-based CSP when you move to server-side rendering.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  }),
+);
+
 app.use(
   pinoHttp({
     logger,
@@ -129,8 +148,12 @@ app.use(
   }),
 );
 
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+// ── Request body limits ────────────────────────────────────────────────────────
+// 2 MB is plenty for JSON API payloads. File uploads go through multer separately
+// (which has its own per-upload limits) so this limit only affects JSON bodies.
+// Keeping it low prevents memory-exhaustion DoS attacks via oversized JSON bodies.
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
 const isReplit = !isProd && Boolean(process.env.REPLIT_DOMAINS);
 
@@ -168,6 +191,11 @@ app.use("/api/uploads", express.static(uploadsDir));
 
 // ── URL shortener (must be before API prefix) ─────────────────────────────────
 app.use(redirectRouter);
+
+// ── API rate limiter ───────────────────────────────────────────────────────────
+// Applied to all /api/* routes. Specific routes (login, forms) have stricter
+// limiters applied directly in their router files.
+app.use("/api", apiLimiter);
 
 // ── API routes ────────────────────────────────────────────────────────────────
 app.use("/api", router);
@@ -290,5 +318,25 @@ if (isProd) {
     });
   }
 }
+
+// ── Global error handler ────────────────────────────────────────────────────────
+// Must be declared with 4 arguments so Express recognizes it as an error handler.
+// In production: never expose stack traces or internal error details to the client.
+// In development: include the message to aid debugging.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  const status = (err as { status?: number; statusCode?: number }).status
+    ?? (err as { status?: number; statusCode?: number }).statusCode
+    ?? 500;
+
+  logger.error({ err, method: req.method, url: req.url }, "Unhandled error");
+
+  if (res.headersSent) return;
+
+  res.status(status).json({
+    error: isProd ? "An unexpected error occurred." : err.message,
+    ...(isProd ? {} : { stack: err.stack }),
+  });
+});
 
 export default app;

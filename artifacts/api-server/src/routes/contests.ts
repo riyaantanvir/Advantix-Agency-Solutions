@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { formLimiter } from "../lib/rateLimiter.js";
 import {
   db,
   contestsTable,
@@ -263,7 +264,7 @@ router.post("/contests/:id/signup", async (req, res) => {
 });
 
 /* ── Public: Submit work ──────────────────────────────────── */
-router.post("/contests/:id/submit", upload.single("file"), async (req, res) => {
+router.post("/contests/:id/submit", formLimiter, upload.single("file"), async (req, res) => {
   const contestId = Number(req.params.id);
   const { participantId, email, description } = req.body;
   if (!participantId && !email) return res.status(400).json({ error: "Email or participantId is required" });

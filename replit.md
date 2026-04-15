@@ -250,6 +250,39 @@ This app uses **Express 5**, NOT Express 4. Express 5 has breaking changes:
 
 ---
 
+## Security Architecture
+
+### HTTP Security Headers (Helmet)
+All responses include these headers:
+- `X-Content-Type-Options: nosniff` — blocks MIME-type sniffing attacks
+- `X-Frame-Options: SAMEORIGIN` — prevents clickjacking via iframes
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains` — forces HTTPS (HSTS)
+- `Cross-Origin-Opener-Policy: same-origin` — prevents cross-origin window hijacking
+- `Referrer-Policy: no-referrer` — hides page URLs from third-party referrer tracking
+- `X-Powered-By` header is **removed** — hides "Express" from attackers
+
+### Rate Limiting (express-rate-limit, per IP)
+| Endpoint | Limit | Window | Purpose |
+|----------|-------|--------|---------|
+| `POST /api/auth/login` | **10 req** | 15 min | Block brute-force login attacks |
+| `POST /contacts`, `/leads`, `/bugs`, `/contests/:id/submit` | **5 req** | 30 min | Stop contact/lead/bug spam bots |
+| `POST /chat`, `/chat/stream` | **30 req** | 10 min | Prevent AI cost abuse |
+| All `/api/*` routes | **300 req** | 15 min | Block API scanners & DDoS |
+
+### Request Body Limits
+- JSON body: **2 MB** (was 20 MB — oversized JSON bodies rejected with HTTP 413)
+- File uploads: handled by multer with per-route limits (10–20 MB)
+
+### Auth Security
+- Failed logins logged (username + timestamp) for monitoring
+- Sessions: `httpOnly`, `secure`, `sameSite: lax`, 30-day rolling TTL
+
+### Error Handling
+- In production: generic "An unexpected error occurred." (no stack trace leakage)
+- In development: full error message + stack shown for debugging
+
+---
+
 ## Known Bugs Fixed (History)
 
 | Bug | Fix Applied |

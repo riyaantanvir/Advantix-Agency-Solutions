@@ -3,6 +3,7 @@ import { createOpenAI } from "@workspace/integrations-openai-ai-server";
 import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { integrationsTable } from "@workspace/db/schema";
+import { aiLimiter } from "../lib/rateLimiter.js";
 
 const router: IRouter = Router();
 
@@ -68,7 +69,7 @@ function buildMessages(
   return messages;
 }
 
-router.post("/chat", async (req, res) => {
+router.post("/chat", aiLimiter, async (req, res) => {
   const { message, conversationHistory } = req.body as {
     message?: string;
     conversationHistory?: Array<{ role: string; content: string }>;
@@ -99,7 +100,7 @@ router.post("/chat", async (req, res) => {
   }
 });
 
-router.post("/chat/stream", async (req, res) => {
+router.post("/chat/stream", aiLimiter, async (req, res) => {
   const { message, conversationHistory } = req.body as {
     message?: string;
     conversationHistory?: Array<{ role: string; content: string }>;

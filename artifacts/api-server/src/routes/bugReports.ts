@@ -4,10 +4,11 @@ import { db } from "@workspace/db";
 import { bugReportsTable } from "@workspace/db/schema";
 import { requireAdmin } from "../middleware/auth.js";
 import { sendTelegramMessage, buildBugReportMessage } from "../services/telegram.js";
+import { formLimiter } from "../lib/rateLimiter.js";
 
 const router = Router();
 
-router.post("/bugs", async (req, res) => {
+router.post("/bugs", formLimiter, async (req, res) => {
   try {
     const { title, description, screenshot, reporterName, reporterEmail, pageUrl } = req.body as {
       title?: string;

@@ -3,10 +3,11 @@ import { db, leadsTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 import { sendTelegramMessage, buildNewLeadMessage } from "../services/telegram.js";
+import { formLimiter } from "../lib/rateLimiter.js";
 
 const router: IRouter = Router();
 
-router.post("/leads", async (req, res) => {
+router.post("/leads", formLimiter, async (req, res) => {
   const { service, sourcePage, visitorId, name, email } = req.body as {
     service?: string;
     sourcePage?: string;

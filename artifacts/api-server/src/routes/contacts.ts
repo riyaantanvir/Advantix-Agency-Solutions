@@ -3,10 +3,11 @@ import { db, contactsTable, adminsTable } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
 import { sendTelegramMessage, buildNewContactMessage, buildContactAssignedMessage } from "../services/telegram.js";
+import { formLimiter } from "../lib/rateLimiter.js";
 
 const router: IRouter = Router();
 
-router.post("/contacts", async (req, res) => {
+router.post("/contacts", formLimiter, async (req, res) => {
   const { name, email, phone, whatsapp, service, budget, details, message } = req.body as {
     name?: string;
     email?: string;

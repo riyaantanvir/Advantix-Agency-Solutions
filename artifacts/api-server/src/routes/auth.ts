@@ -3,10 +3,12 @@ import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
 import { adminsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { loginLimiter } from "../lib/rateLimiter.js";
+import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
-router.post("/auth/login", async (req, res) => {
+router.post("/auth/login", loginLimiter, async (req, res) => {
   const { username, password } = req.body as { username?: string; password?: string };
 
   if (!username || !password) {
@@ -17,12 +19,14 @@ router.post("/auth/login", async (req, res) => {
   const [admin] = await db.select().from(adminsTable).where(eq(adminsTable.username, username)).limit(1);
 
   if (!admin) {
+    logger.warn({ username }, "[auth] Login failed: unknown username");
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
 
   const valid = await bcrypt.compare(password, admin.passwordHash);
   if (!valid) {
+    logger.warn({ username }, "[auth] Login failed: wrong password");
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
