@@ -43,16 +43,14 @@ export function Navbar() {
     setToolsOpen(false);
   }, [location]);
 
-  const navLinks = user
-    ? [{ href: "/", label: "Home" }, { href: "/blog", label: "Blog" }]
-    : [
-        { href: "/", label: "Home" },
-        { href: "/services", label: "Services" },
-        { href: "/portfolio", label: "Portfolio" },
-        { href: "/team", label: "Team" },
-        { href: "/blog", label: "Blog" },
-        { href: "/careers", label: "Careers" },
-      ];
+  const navLinks = [
+    { href: "/", label: "Home" },
+    { href: "/services", label: "Services" },
+    { href: "/portfolio", label: "Portfolio" },
+    { href: "/team", label: "Team" },
+    { href: "/blog", label: "Blog" },
+    { href: "/careers", label: "Careers" },
+  ];
 
   const isToolsActive = location.startsWith("/tools");
 
