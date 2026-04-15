@@ -19,7 +19,7 @@ export default function Portfolio() {
   const { data: portfolioItems, isLoading } = useListPortfolio();
   const [activeCategory, setActiveCategory] = useState("All");
 
-  const categories = ["All", ...Array.from(new Set(portfolioItems?.map(item => item.category) || []))];
+  const categories = ["All", ...Array.from(new Set(portfolioItems?.map(item => item.category as string) || []))];
   const filteredItems = portfolioItems?.filter(
     item => activeCategory === "All" || item.category === activeCategory
   ) || [];

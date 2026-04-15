@@ -52,7 +52,7 @@ export default function Careers() {
       <SEO
         title="Careers — Advantix Digital"
         description="Join Advantix Digital. Explore open positions and participate in our design competitions."
-        path="/careers"
+        canonical="/careers"
       />
 
       <section className="relative overflow-hidden pt-32 pb-20 px-4">

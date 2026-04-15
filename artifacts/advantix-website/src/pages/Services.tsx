@@ -20,7 +20,7 @@ const card = {
 };
 
 function ServiceIcon({ name, className }: { name: string; className?: string }) {
-  const icons = LucideIcons as Record<string, React.ComponentType<LucideProps>>;
+  const icons = LucideIcons as unknown as Record<string, React.ComponentType<LucideProps>>;
   const pascal = name
     .split(/[-_\s]/)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))

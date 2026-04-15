@@ -239,9 +239,10 @@ This app uses **Express 5**, NOT Express 4. Express 5 has breaking changes:
 - Both `@rollup/rollup-linux-x64-gnu` and `@rollup/rollup-linux-x64-musl` are enabled in `pnpm-workspace.yaml`
 
 ### Blog Image Uploads
-- Stored at `artifacts/uploads/blog/` on the filesystem
-- Served at `/uploads/blog/{filename}`
-- **Warning**: These are NOT persisted across container rebuilds in production — images will be lost on full Docker rebuild. Use DO Spaces or S3 for persistent storage.
+- Stored at `uploads/blog/` on the filesystem (project root)
+- Served at `/uploads/blog/{filename}` via Express static
+- **Production**: All 9 blog cover images are baked into the Docker image via `COPY uploads/ ./uploads/` so they survive every deployment
+- New images uploaded via admin panel persist only until the next redeploy (no DO volume configured on `basic-xxs`). Upgrade to Professional plan + add a DO volume at `/app/uploads` for persistent new uploads, or use DO Spaces / S3
 
 ### Admin API Calls
 - Always use absolute paths: `/api/admin/...`
@@ -262,6 +263,18 @@ This app uses **Express 5**, NOT Express 4. Express 5 has breaking changes:
 | Vite sourcemap warnings during build | Added `sourcemap: false` + `onwarn` suppression in all 3 Vite configs |
 | "Internal Server Error" after admin login (production) | `connect-pg-simple` session store was using `conString: process.env.DATABASE_URL` (raw URL, no SSL config) — fixed by passing the shared `pool` (which has `ssl: { rejectUnauthorized: false }`) via `new PgSession({ pool })` in `app.ts` |
 | Admin login fails after redeploy / password change | `seedAdmin()` only created admin if row didn't exist — now it ALSO updates the `passwordHash` on every startup to stay in sync with `ADMIN_PASSWORD` env var. No more stale passwords. |
+| Blog cover images missing in production | `Dockerfile` had `RUN mkdir -p /app/uploads` (empty dir). Fixed: `COPY uploads/ ./uploads/` bakes all 9 blog covers into the image |
+| `Notifications.tsx` runtime crash on test result | `apiFetch()` returns `unknown`; `.ok`/`.error` accessed directly. Fixed: explicit `as { ok: boolean; error?: string }` cast |
+| `RichEditor.tsx` blog editor content not syncing | `editor.commands.setContent(content, false)` — tiptap v3 removed the boolean 2nd arg. Fixed: `setContent(content, { emitUpdate: false })` |
+| `Tasks.tsx` ref null pointer | `RefObject<HTMLInputElement>` doesn't accept `null` from React 19's `useRef`. Fixed prop type to `RefObject<HTMLInputElement \| null>` |
+| `BugReports.tsx` invalid `title` on Lucide icon | `title` is not a valid prop on Lucide components. Fixed: changed to `aria-label` |
+| `Careers.tsx` + `ContestDetail.tsx` broken canonical URLs | Passed `path` prop to `<SEO>` component but `SEOProps` only has `canonical`. Fixed: renamed to `canonical` |
+| `Services.tsx` (website) unsafe Lucide type cast | Double cast `as unknown as Record<...>` to avoid overlapping-type TS error |
+| `UrlShortener.tsx` Analytics type mismatch | API return type slightly differs from local `Analytics` type. Fixed: `.then(d => setData(d as Analytics))` |
+| `ScreenRecorder.tsx` SharedArrayBuffer incompatible | `Uint8Array.buffer` is `ArrayBufferLike`; `Blob` needs `ArrayBuffer`. Fixed: `data.buffer as ArrayBuffer` |
+| `Portfolio.tsx` (website) `unknown` used as React Key/ReactNode | api-client-react `dist/` not built, causing all imported types to be unknown. Fixed: ran `tsc -b` to generate declaration files |
+| `@tiptap/core` module not found in admin | Imported but not in package.json. Fixed: added `"@tiptap/core": "^3.22.2"` to admin dependencies |
+| SMM scheduler fires immediately for posts >24.8 days away | Node.js `setTimeout` silently wraps past 2^31ms. Fixed: `schedulePost()` re-schedules itself in ~23-day chunks until within range |
 
 ---
 

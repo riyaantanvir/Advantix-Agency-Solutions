@@ -248,7 +248,7 @@ export default function ScreenRecorder() {
       ]);
 
       const data = await ffmpeg.readFile("output.mp4") as Uint8Array;
-      const mp4Blob = new Blob([data.buffer], { type: "video/mp4" });
+      const mp4Blob = new Blob([data.buffer as ArrayBuffer], { type: "video/mp4" });
       const mp4Url = URL.createObjectURL(mp4Blob);
       const name = `recording-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.mp4`;
       const a = document.createElement("a");

@@ -114,11 +114,24 @@ async function publishPost(post: SmmPost): Promise<void> {
   logger.info({ postId: post.id, anyOk, errors }, "[SMM] Post publish complete");
 }
 
+// Node.js setTimeout max is 2^31-1 ms (~24.8 days). For posts further away,
+// we set an intermediate timer that re-schedules itself until close enough to fire.
+const MAX_TIMER_MS = 2_000_000_000; // ~23 days, safely below 2^31-1
+
 export function schedulePost(post: SmmPost): void {
   const existing = pendingTimers.get(post.id);
   if (existing) clearTimeout(existing);
 
   const delayMs = Math.max(0, new Date(post.scheduledAt).getTime() - Date.now());
+
+  if (delayMs > MAX_TIMER_MS) {
+    // Too far in the future — re-schedule in MAX_TIMER_MS and check again
+    const timer = setTimeout(() => schedulePost(post), MAX_TIMER_MS);
+    pendingTimers.set(post.id, timer);
+    logger.info({ postId: post.id, recheckInDays: Math.round(MAX_TIMER_MS / 86400000) }, "[SMM] Post too far away, will recheck");
+    return;
+  }
+
   const timer = setTimeout(() => publishPost(post), delayMs);
   pendingTimers.set(post.id, timer);
 

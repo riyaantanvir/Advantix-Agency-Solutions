@@ -153,7 +153,7 @@ export default function ContestDetailPage() {
       <SEO
         title={`${contest.title} — Advantix Digital`}
         description={contest.description}
-        path={`/contests/${contest.id}`}
+        canonical={`/contests/${contest.id}`}
       />
 
       <div className="pt-28 pb-20 px-4">

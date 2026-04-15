@@ -73,10 +73,11 @@ COPY --from=builder /app/artifacts/advantix-website/dist/public/ ./artifacts/adv
 COPY --from=builder /app/artifacts/advantix-admin/dist/public/   ./artifacts/advantix-admin/dist/public/
 COPY --from=builder /app/artifacts/advantix-ai/dist/public/      ./artifacts/advantix-ai/dist/public/
 
-# Persistent uploads directory (blog images, etc.)
-# Mounted as a volume on DigitalOcean so uploads survive deployments:
-#   docker run -v advantix_uploads:/app/uploads ...
-RUN mkdir -p /app/uploads
+# Bake existing uploads (blog cover images, contest images, etc.) into the image
+# so they are available from the very first deployment without needing a volume.
+# New uploads added via the admin panel in production are stored here too;
+# add a DO App Platform volume at /app/uploads to persist those between deploys.
+COPY uploads/ ./uploads/
 
 # ── Environment ───────────────────────────────────────────────────────────────
 ENV NODE_ENV=production

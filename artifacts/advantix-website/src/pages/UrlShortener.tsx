@@ -229,7 +229,7 @@ function AnalyticsModal({ open, onClose, url, shortBase }: { open: boolean; onCl
     if (!open || !url) return;
     setData(null); setError(""); setLoading(true); setTab("overview");
     toolsApi.urls.analytics(url.id)
-      .then(setData)
+      .then(d => setData(d as Analytics))
       .catch(() => setError("Could not load analytics"))
       .finally(() => setLoading(false));
   }, [open, url?.id]);
@@ -714,7 +714,7 @@ function UrlRow({ item, shortBase, onDelete, onAnalytics }: { item: ShortUrl; sh
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           {item.title && <p className="text-sm font-semibold text-foreground truncate">{item.title}</p>}
-          {item.passwordHash && <Lock className="w-3 h-3 text-purple-400 shrink-0" title="Password protected" />}
+          {item.passwordHash && <Lock className="w-3 h-3 text-purple-400 shrink-0" aria-label="Password protected" />}
           {item.clickLimit && (
             <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${isExpired ? "bg-red-500/15 text-red-400" : "bg-amber-500/15 text-amber-400"}`}>
               {isExpired ? "Expired" : `${item.clicks}/${item.clickLimit}`}

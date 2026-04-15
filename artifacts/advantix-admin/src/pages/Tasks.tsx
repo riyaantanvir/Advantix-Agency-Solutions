@@ -118,7 +118,7 @@ function ListView({
   addingTo: string | null;
   newTitle: string;
   setNewTitle: (v: string) => void;
-  addInputRef: React.RefObject<HTMLInputElement>;
+  addInputRef: React.RefObject<HTMLInputElement | null>;
   startAdd: (s: string) => void;
   commit: (s: string, projId?: number | null) => void;
   navigate: (path: string) => void;

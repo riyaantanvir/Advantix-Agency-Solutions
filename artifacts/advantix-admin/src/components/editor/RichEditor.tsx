@@ -431,7 +431,7 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
 
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
-      editor.commands.setContent(content, false);
+      editor.commands.setContent(content, { emitUpdate: false });
     }
   }, [content]);
 
@@ -452,7 +452,7 @@ export default function RichEditor({ content, onChange, placeholder, minHeight =
 
   function switchToVisual() {
     if (!editor) return;
-    editor.commands.setContent(htmlDraft, false);
+    editor.commands.setContent(htmlDraft, { emitUpdate: false });
     onChange(htmlDraft);
     setMode("visual");
     setShowPreview(false);

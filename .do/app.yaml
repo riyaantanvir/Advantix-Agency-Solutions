@@ -15,6 +15,15 @@
 #   This config uses ONE Dockerfile-based service that builds and
 #   serves ALL frontends (website, admin, AI). Do NOT add separate
 #   static site components for each frontend package.
+#
+# UPLOADS / FILE STORAGE:
+#   Blog cover images and other static uploads are BAKED into the Docker image
+#   at build time (see Dockerfile: COPY uploads/ ./uploads/).
+#   They will always be available immediately after deployment.
+#   Files uploaded via the admin panel after deployment will persist until the
+#   next redeploy. To make new uploads survive redeploys, upgrade to a
+#   Professional instance and add a DO volume at /app/uploads — or configure
+#   an S3-compatible object storage (e.g. DO Spaces) for production uploads.
 
 name: advantix-agency
 region: sgp1

@@ -172,7 +172,7 @@ export default function BugReports() {
                         {statusCfg.icon}{statusCfg.label}
                       </Badge>
                       <Badge className={`text-xs border ${priorityCfg.color}`}>{priorityCfg.label}</Badge>
-                      {bug.screenshot && <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" title="Has screenshot" />}
+                      {bug.screenshot && <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" aria-label="Has screenshot" />}
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
                       <span>{format(new Date(bug.createdAt), "MMM d, yyyy · HH:mm")}</span>

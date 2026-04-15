@@ -117,7 +117,7 @@ export default function Notifications() {
   const loadSettings = useCallback(async () => {
     setLoading(true);
     try {
-      const data: Settings = await apiFetch(`/api/admin/notifications/settings`);
+      const data = await apiFetch(`/api/admin/notifications/settings`) as Settings;
       setSettings(data);
     } catch {
       toast({ title: "Failed to load settings", variant: "destructive" });
@@ -170,7 +170,8 @@ export default function Notifications() {
     setTesting(true);
     setTestResult(null);
     try {
-      const result = await apiFetch(`/api/admin/notifications/telegram/test`, { method: "POST" });
+      const raw = await apiFetch(`/api/admin/notifications/telegram/test`, { method: "POST" });
+      const result = raw as { ok: boolean; error?: string };
       setTestResult(result);
       if (result.ok) toast({ title: "Test notification sent!" });
       else toast({ title: result.error ?? "Test failed", variant: "destructive" });

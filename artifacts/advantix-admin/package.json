@@ -75,6 +75,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@tiptap/core": "^3.22.2",
     "@tiptap/extension-character-count": "^3.22.2",
     "@tiptap/extension-color": "^3.22.2",
     "@tiptap/extension-highlight": "^3.22.2",
