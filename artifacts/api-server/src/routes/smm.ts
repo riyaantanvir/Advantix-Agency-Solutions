@@ -489,7 +489,9 @@ router.post("/smm/settings/test/:platform", requireAdmin, async (req: Request, r
         const d = await r.json();
         res.json({ ok: true, message: `Connected: ${d.name} — ${(d.followers_count ?? 0).toLocaleString()} followers` });
       } else {
-        res.json({ ok: false, message: `Facebook returned ${r.status} — check your Access Token` });
+        const errBody = await r.json().catch(() => ({})) as any;
+        const detail = errBody?.error?.message ?? errBody?.error?.type ?? "";
+        res.json({ ok: false, message: `Facebook returned ${r.status}${detail ? ": " + detail : " — check your Access Token"}` });
       }
       return;
     }
