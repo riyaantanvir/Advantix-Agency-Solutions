@@ -15,11 +15,25 @@ import { sql } from "drizzle-orm";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 if (!process.env.SESSION_SECRET) {
+  // In production, a missing SESSION_SECRET means every restart generates a new random secret,
+  // which invalidates ALL active sessions (logs out every user). Fail fast instead.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "\n" + "=".repeat(72) + "\n" +
+      "  FATAL: SESSION_SECRET environment variable is not set.\n" +
+      "  In production this MUST be a fixed secret string so sessions\n" +
+      "  survive server restarts and deployments.\n" +
+      "  In DigitalOcean App Platform: App Settings → Environment Variables\n" +
+      "  → Add SESSION_SECRET as an Encrypted Secret with a long random value.\n" +
+      "  Generate one with:  node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"\n" +
+      "=".repeat(72)
+    );
+  }
+
   const { randomBytes } = await import("node:crypto");
 
   // In development: persist the secret to a local file so server restarts
-  // don't invalidate existing sessions. In production this file won't exist
-  // and the operator MUST provide SESSION_SECRET via env vars.
+  // don't invalidate existing sessions.
   const secretFile = path.resolve(__dirname, "../../../.session-secret");
   let secret: string;
 
@@ -36,9 +50,8 @@ if (!process.env.SESSION_SECRET) {
 
   process.env.SESSION_SECRET = secret;
   console.error("\n" + "=".repeat(72));
-  console.error("  ⚠  SESSION_SECRET is not set as an environment variable.");
-  console.error("  For production (DigitalOcean), set SESSION_SECRET to:");
-  console.error("  " + secret);
+  console.error("  ⚠  SESSION_SECRET not set — using persisted dev secret.");
+  console.error("  This is fine for development. NEVER deploy without setting it.");
   console.error("=".repeat(72) + "\n");
 }
 
@@ -81,7 +94,11 @@ const PgSession = connectPgSimple(session);
 
 const app: Express = express();
 
-app.set("trust proxy", 1);
+// DigitalOcean App Platform runs behind multiple proxy layers (load balancer + VXLAN).
+// Setting trust proxy to true tells Express to trust X-Forwarded-* headers from any proxy,
+// which is needed for correct req.ip, req.protocol (https), and secure cookie behavior.
+// This is safe because DO manages the network layer and we don't expose the container directly.
+app.set("trust proxy", true);
 
 app.use(
   pinoHttp({

@@ -81,7 +81,11 @@ export default function Dashboard() {
 
   const { data: me } = useQuery<{ authenticated: boolean; username: string }>({
     queryKey: ["auth-me"],
-    queryFn: () => fetch("/api/auth/me", { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch("/api/auth/me", { credentials: "include" });
+      if (!r.ok) { const err = new Error("Not authenticated") as any; err.status = r.status; throw err; }
+      return r.json();
+    },
     staleTime: Infinity,
   });
 

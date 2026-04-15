@@ -157,7 +157,11 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
   const { data: me } = useQuery<{ authenticated: boolean; username: string; isSuperAdmin: boolean }>({
     queryKey: getGetMeQueryKey(), // same key as ProtectedRoute — shares the cached result
-    queryFn: () => fetch("/api/auth/me", { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch("/api/auth/me", { credentials: "include" });
+      if (!r.ok) { const err = new Error("Not authenticated") as any; err.status = r.status; throw err; }
+      return r.json();
+    },
     staleTime: 60_000,
   });
 
