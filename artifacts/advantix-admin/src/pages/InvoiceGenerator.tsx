@@ -342,201 +342,151 @@ function InvoicePreview({
   taxAmt: number; taxRate: number; total: number;
   notes: string; sym: string; fmt: (n: number) => string; currency: string;
 }) {
+  const mono: React.CSSProperties = { fontFamily: "'Courier New', monospace" };
+  const label: React.CSSProperties = { color: "#9ca3af", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1.2px", marginBottom: 4 };
+  const divider: React.CSSProperties = { borderTop: "1px solid #f0f0f0", margin: "0" };
+
   return (
     <div
-      className="bg-white rounded-2xl overflow-hidden shadow-2xl"
-      style={{ fontFamily: "'Inter', 'Segoe UI', sans-serif", minWidth: 480 }}
+      style={{
+        background: "#ffffff",
+        borderRadius: 16,
+        overflow: "hidden",
+        boxShadow: "0 4px 40px rgba(0,0,0,0.10)",
+        fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif",
+        minWidth: 480,
+        color: "#111827",
+      }}
     >
-      {/* Header — dark navy gradient */}
-      <div
-        style={{
-          background: "linear-gradient(135deg, #06111f 0%, #0b1f3a 50%, #112754 100%)",
-          padding: "36px 40px",
-          position: "relative",
-          overflow: "hidden",
-        }}
-      >
-        {/* Decorative circles */}
-        <div style={{
-          position: "absolute", top: -40, right: -40, width: 180, height: 180,
-          borderRadius: "50%", background: "rgba(59,125,216,0.12)",
-        }} />
-        <div style={{
-          position: "absolute", bottom: -30, left: 200, width: 120, height: 120,
-          borderRadius: "50%", background: "rgba(59,125,216,0.08)",
-        }} />
+      {/* Top accent line */}
+      <div style={{ height: 3, background: "#1d4ed8" }} />
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", position: "relative" }}>
-          {/* Logo */}
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <img
-              src="/admin/images/advantix-logo.png"
-              alt="Advantix Digital"
-              style={{ width: 60, height: 60, objectFit: "contain", borderRadius: 8 }}
-            />
-            <div>
-              <div style={{ color: "#ffffff", fontSize: 20, fontWeight: 700, letterSpacing: "-0.3px" }}>
-                {fromName || "Advantix Digital"}
-              </div>
-              <div style={{ color: "#4d9de0", fontSize: 11, fontWeight: 600, letterSpacing: "2px", textTransform: "uppercase" }}>
-                Digital Agency
-              </div>
+      {/* Header */}
+      <div style={{ padding: "36px 44px 28px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        {/* Logo + from info */}
+        <div>
+          <img
+            src="/admin/images/advantix-logo.png"
+            alt="Advantix Digital"
+            style={{ width: 44, height: 44, objectFit: "contain", marginBottom: 12 }}
+          />
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{fromName || "Advantix Digital"}</div>
+          {fromAddress && (
+            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2, whiteSpace: "pre-line", lineHeight: 1.6 }}>{fromAddress}</div>
+          )}
+          {fromEmail && <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{fromEmail}</div>}
+          {fromPhone && <div style={{ fontSize: 11, color: "#9ca3af" }}>{fromPhone}</div>}
+        </div>
+
+        {/* Invoice label + number */}
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 11, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "2px", marginBottom: 6 }}>
+            {invoiceName || "Invoice"}
+          </div>
+          <div style={{ fontSize: 26, fontWeight: 700, color: "#111827", letterSpacing: "-0.5px" }}>{invoiceNumber}</div>
+        </div>
+      </div>
+
+      <div style={divider} />
+
+      {/* Meta row: dates + bill to */}
+      <div style={{ padding: "24px 44px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 32 }}>
+        <div>
+          <div style={label}>Issue Date</div>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>{invoiceDate || "—"}</div>
+        </div>
+        <div>
+          <div style={label}>Due Date</div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: "#dc2626" }}>{dueDate || "—"}</div>
+        </div>
+        <div>
+          <div style={label}>Bill To</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{toName || "—"}</div>
+          {toCompany && <div style={{ fontSize: 12, color: "#6b7280" }}>{toCompany}</div>}
+          {toAddress && <div style={{ fontSize: 11, color: "#9ca3af", whiteSpace: "pre-line", lineHeight: 1.5, marginTop: 2 }}>{toAddress}</div>}
+          {toEmail && <div style={{ fontSize: 11, color: "#9ca3af" }}>{toEmail}</div>}
+        </div>
+      </div>
+
+      <div style={divider} />
+
+      {/* Table */}
+      <div style={{ padding: "0 44px" }}>
+        {/* Table header */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "1fr 60px 100px 100px",
+          padding: "12px 0", gap: 12,
+          borderBottom: "1px solid #e5e7eb",
+        }}>
+          {["Description", "Qty", "Rate", "Amount"].map((h, i) => (
+            <div key={h} style={{ ...label, marginBottom: 0, textAlign: i === 0 ? "left" : "right" }}>{h}</div>
+          ))}
+        </div>
+
+        {/* Rows */}
+        {items.map((item) => (
+          <div
+            key={item.id}
+            style={{
+              display: "grid", gridTemplateColumns: "1fr 60px 100px 100px",
+              padding: "13px 0", gap: 12,
+              borderBottom: "1px solid #f3f4f6",
+            }}
+          >
+            <div style={{ fontSize: 13, color: "#374151" }}>{item.description || "—"}</div>
+            <div style={{ ...mono, fontSize: 12, color: "#6b7280", textAlign: "right" }}>{item.quantity}</div>
+            <div style={{ ...mono, fontSize: 12, color: "#6b7280", textAlign: "right" }}>{sym}{item.rate.toLocaleString()}</div>
+            <div style={{ ...mono, fontSize: 13, fontWeight: 600, color: "#111827", textAlign: "right" }}>
+              {sym}{(item.quantity * item.rate).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
+        ))}
+      </div>
 
-          {/* Invoice title + number */}
-          <div style={{ textAlign: "right" }}>
-            <div style={{ color: "#4d9de0", fontSize: 11, fontWeight: 600, letterSpacing: "3px", textTransform: "uppercase", marginBottom: 6 }}>
-              {invoiceName || "Invoice"}
+      {/* Totals */}
+      <div style={{ padding: "20px 44px 0", display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ width: 240 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0" }}>
+            <span style={{ fontSize: 12, color: "#9ca3af" }}>Subtotal</span>
+            <span style={{ ...mono, fontSize: 12, color: "#374151" }}>{sym}{fmt(subtotal)}</span>
+          </div>
+          {discountRate > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0" }}>
+              <span style={{ fontSize: 12, color: "#9ca3af" }}>Discount ({discountRate}%)</span>
+              <span style={{ ...mono, fontSize: 12, color: "#dc2626" }}>−{sym}{fmt(discountAmt)}</span>
             </div>
-            <div style={{ color: "#ffffff", fontSize: 28, fontWeight: 800, letterSpacing: "-0.5px" }}>
-              {invoiceNumber}
+          )}
+          {taxRate > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0" }}>
+              <span style={{ fontSize: 12, color: "#9ca3af" }}>Tax ({taxRate}%)</span>
+              <span style={{ ...mono, fontSize: 12, color: "#374151" }}>{sym}{fmt(taxAmt)}</span>
             </div>
+          )}
+          <div style={{ borderTop: "1.5px solid #111827", marginTop: 8, paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#111827", textTransform: "uppercase", letterSpacing: "0.5px" }}>Total</span>
+            <span style={{ ...mono, fontSize: 20, fontWeight: 700, color: "#1d4ed8" }}>{sym}{fmt(total)}</span>
+          </div>
+          <div style={{ textAlign: "right", marginTop: 2 }}>
+            <span style={{ fontSize: 10, color: "#d1d5db" }}>{currency}</span>
           </div>
         </div>
       </div>
 
-      {/* Blue accent stripe */}
-      <div style={{ height: 4, background: "linear-gradient(90deg, #1a4fa0 0%, #3b7dd8 50%, #5ba3f5 100%)" }} />
-
-      {/* Body */}
-      <div style={{ padding: "32px 40px", background: "#ffffff" }}>
-
-        {/* Date + Client row */}
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 32, gap: 24 }}>
-          {/* Dates */}
-          <div style={{ flex: 1 }}>
-            <div style={{ background: "#f0f4ff", borderRadius: 12, padding: "16px 20px" }}>
-              <div style={{ display: "flex", gap: 24 }}>
-                <div>
-                  <div style={{ color: "#6b7280", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>Issue Date</div>
-                  <div style={{ color: "#0b1f3a", fontSize: 14, fontWeight: 600 }}>{invoiceDate || "—"}</div>
-                </div>
-                <div>
-                  <div style={{ color: "#6b7280", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>Due Date</div>
-                  <div style={{ color: "#c0392b", fontSize: 14, fontWeight: 700 }}>{dueDate || "—"}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Bill To */}
-          <div style={{ flex: 1 }}>
-            <div style={{ borderLeft: "3px solid #3b7dd8", paddingLeft: 16 }}>
-              <div style={{ color: "#6b7280", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 8 }}>Bill To</div>
-              <div style={{ color: "#0b1f3a", fontSize: 15, fontWeight: 700 }}>{toName || "Client Name"}</div>
-              {toCompany && <div style={{ color: "#3b7dd8", fontSize: 13, fontWeight: 600 }}>{toCompany}</div>}
-              {toAddress && (
-                <div style={{ color: "#6b7280", fontSize: 12, marginTop: 4, whiteSpace: "pre-line" }}>{toAddress}</div>
-              )}
-              {toEmail && <div style={{ color: "#6b7280", fontSize: 12, marginTop: 4 }}>{toEmail}</div>}
-            </div>
-          </div>
+      {/* Notes */}
+      {notes && (
+        <div style={{ padding: "24px 44px 0" }}>
+          <div style={label}>Notes</div>
+          <div style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.7 }}>{notes}</div>
         </div>
+      )}
 
-        {/* Line Items Table */}
-        <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid #e5e9f0", marginBottom: 24 }}>
-          {/* Table Header */}
-          <div style={{
-            display: "grid", gridTemplateColumns: "1fr auto auto auto",
-            background: "linear-gradient(135deg, #0b1f3a 0%, #1a4fa0 100%)",
-            padding: "12px 20px", gap: 12,
-          }}>
-            {["Description", "Qty", "Rate", "Amount"].map((h, i) => (
-              <div key={h} style={{
-                color: "#a8c4e8", fontSize: 11, fontWeight: 600,
-                textTransform: "uppercase", letterSpacing: "1px",
-                textAlign: i === 0 ? "left" : "right",
-                minWidth: i === 0 ? undefined : 70,
-              }}>{h}</div>
-            ))}
-          </div>
-
-          {/* Table Rows */}
-          {items.map((item, idx) => (
-            <div
-              key={item.id}
-              style={{
-                display: "grid", gridTemplateColumns: "1fr auto auto auto",
-                padding: "14px 20px", gap: 12,
-                background: idx % 2 === 0 ? "#ffffff" : "#f7f9fd",
-                borderTop: "1px solid #e5e9f0",
-              }}
-            >
-              <div style={{ color: "#1a2744", fontSize: 13, fontWeight: 500 }}>
-                {item.description || <span style={{ color: "#aaa" }}>—</span>}
-              </div>
-              <div style={{ color: "#6b7280", fontSize: 13, textAlign: "right", minWidth: 70 }}>{item.quantity}</div>
-              <div style={{ color: "#6b7280", fontSize: 13, textAlign: "right", minWidth: 70, fontFamily: "monospace" }}>
-                {sym}{(item.rate).toLocaleString()}
-              </div>
-              <div style={{ color: "#1a2744", fontSize: 13, fontWeight: 600, textAlign: "right", minWidth: 70, fontFamily: "monospace" }}>
-                {sym}{(item.quantity * item.rate).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-            </div>
-          ))}
+      {/* Footer */}
+      <div style={{ padding: "24px 44px 32px", marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 16 }}>
+          {fromEmail && <span style={{ fontSize: 10, color: "#d1d5db" }}>{fromEmail}</span>}
+          {fromPhone && <span style={{ fontSize: 10, color: "#d1d5db" }}>{fromPhone}</span>}
         </div>
-
-        {/* Totals */}
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 28 }}>
-          <div style={{ width: 280 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #e5e9f0" }}>
-              <span style={{ color: "#6b7280", fontSize: 13 }}>Subtotal</span>
-              <span style={{ color: "#1a2744", fontSize: 13, fontFamily: "monospace" }}>{sym}{fmt(subtotal)}</span>
-            </div>
-            {discountRate > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #e5e9f0" }}>
-                <span style={{ color: "#6b7280", fontSize: 13 }}>Discount ({discountRate}%)</span>
-                <span style={{ color: "#e74c3c", fontSize: 13, fontFamily: "monospace" }}>−{sym}{fmt(discountAmt)}</span>
-              </div>
-            )}
-            {taxRate > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #e5e9f0" }}>
-                <span style={{ color: "#6b7280", fontSize: 13 }}>Tax ({taxRate}%)</span>
-                <span style={{ color: "#1a2744", fontSize: 13, fontFamily: "monospace" }}>{sym}{fmt(taxAmt)}</span>
-              </div>
-            )}
-            {/* Total */}
-            <div style={{
-              display: "flex", justifyContent: "space-between",
-              padding: "14px 16px", marginTop: 8, borderRadius: 10,
-              background: "linear-gradient(135deg, #0b1f3a 0%, #1a4fa0 100%)",
-            }}>
-              <span style={{ color: "#a8c4e8", fontSize: 14, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px" }}>Total Due</span>
-              <span style={{ color: "#ffffff", fontSize: 18, fontWeight: 800, fontFamily: "monospace" }}>
-                {sym}{fmt(total)}
-              </span>
-            </div>
-            <div style={{ textAlign: "right", marginTop: 4 }}>
-              <span style={{ color: "#9ca3af", fontSize: 10 }}>{currency}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Notes */}
-        {notes && (
-          <div style={{
-            background: "#f0f4ff", borderRadius: 10, padding: "16px 20px",
-            borderLeft: "4px solid #3b7dd8", marginBottom: 24,
-          }}>
-            <div style={{ color: "#3b7dd8", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: 6 }}>Notes</div>
-            <div style={{ color: "#4b5563", fontSize: 12, lineHeight: 1.6 }}>{notes}</div>
-          </div>
-        )}
-
-        {/* Footer */}
-        <div style={{
-          borderTop: "1px solid #e5e9f0", paddingTop: 20,
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          <div style={{ display: "flex", gap: 20 }}>
-            {fromEmail && <span style={{ color: "#9ca3af", fontSize: 11 }}>{fromEmail}</span>}
-            {fromPhone && <span style={{ color: "#9ca3af", fontSize: 11 }}>{fromPhone}</span>}
-          </div>
-          <div style={{ color: "#d1d5db", fontSize: 10, textAlign: "right" }}>
-            Generated by Advantix Finance
-          </div>
-        </div>
+        <span style={{ fontSize: 10, color: "#e5e7eb" }}>Advantix Finance</span>
       </div>
     </div>
   );
