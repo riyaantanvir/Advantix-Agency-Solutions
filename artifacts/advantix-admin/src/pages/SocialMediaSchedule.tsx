@@ -449,7 +449,12 @@ export default function SocialMediaSchedule() {
 
   const { data: posts = [], isLoading } = useQuery<ScheduledPost[]>({
     queryKey: ["smm-scheduled"],
-    queryFn: () => fetch(`${API}/smm/scheduled`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`${API}/smm/scheduled`, { credentials: "include" });
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
+    },
   });
 
   const deleteMutation = useMutation({

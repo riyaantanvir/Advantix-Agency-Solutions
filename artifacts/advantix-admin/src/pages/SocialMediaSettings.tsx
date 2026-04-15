@@ -311,7 +311,12 @@ function PlatformCard({ platform, integrations }: { platform: PlatformDef; integ
 export default function SocialMediaSettings() {
   const { data: integrations, isLoading } = useQuery<IntegrationRow[]>({
     queryKey: ["smm-settings"],
-    queryFn: () => fetch(`${API}/smm/settings`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`${API}/smm/settings`, { credentials: "include" });
+      if (!r.ok) return [];
+      const data = await r.json();
+      return Array.isArray(data) ? data : [];
+    },
   });
 
   const connectedCount = PLATFORM_DEFS.filter(p =>

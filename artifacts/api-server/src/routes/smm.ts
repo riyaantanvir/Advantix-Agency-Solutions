@@ -386,10 +386,15 @@ router.get("/smm/traffic", requireAdmin, async (req: Request, res: Response) => 
 // ── GET /api/smm/scheduled ───────────────────────────────────────────────────
 
 router.get("/smm/scheduled", requireAdmin, async (_req: Request, res: Response) => {
-  const rows = await db.select().from(smmScheduledPostsTable)
-    .orderBy(desc(smmScheduledPostsTable.scheduledAt))
-    .limit(100);
-  res.json(rows);
+  try {
+    const rows = await db.select().from(smmScheduledPostsTable)
+      .orderBy(desc(smmScheduledPostsTable.scheduledAt))
+      .limit(100);
+    res.json(rows);
+  } catch (err) {
+    _req.log.error({ err }, "SMM scheduled posts fetch failed");
+    res.json([]);
+  }
 });
 
 router.post("/smm/scheduled", requireAdmin, async (req: Request, res: Response) => {
@@ -429,10 +434,15 @@ router.patch("/smm/scheduled/:id/cancel", requireAdmin, async (req: Request, res
 // ── GET /api/smm/settings ────────────────────────────────────────────────────
 
 router.get("/smm/settings", requireAdmin, async (_req: Request, res: Response) => {
-  const rows = await db.select().from(integrationsTable)
-    .where(like(integrationsTable.name, "SMM_%"))
-    .orderBy(integrationsTable.name);
-  res.json(rows.map(r => ({ ...r, value: maskValue(r.value), hasValue: !!r.value })));
+  try {
+    const rows = await db.select().from(integrationsTable)
+      .where(like(integrationsTable.name, "SMM_%"))
+      .orderBy(integrationsTable.name);
+    res.json(rows.map(r => ({ ...r, value: maskValue(r.value), hasValue: !!r.value })));
+  } catch (err) {
+    _req.log.error({ err }, "SMM settings fetch failed");
+    res.json([]);
+  }
 });
 
 router.put("/smm/settings", requireAdmin, async (req: Request, res: Response) => {

@@ -156,14 +156,22 @@ function PlatformCard({
 export default function SocialMedia() {
   const { data: platforms, isLoading: loadingPlatforms } = useQuery<PlatformsResponse>({
     queryKey: ["smm-platforms"],
-    queryFn: () => fetch(`${API}/smm/platforms`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`${API}/smm/platforms`, { credentials: "include" });
+      if (!r.ok) return { facebook: { connected: false }, instagram: { connected: false }, twitter: { connected: false }, linkedin: { connected: false }, youtube: { connected: false }, pinterest: { connected: false } } as PlatformsResponse;
+      return r.json();
+    },
     staleTime: 2 * 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
   });
 
   const { data: traffic } = useQuery<TrafficResponse>({
     queryKey: ["smm-traffic"],
-    queryFn: () => fetch(`${API}/smm/traffic`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`${API}/smm/traffic`, { credentials: "include" });
+      if (!r.ok) return { platforms: { instagram: 0, facebook: 0, twitter: 0, linkedin: 0, youtube: 0, pinterest: 0 }, total: 0 };
+      return r.json();
+    },
     staleTime: 5 * 60 * 1000,
   });
 
