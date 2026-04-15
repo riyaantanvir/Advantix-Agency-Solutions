@@ -298,14 +298,18 @@ router.get("/tools/auth/me", (req, res) => {
   }
   const adminSession = req.session as { adminId?: number; username?: string };
   if (adminSession.adminId) {
+    // Use the same @advantix.local email format as auto-login so the website's
+    // ToolsUserContext always detects admin correctly via the email pattern.
+    const adminEmail = `admin-${adminSession.adminId}@advantix.local`;
+    const adminName = adminSession.username ?? ADMIN_TOOL_USER_NAME;
     req.session.toolUserId = ADMIN_TOOL_USER_ID;
-    req.session.toolUserName = ADMIN_TOOL_USER_NAME;
-    req.session.toolUserEmail = ADMIN_TOOL_USER_EMAIL;
+    req.session.toolUserName = adminName;
+    req.session.toolUserEmail = adminEmail;
     res.json({
       user: {
         id: ADMIN_TOOL_USER_ID,
-        name: adminSession.username ?? ADMIN_TOOL_USER_NAME,
-        email: ADMIN_TOOL_USER_EMAIL,
+        name: adminName,
+        email: adminEmail,
         isAdmin: true,
       },
     });
@@ -604,7 +608,13 @@ router.post("/admin/tools/auto-login", requireAdmin, async (req, res) => {
     req.session.toolUserEmail = user.email;
     req.session.toolUserName = user.name;
 
-    res.json({ ok: true });
+    // MUST await session.save() before responding — the new tab opens
+    // immediately after this response, and the session must already be
+    // committed to PostgreSQL or the next /api/tools/auth/me will miss it.
+    req.session.save((err) => {
+      if (err) { res.status(500).json({ error: "Session save failed" }); return; }
+      res.json({ ok: true });
+    });
   } catch {
     res.status(500).json({ error: "Auto-login failed" });
   }
