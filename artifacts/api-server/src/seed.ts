@@ -776,6 +776,48 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  // ── PDF Books (AI TTS reader) ─────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS tool_pdf_books (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      title text NOT NULL,
+      filename text NOT NULL,
+      text text NOT NULL,
+      num_pages integer NOT NULL DEFAULT 1,
+      total_lines integer NOT NULL DEFAULT 0,
+      last_line integer NOT NULL DEFAULT 0,
+      created_at timestamp DEFAULT now() NOT NULL,
+      updated_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+
+  // ── Social Media Management — scheduled posts ─────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS smm_scheduled_posts (
+      id serial PRIMARY KEY,
+      platforms text NOT NULL,
+      content text NOT NULL,
+      image_url text,
+      scheduled_at timestamptz NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      published_at timestamptz,
+      error_message text,
+      created_by text,
+      created_at timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  // Ensure index for efficient SMM queries
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_smm_scheduled_posts_scheduled_at
+      ON smm_scheduled_posts (scheduled_at DESC)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_smm_scheduled_posts_status
+      ON smm_scheduled_posts (status)
+  `);
+
   logger.info("Migrations applied");
 }
 
