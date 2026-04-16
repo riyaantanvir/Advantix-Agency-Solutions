@@ -32,6 +32,16 @@ async function getGrokKey(): Promise<string | null> {
   return getDbKey("GROK_API_KEY");
 }
 
+async function getOpenRouterKey(): Promise<string | null> {
+  return getDbKey("OPENROUTER_API_KEY") ?? process.env.OPENROUTER_API_KEY ?? null;
+}
+
+async function getOpenRouter() {
+  const key = await getOpenRouterKey();
+  if (!key) throw new Error("OpenRouter API key not configured. Add OPENROUTER_API_KEY in Admin → Integrations.");
+  return createOpenAI(key, "https://openrouter.ai/api/v1");
+}
+
 async function getOpenAI() {
   const key = await getDbKey("OPENAI_API_KEY") ?? process.env.OPENAI_API_KEY ?? process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
   if (!key) throw new Error("OpenAI API key not configured. Add OPENAI_API_KEY in Admin → Integrations.");
@@ -348,9 +358,16 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
 
   // If image is attached, route to GPT-4o vision regardless of intent
   const intent = imageData ? "general" : classifyIntent(messageText);
+
+  /* Prefer OpenRouter for text generation when its key is configured */
+  const openRouterKey = await getOpenRouterKey();
+  const useOpenRouter = !!openRouterKey && !imageData && intent !== "image" && intent !== "realtime";
+
   const { provider, model, label } = imageData
     ? { provider: "openai-vision", model: "gpt-4o", label: "GPT-4o Vision" }
-    : getProvider(intent);
+    : useOpenRouter
+      ? { provider: "openrouter", model: "anthropic/claude-3.7-sonnet", label: "Claude 3.7 Sonnet (OpenRouter)" }
+      : getProvider(intent);
 
   // Update session title if first message
   if (history.length === 0) {
@@ -416,6 +433,35 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
       promptTokens = Math.ceil(message.length / 4);
       completionTokens = 500;
       res.write(`data: ${JSON.stringify({ image: { b64_json, mimeType } })}\n\n`);
+    } else if (provider === "openrouter") {
+      const chatMessages = history
+        .filter(m => m.role === "user" || m.role === "assistant")
+        .filter(m => !m.content.startsWith("[IMAGE:"))
+        .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
+      chatMessages.push({ role: "user", content: message });
+
+      const stream = await (await getOpenRouter()).chat.completions.create({
+        model,
+        max_tokens: 8192,
+        stream: true,
+        messages: [
+          { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.", memoriesContext) },
+          ...chatMessages,
+        ],
+      } as any);
+
+      for await (const chunk of (stream as any)) {
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (delta) {
+          fullResponse += delta;
+          res.write(`data: ${JSON.stringify({ content: delta })}\n\n`);
+        }
+        if (chunk.usage) {
+          promptTokens = chunk.usage.prompt_tokens ?? 0;
+          completionTokens = chunk.usage.completion_tokens ?? 0;
+        }
+      }
+      if (!promptTokens) { promptTokens = Math.ceil(message.length / 4); completionTokens = Math.ceil(fullResponse.length / 4); }
     } else if (provider === "anthropic") {
       const chatMessages = history
         .filter(m => m.role === "user" || m.role === "assistant")
