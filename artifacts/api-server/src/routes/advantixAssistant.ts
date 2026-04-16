@@ -241,74 +241,79 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
 
     type DBRow = { role: string; content: string; tool_name: string | null; tool_input: string | null; tool_result: string | null };
 
-    /* Build raw history, then validate pairs to avoid orphan tool_result errors */
-    const rawHistory: Array<{ role: "user" | "assistant"; content: string | object[] }> = [];
+    type Block = { type?: string; id?: string; tool_use_id?: string; text?: string };
+    type HistoryMsg = { role: "user" | "assistant"; content: string | object[] };
+
+    /* ── Step 1: Build flat list, merging consecutive tool_results into one user message ── */
+    const flat: HistoryMsg[] = [];
 
     for (const r of historyRows.rows as DBRow[]) {
       if (r.role === "tool") {
-        /* Only include tool_result if the previous message is an assistant turn with a matching tool_use */
-        const prev = rawHistory[rawHistory.length - 1];
-        const prevContent = prev?.content;
         const toolUseId = r.tool_name ?? "";
-        const hasMatchingToolUse =
-          prev?.role === "assistant" &&
-          Array.isArray(prevContent) &&
-          (prevContent as Array<{ type?: string; id?: string }>).some(
-            b => b.type === "tool_use" && b.id === toolUseId
-          );
-        if (!hasMatchingToolUse) continue; /* skip orphaned tool_result */
-        rawHistory.push({
-          role: "user" as const,
-          content: [{ type: "tool_result" as const, tool_use_id: toolUseId, content: r.tool_result ?? "" }],
-        });
+        /* Find the nearest preceding assistant message that has this tool_use id */
+        const assistantMsg = [...flat].reverse().find(m => m.role === "assistant" && Array.isArray(m.content));
+        const assistantHasThisToolUse = assistantMsg &&
+          (assistantMsg.content as Block[]).some(b => b.type === "tool_use" && b.id === toolUseId);
+        if (!assistantHasThisToolUse) continue; /* orphaned tool_result — skip */
+
+        /* Merge into the last user message if it's already a tool_result batch, else push new */
+        const last = flat[flat.length - 1];
+        const lastIsToolResultBatch = last?.role === "user" && Array.isArray(last.content) &&
+          (last.content as Block[]).some(b => b.type === "tool_result");
+        if (lastIsToolResultBatch) {
+          (last.content as Block[]).push({ type: "tool_result", tool_use_id: toolUseId, content: r.tool_result ?? "" });
+        } else {
+          flat.push({ role: "user", content: [{ type: "tool_result", tool_use_id: toolUseId, content: r.tool_result ?? "" }] });
+        }
         continue;
       }
       if (r.role === "assistant") {
+        if (!r.content) continue;
         try {
           const parsed = JSON.parse(r.content);
-          if (Array.isArray(parsed)) {
-            rawHistory.push({ role: "assistant" as const, content: parsed });
-            continue;
-          }
+          if (Array.isArray(parsed)) { flat.push({ role: "assistant", content: parsed }); continue; }
         } catch { /* plain text */ }
-        if (!r.content) continue; /* skip empty assistant rows */
-        rawHistory.push({ role: "assistant" as const, content: r.content });
+        flat.push({ role: "assistant", content: r.content });
         continue;
       }
-      rawHistory.push({ role: r.role as "user" | "assistant", content: r.content });
+      if (r.role === "user") {
+        flat.push({ role: "user", content: r.content });
+      }
     }
 
-    /* ── Validate: strip assistant tool_use blocks that have no matching tool_result ── */
-    type HistoryMsg = { role: "user" | "assistant"; content: string | object[] };
-    type Block = { type?: string; id?: string; tool_use_id?: string; text?: string };
-
-    const validated: HistoryMsg[] = [];
-    for (let i = 0; i < rawHistory.length; i++) {
-      const msg = rawHistory[i];
+    /* ── Step 2: Validate — for each assistant turn with tool_use, ensure all results exist ── */
+    const history: HistoryMsg[] = [];
+    for (let i = 0; i < flat.length; i++) {
+      const msg = flat[i];
       if (msg.role === "assistant" && Array.isArray(msg.content)) {
         const blocks = msg.content as Block[];
         const toolUseIds = blocks.filter(b => b.type === "tool_use").map(b => b.id!);
         if (toolUseIds.length > 0) {
-          const next = rawHistory[i + 1];
-          const nextBlocks = Array.isArray(next?.content) ? (next.content as Block[]) : [];
-          const resolvedIds = new Set(nextBlocks.filter(b => b.type === "tool_result").map(b => b.tool_use_id));
+          /* Collect ALL tool_result messages that immediately follow this assistant turn */
+          const resolvedIds = new Set<string>();
+          let j = i + 1;
+          while (j < flat.length) {
+            const next = flat[j];
+            if (next.role === "user" && Array.isArray(next.content) &&
+                (next.content as Block[]).some(b => b.type === "tool_result")) {
+              (next.content as Block[]).filter(b => b.type === "tool_result" && b.tool_use_id)
+                .forEach(b => resolvedIds.add(b.tool_use_id!));
+              j++;
+            } else break;
+          }
           const allResolved = toolUseIds.every(id => resolvedIds.has(id));
           if (!allResolved) {
-            /* Strip tool_use blocks; keep only text */
+            /* Strip tool_use blocks; keep only text content */
             const textOnly = blocks.filter(b => b.type === "text");
-            if (textOnly.length === 0) continue; /* skip entirely */
-            validated.push({ role: "assistant", content: textOnly.length === 1 ? (textOnly[0].text ?? "") : textOnly });
-            /* Also skip the next message if it's a partial tool_result turn */
-            if (next?.role === "user" && Array.isArray(next.content) && nextBlocks.some(b => b.type === "tool_result")) {
-              i++; /* skip next */
-            }
+            if (textOnly.length === 0) { i = j - 1; continue; }
+            history.push({ role: "assistant", content: textOnly.length === 1 ? (textOnly[0].text ?? "") : textOnly });
+            i = j - 1; /* skip the tool_result messages too */
             continue;
           }
         }
       }
-      validated.push(msg);
+      history.push(msg);
     }
-    const history = validated;
 
     /* ── Store user message ── */
     await db.execute(sql`
