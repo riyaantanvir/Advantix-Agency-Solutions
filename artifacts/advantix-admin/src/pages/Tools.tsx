@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Link2, Video, ArrowRight, Zap, Sparkles, Shield, ExternalLink, Loader2, Headphones } from "lucide-react";
+import { Link2, Video, ArrowRight, Zap, Sparkles, ExternalLink, Loader2, Headphones } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 
@@ -43,18 +43,6 @@ const tools = [
     badge: null,
     badgeColor: "",
     linkLabel: "Open Screen Recorder",
-  },
-  {
-    icon: Shield,
-    name: "War Update",
-    description: "Real-time conflict and war zone updates — curated, verified, and delivered fast. Stay informed on the latest developments worldwide.",
-    href: "/tools/war-update",
-    color: "text-red-400",
-    bg: "bg-red-500/10",
-    border: "border-border/50 hover:border-red-500/40",
-    badge: "New",
-    badgeColor: "bg-red-500/10 text-red-400 border-red-500/20",
-    linkLabel: "Open War Update",
   },
   {
     icon: Headphones,
