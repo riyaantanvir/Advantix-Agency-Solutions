@@ -197,6 +197,11 @@ app.use(redirectRouter);
 // limiters applied directly in their router files.
 app.use("/api", apiLimiter);
 
+// ── Health check — used by DigitalOcean App Platform & load balancers ───────
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 // ── API routes ────────────────────────────────────────────────────────────────
 app.use("/api", router);
 

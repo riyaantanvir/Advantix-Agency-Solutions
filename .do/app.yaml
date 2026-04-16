@@ -40,7 +40,7 @@ services:
     instance_count: 1
     instance_size_slug: basic-xxs
     health_check:
-      http_path: /api/health
+      http_path: /health
       initial_delay_seconds: 30
       period_seconds: 30
       timeout_seconds: 10
@@ -64,6 +64,10 @@ services:
       - key: OPENAI_API_KEY
         type: SECRET
       - key: ANTHROPIC_API_KEY
+        type: SECRET
+      - key: GEMINI_API_KEY
+        type: SECRET
+      - key: OPENROUTER_API_KEY
         type: SECRET
       - key: GOOGLE_AI_API_KEY
         type: SECRET
