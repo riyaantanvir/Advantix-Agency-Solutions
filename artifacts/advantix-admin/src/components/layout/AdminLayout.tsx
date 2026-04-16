@@ -43,10 +43,11 @@ import {
   FileText,
   PenTool,
   ImagePlay,
+  Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-type NavLink = { path: string; label: string; icon: React.ComponentType<{ className?: string }> };
+type NavLink = { path: string; label: string; icon: React.ComponentType<{ className?: string }>; href?: string };
 
 type NavGroup = {
   label: string;
@@ -62,6 +63,7 @@ function isGroup(item: NavItem): item is NavGroup {
 
 const navItems: NavItem[] = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/tools-dashboard", label: "Tools Dashboard", icon: Wrench, href: "/tools/dashboard" },
   {
     label: "Management",
     icon: CheckSquare,
@@ -221,21 +223,32 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
   };
 
   const renderLink = (link: NavLink, indent = false) => {
-    const isActive = location === link.path;
+    const isActive = !link.href && location === link.path;
     const Icon = link.icon;
     const badge = badgeFor(link.path);
+    const cls = `flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group text-sm ${
+      indent ? "ml-3 pl-5" : ""
+    } ${
+      isActive
+        ? "bg-primary/10 text-primary font-semibold"
+        : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground font-medium"
+    }`;
+
+    if (link.href) {
+      return (
+        <a key={link.path} href={link.href} className={cls} onClick={() => setIsMobileMenuOpen(false)}>
+          <Icon className="w-4 h-4 shrink-0 transition-colors group-hover:text-foreground" />
+          <span className="truncate flex-1">{link.label}</span>
+        </a>
+      );
+    }
+
     return (
       <Link
         key={link.path}
         href={link.path}
         onClick={() => setIsMobileMenuOpen(false)}
-        className={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group text-sm ${
-          indent ? "ml-3 pl-5" : ""
-        } ${
-          isActive
-            ? "bg-primary/10 text-primary font-semibold"
-            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground font-medium"
-        }`}
+        className={cls}
       >
         <Icon className={`w-4 h-4 shrink-0 transition-colors ${isActive ? "text-primary" : "group-hover:text-foreground"}`} />
         <span className="truncate flex-1">{link.label}</span>
