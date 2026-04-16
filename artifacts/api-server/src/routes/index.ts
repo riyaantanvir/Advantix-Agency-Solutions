@@ -40,6 +40,7 @@ import contentStudioRouter from "./contentStudio.js";
 import toolPermissionsRouter from "./toolPermissions.js";
 import adminPermissionsRouter, { ensureAdminPermissionsTable } from "./adminPermissions.js";
 import adminToolsStatsRouter from "./adminToolsStats.js";
+import adminOverviewStatsRouter from "./adminOverviewStats.js";
 
 const router: IRouter = Router();
 
@@ -86,5 +87,6 @@ router.use(contentStudioRouter);
 router.use(toolPermissionsRouter);
 router.use(adminPermissionsRouter);
 router.use(adminToolsStatsRouter);
+router.use(adminOverviewStatsRouter);
 
 export default router;
