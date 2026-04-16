@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Link2, Video, ArrowRight, Zap, Sparkles, ExternalLink, Loader2, Headphones } from "lucide-react";
+import { Link2, Video, ArrowRight, Zap, Sparkles, ExternalLink, Loader2, Headphones, Terminal } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 
@@ -55,6 +55,18 @@ const tools = [
     badge: "New",
     badgeColor: "bg-rose-500/10 text-rose-400 border-rose-500/20",
     linkLabel: "Open PDF to Audio",
+  },
+  {
+    icon: Terminal,
+    name: "Advantix Assistant",
+    description: "An AI agent that controls your local machine. Run terminal commands, read and write files, open VS Code — all from a chat interface. Connect your agent once and let AI do the work.",
+    href: "/tools/assistant",
+    color: "text-green-400",
+    bg: "bg-green-500/10",
+    border: "border-border/50 hover:border-green-500/40",
+    badge: "Beta",
+    badgeColor: "bg-green-500/10 text-green-400 border-green-500/20",
+    linkLabel: "Open Advantix Assistant",
   },
 ];
 
