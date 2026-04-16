@@ -417,15 +417,56 @@ function SettingsModal({
                 <Terminal className="w-4 h-4 text-primary" /> Agent Script
               </h3>
               <div className="rounded-xl border border-border/40 bg-secondary/20 p-4 space-y-3">
-                <p className="text-xs text-muted-foreground">Download the zero-dependency agent script and run it on your local machine. Requires Node.js v22+.</p>
-                <button
-                  onClick={downloadAgent}
-                  className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border/50 text-foreground rounded-lg text-sm font-semibold hover:bg-secondary/80 transition-colors"
-                >
-                  <Download className="w-4 h-4 text-primary" /> Download agent.mjs
-                </button>
-                <div className="bg-black/50 rounded-lg px-3 py-2.5 border border-border/30">
-                  <code className="text-xs text-green-400 font-mono">node agent.mjs --key YOUR_KEY</code>
+                <p className="text-xs text-muted-foreground">
+                  Download the agent script, then open a terminal and run it from the folder you saved it to. Requires Node.js v22+.
+                </p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={downloadAgent}
+                    className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border/50 text-foreground rounded-lg text-sm font-semibold hover:bg-secondary/80 transition-colors"
+                  >
+                    <Download className="w-4 h-4 text-primary" /> Download agent.mjs
+                  </button>
+                </div>
+
+                {/* Step-by-step run instructions */}
+                <div className="space-y-2">
+                  <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Run command</p>
+                  <div className="bg-black/60 rounded-lg p-3 border border-border/30 space-y-1.5">
+                    <div className="flex items-start gap-2">
+                      <span className="text-muted-foreground text-xs mt-0.5 select-none shrink-0">1.</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] text-muted-foreground mb-0.5">Navigate to the folder where you downloaded it (e.g. Downloads)</p>
+                        <code className="text-xs text-amber-400 font-mono">cd ~/Downloads</code>
+                      </div>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText("cd ~/Downloads"); setCopied("cd"); setTimeout(() => setCopied(null), 1500); }}
+                        className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                        title="Copy"
+                      >
+                        {copied === "cd" ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-muted-foreground text-xs mt-0.5 select-none shrink-0">2.</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] text-muted-foreground mb-0.5">Start the agent</p>
+                        <code className="text-xs text-green-400 font-mono break-all">{runCmd}</code>
+                      </div>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(runCmd); setCopied("runcmd"); setTimeout(() => setCopied(null), 1500); }}
+                        className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                        title="Copy"
+                      >
+                        {copied === "runcmd" ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                  {!newKey && (
+                    <p className="text-[10px] text-amber-400 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3 h-3 shrink-0" /> Generate or regenerate your API key above to see your actual key in the command.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
