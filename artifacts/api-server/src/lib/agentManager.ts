@@ -32,13 +32,14 @@ type AgentEntry = {
   info: AgentSystemInfo | null;
   pending: Map<string, PendingToolCall>;
   pingTimer: ReturnType<typeof setTimeout> | null;
+  deadTimer: ReturnType<typeof setTimeout> | null;
   alive: boolean;
 };
 
 const agents = new Map<number, AgentEntry>();
 
-const PING_INTERVAL_MS = 25_000;
-const PONG_TIMEOUT_MS  = 10_000;
+const PING_INTERVAL_MS = 20_000;
+const PONG_TIMEOUT_MS  = 15_000;
 
 function schedulePing(entry: AgentEntry): void {
   if (entry.pingTimer) clearTimeout(entry.pingTimer);
@@ -51,47 +52,52 @@ function schedulePing(entry: AgentEntry): void {
 
     entry.alive = false;
 
+    /* Send JSON-level ping — works with any WebSocket client (browser, Node built-in, ws) */
     try {
-      entry.ws.ping();
+      entry.ws.send(JSON.stringify({ type: "ping" }));
     } catch {
       removeAgent(entry.userId);
       return;
     }
 
-    /* If no pong arrives within PONG_TIMEOUT_MS, terminate the connection */
-    const deadTimer = setTimeout(() => {
+    /* If no JSON pong arrives within PONG_TIMEOUT_MS, terminate the connection */
+    if (entry.deadTimer) clearTimeout(entry.deadTimer);
+    entry.deadTimer = setTimeout(() => {
       if (!entry.alive) {
         try { entry.ws.terminate(); } catch {}
         removeAgent(entry.userId);
       }
     }, PONG_TIMEOUT_MS);
-
-    /* Listen for the pong and mark alive; also send JSON ping for older agent scripts */
-    const pongHandler = () => {
-      entry.alive = true;
-      clearTimeout(deadTimer);
-      schedulePing(entry);
-    };
-    entry.ws.once("pong", pongHandler);
-
-    /* Also send legacy JSON ping so old agent.mjs versions still respond */
-    try {
-      entry.ws.send(JSON.stringify({ type: "ping" }));
-    } catch {}
   }, PING_INTERVAL_MS);
+}
+
+/**
+ * Called when the agent sends a JSON {"type":"pong"} message.
+ * Marks the connection alive and reschedules the next ping.
+ */
+export function markAgentAlive(userId: number): void {
+  const entry = agents.get(userId);
+  if (!entry) return;
+  entry.alive = true;
+  if (entry.deadTimer) { clearTimeout(entry.deadTimer); entry.deadTimer = null; }
+  schedulePing(entry);
 }
 
 export function registerAgent(userId: number, ws: WebSocket, info: AgentSystemInfo | null = null): void {
   const existing = agents.get(userId);
   if (existing) {
     if (existing.pingTimer) clearTimeout(existing.pingTimer);
+    if (existing.deadTimer) clearTimeout(existing.deadTimer);
     try { existing.ws.close(); } catch {}
     existing.pending.forEach(({ reject, timer }) => {
       clearTimeout(timer);
       reject(new Error("Agent reconnected — previous connection closed"));
     });
   }
-  const entry: AgentEntry = { ws, userId, info, pending: new Map(), pingTimer: null, alive: true };
+  const entry: AgentEntry = {
+    ws, userId, info, pending: new Map(),
+    pingTimer: null, deadTimer: null, alive: true,
+  };
   agents.set(userId, entry);
   schedulePing(entry);
 }
@@ -105,6 +111,7 @@ export function removeAgent(userId: number): void {
   const entry = agents.get(userId);
   if (!entry) return;
   if (entry.pingTimer) clearTimeout(entry.pingTimer);
+  if (entry.deadTimer) clearTimeout(entry.deadTimer);
   entry.pending.forEach(({ reject, timer }) => {
     clearTimeout(timer);
     reject(new Error("Agent disconnected"));

@@ -7,7 +7,7 @@ import { requireAdmin } from "../middleware/auth.js";
 import { getAgentScript } from "../lib/agentScript.js";
 import {
   isAgentConnected, getAgentInfo, sendToolCall, registerAgent,
-  setAgentInfo, removeAgent, resolveToolCall,
+  setAgentInfo, removeAgent, resolveToolCall, markAgentAlive,
   type AgentSystemInfo, type ToolResult,
 } from "../lib/agentManager.js";
 import type WebSocket from "ws";
@@ -885,7 +885,7 @@ export async function handleAgentWebSocket(ws: WebSocket, req: IncomingMessage):
         return;
       }
 
-      if (msg.type === "pong") return;
+      if (msg.type === "pong") { markAgentAlive(uid); return; }
     } catch { /* ignore parse errors */ }
   });
 
