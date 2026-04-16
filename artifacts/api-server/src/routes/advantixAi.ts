@@ -442,7 +442,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
 
       const stream = await (await getOpenRouter()).chat.completions.create({
         model,
-        max_tokens: 8192,
+        max_tokens: 2048,
         stream: true,
         messages: [
           { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.", memoriesContext) },
