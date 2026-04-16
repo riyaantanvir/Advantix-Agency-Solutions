@@ -106,7 +106,9 @@ async function executeTool(tool, input) {
     }
 
     case "write_file": {
-      const { path: filePath, content, append = false } = input;
+      const { path: filePath, content: rawContent, append = false } = input;
+      if (!filePath) return { stdout: "", stderr: "write_file: 'path' is required", exitCode: 1 };
+      const content = typeof rawContent === "string" ? rawContent : rawContent == null ? "" : String(rawContent);
       const abs = path.resolve(filePath);
       const dir = path.dirname(abs);
       if (!existsSync(dir)) await mkdir(dir, { recursive: true });

@@ -674,6 +674,12 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
         const toolName = tc.name;
         const toolInput = tc.input as Record<string, unknown>;
 
+        /* Sanitize write_file input before forwarding to agent */
+        if (toolName === "write_file") {
+          if (toolInput.content == null) toolInput.content = "";
+          else if (typeof toolInput.content !== "string") toolInput.content = String(toolInput.content);
+        }
+
         sse(res, { type: "tool_start", id: toolId, tool: toolName, input: toolInput });
 
         let result: ToolResult;
