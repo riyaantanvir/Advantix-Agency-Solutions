@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import { requireAdmin } from "../middleware/auth.js";
 import { ADMIN_TOOL_USER_ID, ADMIN_TOOL_USER_NAME, ADMIN_TOOL_USER_EMAIL } from "../middleware/toolAuth.js";
 import { sendEmail } from "../services/resendMailer.js";
+import { applyDefaultPermissions } from "./toolPermissions.js";
 
 const router = Router();
 
@@ -129,6 +130,9 @@ router.post("/tools/auth/register", async (req, res) => {
         emailVerified: true,
       })
       .returning({ id: toolUsersTable.id, name: toolUsersTable.name, email: toolUsersTable.email });
+
+    // Apply default tool permissions (non-blocking)
+    applyDefaultPermissions(user.id).catch(() => {});
 
     // Auto-subscribe to blog
     db.execute(sql`
@@ -497,6 +501,9 @@ router.get("/tools/auth/google/callback", async (req, res) => {
           emailVerified: true,
         })
         .returning();
+
+      // Apply default tool permissions (non-blocking)
+      applyDefaultPermissions(user.id).catch(() => {});
 
       // Auto-subscribe
       db.execute(sql`

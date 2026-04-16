@@ -484,6 +484,17 @@ export async function runMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS user_tool_permissions (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      tool_slug text NOT NULL,
+      enabled boolean DEFAULT true NOT NULL,
+      granted_at timestamp DEFAULT now() NOT NULL,
+      UNIQUE(user_id, tool_slug)
+    )
+  `);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS bug_reports (
       id serial PRIMARY KEY,
       title text NOT NULL,

@@ -37,6 +37,7 @@ import toolsPdfAudioRouter from "./toolsPdfAudio.js";
 import toolsTtsRouter from "./toolsTts.js";
 import smmRouter from "./smm.js";
 import contentStudioRouter from "./contentStudio.js";
+import toolPermissionsRouter from "./toolPermissions.js";
 
 const router: IRouter = Router();
 
@@ -78,5 +79,6 @@ router.use(toolsPdfAudioRouter);
 router.use(toolsTtsRouter);
 router.use(smmRouter);
 router.use(contentStudioRouter);
+router.use(toolPermissionsRouter);
 
 export default router;

@@ -1,15 +1,32 @@
-import { lazy, Suspense, useEffect } from "react";
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import React, { lazy, Suspense, useEffect } from "react";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { ToolsUserProvider } from "@/context/ToolsUserContext";
+import { ToolsUserProvider, useToolsUser } from "@/context/ToolsUserContext";
 import { PageTracker } from "@/components/PageTracker";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 import { EmailCaptureModal } from "@/components/EmailCaptureModal";
 import { StickyCTABar } from "@/components/StickyCTABar";
+
+function ToolGuard({ slug, children }: { slug: string; children: React.ReactNode }) {
+  const { user, allowedTools, loading } = useToolsUser();
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) return;
+    if (allowedTools && !allowedTools.includes(slug)) {
+      navigate("/tools");
+    }
+  }, [user, allowedTools, loading, slug, navigate]);
+
+  if (loading) return null;
+  if (user && allowedTools && !allowedTools.includes(slug)) return null;
+  return <>{children}</>;
+}
 
 function GoogleAnalytics() {
   const { data } = useQuery<{ googleAnalyticsId: string }>({
@@ -98,11 +115,17 @@ function Router() {
               <Route path="/contact" component={Contact} />
               <Route path="/login" component={Login} />
               <Route path="/reset-password" component={ResetPassword} />
-              <Route path="/tools/pdf-audio" component={PdfAudio} />
+              <Route path="/tools/pdf-audio">
+                <ToolGuard slug="pdf-audio"><PdfAudio /></ToolGuard>
+              </Route>
               <Route path="/tools" component={Tools} />
               <Route path="/tools/dashboard" component={ToolsDashboard} />
-              <Route path="/tools/url-shortener" component={UrlShortener} />
-              <Route path="/tools/screen-recorder" component={ScreenRecorder} />
+              <Route path="/tools/url-shortener">
+                <ToolGuard slug="url-shortener"><UrlShortener /></ToolGuard>
+              </Route>
+              <Route path="/tools/screen-recorder">
+                <ToolGuard slug="screen-recorder"><ScreenRecorder /></ToolGuard>
+              </Route>
               <Route path="/tools/war-update" component={WarUpdate} />
               <Route path="/tools/settings" component={AccountSettings} />
               <Route path="/careers" component={Careers} />
