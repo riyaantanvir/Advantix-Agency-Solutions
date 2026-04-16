@@ -22,10 +22,10 @@ router.get("/admin/overview-stats", requireAdmin, async (_req: Request, res: Res
              UNION ALL
              SELECT 1 FROM url_clicks c
                JOIN short_urls s ON s.id = c.url_id
-               WHERE s.user_id = u.id AND c.clicked_at > NOW() - INTERVAL '30 days'
+               WHERE s.user_id = u.id AND c.created_at > NOW() - INTERVAL '30 days'
            )
         )                                                                                          AS active_users_30d,
-        (SELECT COUNT(*)::int FROM ai_usage_logs)                                                  AS total_ai_requests,
+        ((SELECT COUNT(*)::int FROM ai_usage_logs) + (SELECT COUNT(*)::int FROM agent_usage))      AS total_ai_requests,
         (SELECT COUNT(*)::int FROM conversations WHERE has_unread_admin = true)                    AS pending_chat_requests,
         (SELECT COUNT(*)::int FROM tasks WHERE status NOT IN ('done','completed','cancelled','closed')) AS pending_tasks,
         (SELECT COUNT(*)::int FROM bug_reports WHERE status NOT IN ('resolved','closed'))          AS pending_bugs,
