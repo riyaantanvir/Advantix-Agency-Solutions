@@ -228,15 +228,15 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
   const agentConnected = isAgentConnected(uid);
   const agentInfo = getAgentInfo(uid);
   const sysContext = agentConnected && agentInfo
-    ? `The user has a local agent connected running on ${agentInfo.os} (${agentInfo.platform}/${agentInfo.arch}). Hostname: ${agentInfo.hostname}. Username: ${agentInfo.username}. Shell: ${agentInfo.shell}. CWD: ${agentInfo.cwd}. Node: ${agentInfo.nodeVersion}. VS Code available: ${agentInfo.hasVscode}. You CAN use tools to execute commands and work directly on their machine.`
-    : "The user's local agent is NOT currently connected. Explain that they need to run the agent on their machine first using the setup instructions on the page. You can still answer questions and help plan — but you cannot execute commands.";
+    ? `Agent connected. OS: ${agentInfo.os}, Shell: ${agentInfo.shell}, CWD: ${agentInfo.cwd}, User: ${agentInfo.username}, VSCode: ${agentInfo.hasVscode}. Use tools to control the machine.`
+    : "No agent connected. Tell the user to start the agent first. Answer questions but cannot run commands.";
 
   try {
-    /* ── Load history ── */
+    /* ── Load history — only last 10 rows for minimal context ── */
     const historyRows = await db.execute(sql`
       SELECT role, content, tool_name, tool_input, tool_result
       FROM agent_messages WHERE user_id = ${uid}
-      ORDER BY created_at DESC LIMIT 30
+      ORDER BY created_at DESC LIMIT 10
     `);
     /* Reverse so oldest-first */
     (historyRows.rows as unknown[]).reverse();
@@ -262,7 +262,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
         const last = flat[flat.length - 1];
         const lastIsToolResultBatch = last?.role === "user" && Array.isArray(last.content) &&
           (last.content as Block[]).some(b => b.type === "tool_result");
-        const HIST_MAX = 2000;
+        const HIST_MAX = 800;
         const resultContent = (r.tool_result ?? "").length > HIST_MAX
           ? (r.tool_result ?? "").slice(0, HIST_MAX) + "\n...(truncated)"
           : (r.tool_result ?? "");
@@ -348,9 +348,11 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     let totalTokens = 0;
     const MAX_TOOL_ROUNDS = 8;
 
-    /* ── Helper: call Claude with retry on rate_limit_error ── */
-    const callClaude = async (msgs: typeof messages, retries = 3): Promise<Response> => {
-      for (let attempt = 0; attempt < retries; attempt++) {
+    /* ── Helper: call Claude — unlimited retries on rate limit, exponential backoff ── */
+    const callClaude = async (msgs: typeof messages, isToolRound = false): Promise<Response> => {
+      const WAIT_STEPS = [10, 20, 30, 60]; // seconds to wait per attempt
+      let attempt = 0;
+      while (true) {
         const r = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
@@ -360,34 +362,38 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
           },
           body: JSON.stringify({
             model: "claude-sonnet-4-5",
-            max_tokens: 4096,
-            system: `You are Advantix Assistant — an expert AI agent that can directly control the user's computer through their local agent. You can run any terminal command, read/write files, open VS Code, and more. Always be precise, safe, and explain what you're doing before doing it. If a task requires multiple steps, execute them one by one and report results. ${sysContext}`,
+            /* Tool rounds only need short responses; final answer can be full */
+            max_tokens: isToolRound ? 1024 : 4096,
+            system: `You are Advantix Assistant — an AI agent that controls the user's machine via tools. Be concise. ${sysContext}`,
             tools: agentConnected ? TOOLS_DEF : [],
             messages: msgs,
           }),
         });
         if (r.ok) return r;
-        /* Check if rate limit — wait and retry */
         const errText = await r.text();
         let isRateLimit = false;
         try { isRateLimit = JSON.parse(errText)?.error?.type === "rate_limit_error"; } catch {}
-        if (isRateLimit && attempt < retries - 1) {
-          const waitSecs = (attempt + 1) * 8;
-          sse(res, { type: "content", delta: `\n\n_Rate limit reached — waiting ${waitSecs}s and retrying…_\n\n` });
+        if (isRateLimit) {
+          const waitSecs = WAIT_STEPS[Math.min(attempt, WAIT_STEPS.length - 1)];
+          sse(res, { type: "content", delta: `\n\n_Rate limit — waiting ${waitSecs}s…_\n\n` });
           await new Promise(resolve => setTimeout(resolve, waitSecs * 1000));
+          attempt++;
           continue;
         }
-        /* Non-rate-limit error or out of retries — throw so outer try/catch can handle */
         throw new Error(`Claude API error: ${errText}`);
       }
-      throw new Error("Max retries exceeded");
     };
 
     /* ══ Agentic loop ══════════════════════════════════════════════════════ */
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      /* Round 0 uses full history; later rounds use only the session chain
-         to avoid re-sending history + previous tool output on every loop */
-      const claudeRes = await callClaude(round === 0 ? messages : sessionMessages);
+      /* Round 0 uses full history; later rounds use only the session chain.
+         Tool rounds use lower max_tokens to save output credits. */
+      const hasTools = agentConnected && TOOLS_DEF.length > 0;
+      const claudeRes = await callClaude(
+        round === 0 ? messages : sessionMessages,
+        /* isToolRound: true for all but the last allowed round (likely a final text answer) */
+        hasTools && round < MAX_TOOL_ROUNDS - 1,
+      );
 
       const claudeData = await claudeRes.json() as {
         content: Array<{ type: string; text?: string; id?: string; name?: string; input?: object }>;
@@ -447,7 +453,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
           ? `ERROR: ${result.error}`
           : [result.stdout, result.stderr ? `STDERR: ${result.stderr}` : ""].filter(Boolean).join("\n");
 
-        const MAX_OUTPUT = 3000;
+        const MAX_OUTPUT = 1500;
         const toolOutput = rawOutput.length > MAX_OUTPUT
           ? rawOutput.slice(0, MAX_OUTPUT) + `\n...(truncated — ${rawOutput.length - MAX_OUTPUT} chars omitted)`
           : rawOutput;
