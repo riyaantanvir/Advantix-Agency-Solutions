@@ -4,7 +4,7 @@ import {
   Terminal, Wifi, WifiOff, Key, RefreshCw, Copy, Download, Trash2,
   ChevronDown, ChevronRight, Send, Loader2, CheckCircle2, XCircle,
   FolderOpen, FileText, Edit3, Monitor, Zap, AlertTriangle, Info,
-  RotateCcw, Bot, User,
+  Bot, User, Settings, X, Shield, Clock, Calendar,
 } from "lucide-react";
 import { useToolsUser } from "@/context/ToolsUserContext";
 import { useLocation } from "wouter";
@@ -37,6 +37,13 @@ type Message = {
   tools?: ToolExecution[];
   streaming?: boolean;
   error?: string;
+};
+
+type KeyInfo = {
+  exists: boolean;
+  preview?: string;
+  createdAt?: string;
+  lastConnectedAt?: string | null;
 };
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
@@ -116,16 +123,12 @@ function MessageBubble({ msg }: { msg: Message }) {
           <Bot className="w-4 h-4 text-primary" />
         </div>
       )}
-
       <div className={`max-w-[85%] space-y-2 ${isUser ? "items-end" : "items-start"} flex flex-col`}>
-        {/* Tool executions */}
         {msg.tools && msg.tools.length > 0 && (
           <div className="w-full space-y-1.5">
             {msg.tools.map(t => <ToolCard key={t.id} tool={t} />)}
           </div>
         )}
-
-        {/* Text content */}
         {(msg.content || msg.streaming) && (
           <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
             isUser
@@ -136,7 +139,6 @@ function MessageBubble({ msg }: { msg: Message }) {
             {msg.streaming && <span className="ml-1 inline-block w-1.5 h-4 bg-current align-middle animate-pulse rounded-sm" />}
           </div>
         )}
-
         {msg.error && (
           <div className="px-4 py-3 rounded-2xl text-sm bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -144,7 +146,6 @@ function MessageBubble({ msg }: { msg: Message }) {
           </div>
         )}
       </div>
-
       {isUser && (
         <div className="w-8 h-8 rounded-full bg-secondary border border-border/40 flex items-center justify-center shrink-0 mt-0.5">
           <User className="w-4 h-4 text-muted-foreground" />
@@ -155,41 +156,268 @@ function MessageBubble({ msg }: { msg: Message }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ */
+/*  Settings Modal                                                             */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+function SettingsModal({
+  open,
+  onClose,
+  keyInfo,
+  onRegenerate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  keyInfo: KeyInfo | null;
+  onRegenerate: () => Promise<{ key: string; preview: string }>;
+}) {
+  const [newKey, setNewKey] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [revokeConfirm, setRevokeConfirm] = useState(false);
+
+  const serverBase = window.location.origin;
+
+  const copyText = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(label);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  };
+
+  const handleRegenerate = async () => {
+    setLoading(true);
+    try {
+      const result = await onRegenerate();
+      setNewKey(result.key);
+      setPreview(result.preview);
+      setRevokeConfirm(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRevoke = async () => {
+    await fetch("/api/tools/assistant/key", { method: "DELETE", credentials: "include" });
+    setNewKey(null);
+    setPreview(null);
+    setRevokeConfirm(false);
+    onClose();
+  };
+
+  const downloadAgent = () => {
+    const a = document.createElement("a");
+    a.href = "/api/tools/assistant/agent.mjs";
+    a.download = "agent.mjs";
+    a.click();
+  };
+
+  const runCmd = newKey
+    ? `node agent.mjs --key ${newKey} --server ${serverBase}`
+    : `node agent.mjs --key YOUR_KEY --server ${serverBase}`;
+
+  if (!open) return null;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 10 }}
+          className="w-full max-w-lg bg-card border border-border/60 rounded-2xl shadow-2xl overflow-hidden"
+        >
+          {/* Header */}
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-border/50">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Settings className="w-4.5 h-4.5 text-primary" />
+            </div>
+            <div>
+              <h2 className="font-display font-bold text-foreground text-base">Agent Settings</h2>
+              <p className="text-xs text-muted-foreground">Manage your API key and agent connection</p>
+            </div>
+            <button onClick={onClose} className="ml-auto p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+
+            {/* ── New key revealed ── */}
+            {newKey && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3"
+              >
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <p className="text-sm font-semibold text-amber-400">Save this key now — it won't be shown again!</p>
+                </div>
+                <div className="bg-black/40 rounded-lg p-3 border border-amber-500/20 flex items-start gap-3">
+                  <code className="text-sm text-amber-300 font-mono break-all flex-1 leading-relaxed">{newKey}</code>
+                  <button
+                    onClick={() => copyText(newKey, "newkey")}
+                    className="shrink-0 text-amber-400 hover:text-amber-300 transition-colors mt-0.5"
+                  >
+                    {copied === "newkey" ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground font-medium">Ready-to-use command:</p>
+                  <div className="bg-black/50 rounded-lg px-3 py-2.5 border border-border/30 flex items-center gap-2">
+                    <code className="text-xs text-green-400 font-mono flex-1 break-all">{runCmd}</code>
+                    <button onClick={() => copyText(runCmd, "cmd")} className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
+                      {copied === "cmd" ? <CheckCircle2 className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── Current key info ── */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Key className="w-4 h-4 text-primary" /> API Key
+              </h3>
+
+              {(keyInfo?.exists || preview) ? (
+                <div className="rounded-xl border border-border/40 bg-secondary/20 p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <Shield className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-mono text-foreground font-semibold">{preview ?? keyInfo?.preview}</p>
+                      <p className="text-xs text-muted-foreground">Key stored securely (hash only)</p>
+                    </div>
+                  </div>
+                  {keyInfo?.createdAt && (
+                    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground pt-1 border-t border-border/30">
+                      <span className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5" />
+                        Created {new Date(keyInfo.createdAt).toLocaleDateString()}
+                      </span>
+                      {keyInfo.lastConnectedAt && (
+                        <span className="flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5" />
+                          Last connected {new Date(keyInfo.lastConnectedAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-border/40 p-4 text-center text-sm text-muted-foreground">
+                  No API key yet. Generate one below.
+                </div>
+              )}
+
+              {/* Regenerate */}
+              <button
+                onClick={handleRegenerate}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all disabled:opacity-60"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                {keyInfo?.exists || preview ? "Regenerate API Key" : "Generate API Key"}
+              </button>
+              {(keyInfo?.exists || preview) && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Regenerating will invalidate your current key — the agent will disconnect and need to be restarted with the new key.
+                </p>
+              )}
+            </div>
+
+            {/* ── Download agent ── */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-primary" /> Agent Script
+              </h3>
+              <div className="rounded-xl border border-border/40 bg-secondary/20 p-4 space-y-3">
+                <p className="text-xs text-muted-foreground">Download the zero-dependency agent script and run it on your local machine. Requires Node.js v22+.</p>
+                <button
+                  onClick={downloadAgent}
+                  className="flex items-center gap-2 px-4 py-2 bg-secondary border border-border/50 text-foreground rounded-lg text-sm font-semibold hover:bg-secondary/80 transition-colors"
+                >
+                  <Download className="w-4 h-4 text-primary" /> Download agent.mjs
+                </button>
+                <div className="bg-black/50 rounded-lg px-3 py-2.5 border border-border/30">
+                  <code className="text-xs text-green-400 font-mono">node agent.mjs --key YOUR_KEY</code>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Revoke ── */}
+            <div className="space-y-2 pt-2 border-t border-border/30">
+              <h3 className="text-sm font-semibold text-red-400 flex items-center gap-2">
+                <XCircle className="w-4 h-4" /> Danger Zone
+              </h3>
+              {!revokeConfirm ? (
+                <button
+                  onClick={() => setRevokeConfirm(true)}
+                  className="text-sm text-red-400 hover:text-red-300 transition-colors flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Revoke and delete API key
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-red-400 flex-1">Are you sure? The agent will stop working.</p>
+                  <button onClick={handleRevoke} className="text-xs px-3 py-1.5 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 transition-colors">Delete</button>
+                  <button onClick={() => setRevokeConfirm(false)} className="text-xs px-3 py-1.5 bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors">Cancel</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
 /*  Main page                                                                  */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
 export default function AssistantPage() {
-  const { user } = useToolsUser();
+  const { user, loading } = useToolsUser();
   const [, navigate] = useLocation();
 
-  /* ── State ── */
-  const [keyInfo, setKeyInfo] = useState<{ exists: boolean; preview?: string; createdAt?: string } | null>(null);
-  const [newKey, setNewKey]   = useState<string | null>(null);
+  const [keyInfo, setKeyInfo] = useState<KeyInfo | null>(null);
   const [agentStatus, setAgentStatus] = useState<{ connected: boolean; info: AgentInfo | null }>({ connected: false, info: null });
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [newKeyForSidebar, setNewKeyForSidebar] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  if (!user) { navigate("/login"); return null; }
+  useEffect(() => {
+    if (!loading && !user) navigate("/login");
+  }, [user, loading, navigate]);
 
-  /* ── Scroll to bottom ── */
+  const serverBase = window.location.origin;
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  /* ── Load key info ── */
   useEffect(() => {
     fetch("/api/tools/assistant/key", { credentials: "include" })
       .then(r => r.json()).then(setKeyInfo).catch(() => {});
   }, []);
 
-  /* ── Load chat history ── */
   useEffect(() => {
     if (historyLoaded) return;
     fetch("/api/tools/assistant/history", { credentials: "include" })
@@ -206,7 +434,6 @@ export default function AssistantPage() {
       }).catch(() => {});
   }, [historyLoaded]);
 
-  /* ── Poll agent status ── */
   useEffect(() => {
     const poll = async () => {
       try {
@@ -221,15 +448,14 @@ export default function AssistantPage() {
     return () => clearInterval(t);
   }, []);
 
-  /* ── Generate API key ── */
-  const generateKey = async () => {
+  const handleRegenerate = async (): Promise<{ key: string; preview: string }> => {
     const r = await fetch("/api/tools/assistant/key", { method: "POST", credentials: "include" });
     const data = await r.json();
-    setNewKey(data.key);
+    setNewKeyForSidebar(data.key);
     setKeyInfo({ exists: true, preview: data.preview, createdAt: new Date().toISOString() });
+    return data;
   };
 
-  /* ── Copy to clipboard ── */
   const copyText = (text: string, label: string) => {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(label);
@@ -237,7 +463,6 @@ export default function AssistantPage() {
     });
   };
 
-  /* ── Download agent ── */
   const downloadAgent = () => {
     const a = document.createElement("a");
     a.href = "/api/tools/assistant/agent.mjs";
@@ -245,14 +470,12 @@ export default function AssistantPage() {
     a.click();
   };
 
-  /* ── Clear history ── */
   const clearHistory = async () => {
     await fetch("/api/tools/assistant/history", { method: "DELETE", credentials: "include" });
     setMessages([]);
     setHistoryLoaded(true);
   };
 
-  /* ── Send message ── */
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || sending) return;
@@ -289,32 +512,26 @@ export default function AssistantPage() {
           if (!line.startsWith("data: ")) continue;
           try {
             const event: StreamEvent = JSON.parse(line.slice(6));
-
             if (event.type === "tool_start") {
               setMessages(prev => prev.map(m => m.id === assistantId
                 ? { ...m, tools: [...(m.tools ?? []), { id: event.id, tool: event.tool, input: event.input, status: "running" }] }
-                : m
-              ));
+                : m));
             } else if (event.type === "tool_done") {
               setMessages(prev => prev.map(m => m.id === assistantId
                 ? { ...m, tools: (m.tools ?? []).map(t => t.id === event.id
                     ? { ...t, status: (event.exitCode === 0 ? "done" : "error") as "done" | "error", stdout: event.stdout, stderr: event.stderr, exitCode: event.exitCode }
-                    : t)
-                }
-                : m
-              ));
+                    : t) }
+                : m));
             } else if (event.type === "content") {
               setMessages(prev => prev.map(m => m.id === assistantId
                 ? { ...m, content: m.content + event.delta }
-                : m
-              ));
+                : m));
             } else if (event.type === "done") {
               setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streaming: false } : m));
             } else if (event.type === "error") {
               setMessages(prev => prev.map(m => m.id === assistantId
                 ? { ...m, streaming: false, error: event.message }
-                : m
-              ));
+                : m));
             }
           } catch {}
         }
@@ -322,24 +539,16 @@ export default function AssistantPage() {
     } catch (err) {
       setMessages(prev => prev.map(m => m.id === assistantId
         ? { ...m, streaming: false, error: (err as Error).message }
-        : m
-      ));
+        : m));
     }
 
     setSending(false);
     inputRef.current?.focus();
   }, [input, sending]);
 
-  /* ── Handle Enter ── */
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
-
-  /* ── Setup instruction commands ── */
-  const serverBase = window.location.origin;
-  const runCmd = keyInfo?.preview
-    ? `node agent.mjs --key YOUR_FULL_KEY --server ${serverBase}`
-    : "Generate a key first";
 
   return (
     <div className="flex flex-col h-screen bg-background pt-16">
@@ -354,7 +563,6 @@ export default function AssistantPage() {
 
         <div className="flex-1" />
 
-        {/* Agent status */}
         <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${
           agentStatus.connected
             ? "bg-green-500/10 text-green-400 border-green-500/20"
@@ -362,8 +570,7 @@ export default function AssistantPage() {
         }`}>
           {agentStatus.connected
             ? <><Wifi className="w-3.5 h-3.5" />Connected · {agentStatus.info?.hostname ?? "Agent"}</>
-            : <><WifiOff className="w-3.5 h-3.5" />Agent not connected</>
-          }
+            : <><WifiOff className="w-3.5 h-3.5" />Agent not connected</>}
         </div>
 
         {agentStatus.connected && agentStatus.info && (
@@ -372,6 +579,13 @@ export default function AssistantPage() {
           </span>
         )}
 
+        <button
+          onClick={() => setShowSettings(true)}
+          title="Agent Settings & API Key"
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+        >
+          <Settings className="w-4 h-4" />
+        </button>
         <button onClick={clearHistory} title="Clear chat" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
           <Trash2 className="w-4 h-4" />
         </button>
@@ -392,7 +606,7 @@ export default function AssistantPage() {
                 <p className="text-xs text-muted-foreground">Run the agent on your machine to allow AI to execute commands, read files, and code with you.</p>
               </div>
 
-              {/* Step 1: API Key */}
+              {/* Step 1 */}
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center shrink-0 font-bold">1</span>
@@ -404,35 +618,29 @@ export default function AssistantPage() {
                       <Key className="w-3.5 h-3.5 text-primary shrink-0" />
                       <code className="text-xs text-foreground flex-1 font-mono">{keyInfo.preview}</code>
                     </div>
-                    <button onClick={generateKey}
-                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-                      <RefreshCw className="w-3 h-3" /> Regenerate key
+                    <button onClick={() => setShowSettings(true)}
+                      className="text-xs text-primary hover:text-primary/80 flex items-center gap-1 transition-colors font-semibold">
+                      <Settings className="w-3 h-3" /> Manage key in Settings
                     </button>
                   </div>
                 ) : (
-                  <button onClick={generateKey}
+                  <button
+                    onClick={async () => { setShowSettings(true); }}
                     className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:bg-primary/90 transition-colors">
                     <Key className="w-3.5 h-3.5" /> Generate API Key
                   </button>
                 )}
 
-                {/* Show new key once */}
-                {newKey && (
+                {newKeyForSidebar && (
                   <div className="space-y-1">
                     <p className="text-[10px] text-amber-400 font-semibold flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> Copy this key now — it won't be shown again!
+                      <AlertTriangle className="w-3 h-3" /> Key generated — open Settings to copy it!
                     </p>
-                    <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
-                      <code className="text-[11px] text-amber-300 font-mono flex-1 break-all">{newKey}</code>
-                      <button onClick={() => copyText(newKey, "key")} className="shrink-0 text-amber-400 hover:text-amber-300 transition-colors">
-                        {copied === "key" ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                      </button>
-                    </div>
                   </div>
                 )}
               </div>
 
-              {/* Step 2: Download */}
+              {/* Step 2 */}
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center shrink-0 font-bold">2</span>
@@ -445,31 +653,18 @@ export default function AssistantPage() {
                 <p className="text-[10px] text-muted-foreground">Requires Node.js v22+</p>
               </div>
 
-              {/* Step 3: Run */}
+              {/* Step 3 */}
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center shrink-0 font-bold">3</span>
                   Run in Terminal
                 </p>
-                <div className="bg-black/50 border border-border/40 rounded-lg p-3 space-y-2">
-                  {newKey ? (
-                    <div>
-                      <p className="text-[10px] text-muted-foreground mb-1">Your command (key included):</p>
-                      <code className="text-[11px] text-green-400 font-mono break-all">
-                        node agent.mjs --key {newKey} --server {serverBase}
-                      </code>
-                      <button onClick={() => copyText(`node agent.mjs --key ${newKey} --server ${serverBase}`, "cmd")}
-                        className="mt-2 text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-                        {copied === "cmd" ? <><CheckCircle2 className="w-3 h-3 text-green-400" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy command</>}
-                      </button>
-                    </div>
-                  ) : (
-                    <code className="text-[11px] text-green-400 font-mono">node agent.mjs --key YOUR_KEY</code>
-                  )}
+                <div className="bg-black/50 border border-border/40 rounded-lg p-3">
+                  <code className="text-[11px] text-green-400 font-mono">node agent.mjs --key YOUR_KEY</code>
+                  <p className="text-[10px] text-muted-foreground mt-1.5">Open Settings (⚙) to get your full key and run command.</p>
                 </div>
               </div>
 
-              {/* Capabilities */}
               <div className="border-t border-border/30 pt-4 space-y-1.5">
                 <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">What AI can do</p>
                 {[
@@ -497,8 +692,6 @@ export default function AssistantPage() {
 
         {/* ── Chat area ────────────────────────────────────────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden">
-
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full text-center gap-4">
@@ -513,14 +706,17 @@ export default function AssistantPage() {
                       : "Connect your local agent using the setup guide on the left, then start chatting."}
                   </p>
                 </div>
+                {!keyInfo?.exists && (
+                  <button
+                    onClick={() => setShowSettings(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+                  >
+                    <Key className="w-4 h-4" /> Generate API Key to get started
+                  </button>
+                )}
                 {agentStatus.connected && (
                   <div className="flex flex-wrap gap-2 justify-center">
-                    {[
-                      "List files in my project",
-                      "Create a Hello World in Python",
-                      "Show me my git status",
-                      "What's in my Downloads folder?",
-                    ].map(s => (
+                    {["List files in my project", "Create a Hello World in Python", "Show me my git status", "What's in my Downloads folder?"].map(s => (
                       <button key={s} onClick={() => { setInput(s); inputRef.current?.focus(); }}
                         className="text-xs px-3 py-1.5 rounded-full border border-border/50 text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5 transition-all">
                         {s}
@@ -530,14 +726,12 @@ export default function AssistantPage() {
                 )}
               </div>
             )}
-
             <AnimatePresence initial={false}>
               {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
             </AnimatePresence>
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
           <div className="shrink-0 px-4 pb-4 pt-2 border-t border-border/30">
             {!agentStatus.connected && (
               <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 mb-2">
@@ -551,7 +745,7 @@ export default function AssistantPage() {
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={agentStatus.connected ? "Ask me to run a command, write code, read a file..." : "Type a message... (agent not connected)"}
+                placeholder={agentStatus.connected ? "Ask me to run a command, write code, read a file..." : "Type a message..."}
                 rows={1}
                 className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none max-h-40 overflow-y-auto leading-relaxed"
                 style={{ height: "auto" }}
@@ -576,6 +770,14 @@ export default function AssistantPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Settings Modal ─────────────────────────────────────────────────── */}
+      <SettingsModal
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        keyInfo={keyInfo}
+        onRegenerate={handleRegenerate}
+      />
     </div>
   );
 }
