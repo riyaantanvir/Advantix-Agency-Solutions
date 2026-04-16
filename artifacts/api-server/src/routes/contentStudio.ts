@@ -149,7 +149,7 @@ PINTEREST VIRAL RULES:
 /* ═══════════════════════════════════════════════════
    POST: Generate social media post
 ═══════════════════════════════════════════════════ */
-router.post("/api/admin/content/generate-post", requireSuperAdmin, async (req: Request, res: Response) => {
+router.post("/admin/content/generate-post", requireSuperAdmin, async (req: Request, res: Response) => {
   const { platform, topic, tone, context, brand } = req.body as {
     platform: string; topic: string; tone: string; context?: string; brand?: string;
   };
@@ -218,7 +218,7 @@ IMPORTANT: Return ONLY valid JSON, no markdown code blocks, no explanation.`;
 /* ═══════════════════════════════════════════════════
    POST: Generate image (text → image)
 ═══════════════════════════════════════════════════ */
-router.post("/api/admin/content/generate-image", requireSuperAdmin, async (req: Request, res: Response) => {
+router.post("/admin/content/generate-image", requireSuperAdmin, async (req: Request, res: Response) => {
   const { prompt, style, platform } = req.body as {
     prompt: string; style?: string; platform?: string;
   };
@@ -278,7 +278,7 @@ router.post("/api/admin/content/generate-image", requireSuperAdmin, async (req: 
 /* ═══════════════════════════════════════════════════
    POST: Analyze image and generate content ideas
 ═══════════════════════════════════════════════════ */
-router.post("/api/admin/content/analyze-image", requireSuperAdmin, async (req: Request, res: Response) => {
+router.post("/admin/content/analyze-image", requireSuperAdmin, async (req: Request, res: Response) => {
   const { imageBase64, mimeType, platform, tone } = req.body as {
     imageBase64: string; mimeType: string; platform?: string; tone?: string;
   };
