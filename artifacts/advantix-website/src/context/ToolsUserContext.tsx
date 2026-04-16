@@ -42,11 +42,7 @@ export function ToolsUserProvider({ children }: { children: ReactNode }) {
       setUser(user);
       setIsAdmin(admin);
 
-      if (admin) {
-        setAllowedTools(["url-shortener", "screen-recorder", "pdf-audio", "advantix-ai"]);
-      } else {
-        await fetchPermissions();
-      }
+      await fetchPermissions();
     } catch (err: unknown) {
       const status = (err as any)?.status ?? (err as any)?.response?.status;
       const isAuthFailure = status === 401 || status === 403;
