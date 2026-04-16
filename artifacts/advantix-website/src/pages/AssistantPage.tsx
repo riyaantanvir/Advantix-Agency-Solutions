@@ -236,7 +236,7 @@ function SettingsModal({
   };
 
   const runCmd = newKey
-    ? `node ~/Downloads/agent.mjs --key ${newKey} --server ${serverBase}`
+    ? `curl -s "${serverBase}/api/tools/assistant/agent.mjs" -o /tmp/agent.mjs && node /tmp/agent.mjs --key ${newKey} --server ${serverBase}`
     : null;
   const hasKey = !!(keyInfo?.exists || newKey);
 
@@ -448,7 +448,7 @@ function SettingsModal({
                         </button>
                       </div>
                       <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                        <Info className="w-3 h-3 shrink-0" /> This assumes agent.mjs is in your Downloads folder. If you moved it, update the path.
+                        <Info className="w-3 h-3 shrink-0" /> This downloads the agent automatically and runs it — no need to find the file yourself.
                       </p>
                     </div>
                   ) : (
