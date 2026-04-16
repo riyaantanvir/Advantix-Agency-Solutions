@@ -236,7 +236,7 @@ function SettingsModal({
   };
 
   const runCmd = newKey
-    ? `node agent.mjs --key ${newKey} --server ${serverBase}`
+    ? `node ~/Downloads/agent.mjs --key ${newKey} --server ${serverBase}`
     : null;
   const hasKey = !!(keyInfo?.exists || newKey);
 
@@ -435,35 +435,21 @@ function SettingsModal({
                   <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Run command</p>
 
                   {runCmd ? (
-                    <div className="bg-black/60 rounded-lg p-3 border border-border/30 space-y-1.5">
+                    <div className="bg-black/60 rounded-lg p-3 border border-border/30 space-y-2">
+                      <p className="text-[10px] text-muted-foreground">Open your terminal and paste this — it works from anywhere:</p>
                       <div className="flex items-start gap-2">
-                        <span className="text-muted-foreground text-xs mt-0.5 select-none shrink-0">1.</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[10px] text-muted-foreground mb-0.5">In your terminal, go to your Downloads folder</p>
-                          <code className="text-xs text-amber-400 font-mono">cd ~/Downloads</code>
-                        </div>
-                        <button
-                          onClick={() => { navigator.clipboard.writeText("cd ~/Downloads"); setCopied("cd"); setTimeout(() => setCopied(null), 1500); }}
-                          className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                          title="Copy"
-                        >
-                          {copied === "cd" ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <span className="text-muted-foreground text-xs mt-0.5 select-none shrink-0">2.</span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[10px] text-muted-foreground mb-0.5">Start the agent</p>
-                          <code className="text-xs text-green-400 font-mono break-all">{runCmd}</code>
-                        </div>
+                        <code className="text-xs text-green-400 font-mono break-all flex-1">{runCmd}</code>
                         <button
                           onClick={() => { navigator.clipboard.writeText(runCmd); setCopied("runcmd"); setTimeout(() => setCopied(null), 1500); }}
                           className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                          title="Copy"
+                          title="Copy command"
                         >
                           {copied === "runcmd" ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                       </div>
+                      <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <Info className="w-3 h-3 shrink-0" /> This assumes agent.mjs is in your Downloads folder. If you moved it, update the path.
+                      </p>
                     </div>
                   ) : (
                     <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 flex items-start gap-3">
