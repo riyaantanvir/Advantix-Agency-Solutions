@@ -832,6 +832,17 @@ export async function runMigrations(): Promise<void> {
       ON smm_scheduled_posts (status)
   `);
 
+  // ── Admin permissions — per-admin page access control ─────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS admin_permissions (
+      id          SERIAL PRIMARY KEY,
+      admin_id    INTEGER NOT NULL,
+      page_slug   TEXT NOT NULL,
+      enabled     BOOLEAN NOT NULL DEFAULT true,
+      UNIQUE (admin_id, page_slug)
+    )
+  `);
+
   logger.info("Migrations applied");
 }
 

@@ -154,6 +154,10 @@ The intent classifier in `advantixAi.ts` routes to the best model:
 - `recording_sessions` / `recording_stats` — Screen recorder data
 - `short_redirect_logs` — URL click logs with geo/device data
 - `session` — express-session store (created by connect-pg-simple)
+- `admin_permissions` — per-admin page access control (`admin_id`, `page_slug`, `enabled`); also initialized via `ensureAdminPermissionsTable()` in routes/index.ts
+
+### All Migrations Are Automatic
+All tables use `CREATE TABLE IF NOT EXISTS` / `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in `seed.ts → runMigrations()`. The server runs migrations on **every startup** — no manual DB steps are needed on deploy. The migration list in `seed.ts` is the single source of truth.
 
 ### DB Commands
 ```bash
@@ -168,12 +172,16 @@ printf "\n\n\n\n" | pnpm --filter @workspace/db run push-force
 
 ## Production Deployment (DigitalOcean)
 
-### How it works
+### How it works — Zero Manual Steps
 1. Code is pushed to GitHub (`main` branch)
 2. DO detects the push and triggers a new build (auto-deploy is on)
-3. Docker build: `node:22-slim` → builds all 4 packages → copies built artifacts
-4. Single container serves **everything**: API + all 3 frontends
-5. Express serves static files for `/admin/`, `/ai/`, and `/` (catch-all for website)
+3. Docker build: `node:22-slim` → builds all 3 frontends → bundles API with esbuild → copies dist
+4. Container starts → server runs **all DB migrations automatically** (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` — fully idempotent)
+5. Admin account synced from `ADMIN_PASSWORD` env var
+6. Default services and Telegram notification rows seeded (skipped if already present)
+7. Single container serves **everything**: API + all 3 frontends (website `/`, admin `/admin/`, AI `/ai/`)
+
+**No manual DB commands, no drizzle-kit push, no seed scripts needed on deploy.**
 
 ### app.yaml (`.do/app.yaml`)
 - Single `web` service using `Dockerfile`
@@ -247,6 +255,30 @@ This app uses **Express 5**, NOT Express 4. Express 5 has breaking changes:
 ### Admin API Calls
 - Always use absolute paths: `/api/admin/...`
 - Never use `${BASE_URL}/api/...` in admin — BASE_URL is `/admin/` which would produce `/admin/api/...` (wrong)
+
+---
+
+## Admin Dashboard — Key Features
+
+### Dashboard (two-tab layout)
+- **Overview tab** — 12 metric cards: Registered Users, Admin Accounts, AI Requests, Pending Chats, Pending Tasks, Bug Reports, Unread Inbox, Emails Sent Today, Integrations status, Active Visitors, Today's Views, Active Users (30d). Cards with pending items show an orange pulse dot. Below: Top Pages Today + Recent Activity Feed (live feed across all tables with relative timestamps).
+- **Tools Dashboard tab** — URL shortener stats (links, clicks, referrers, devices, browsers), Screen Recorder stats, PDF Audio stats, AI usage (model breakdown, cost), Top users by link clicks / recording time / AI usage.
+- API endpoints: `GET /api/admin/overview-stats`, `GET /api/admin/tools/stats`
+
+### Admin Permission System
+- `admin_permissions` table: per-admin access to each dashboard page section
+- Super admins: unrestricted access (Crown badge in UI)
+- Regular admins: toggleable per-section (Dashboard, Management, Project Management, Marketing, Content, Social Media, Analytics, Finance, System, Admin Settings)
+- `admin-settings` is disabled by default for new admins
+- `GET /api/auth/my-admin-permissions` returns allowed page slugs; sidebar filters nav accordingly
+- Managed via **Admin Settings → User Permission → Admin Management tab**
+
+### Tool Permissions
+- 4 tools: `url-shortener`, `screen-recorder`, `pdf-audio`, `advantix-ai`
+- Global defaults in `site_settings` key `default_tool_permissions`
+- Per-user overrides in `user_tool_permissions(user_id, tool_slug, enabled)`
+- Frontend: `ToolsUserContext` carries `allowedTools`; `ToolGuard` in `App.tsx` redirects; `Tools.tsx` shows "No Access" badges
+- API: `GET /api/admin/tool-permissions/defaults`, `PUT /api/admin/tool-permissions/defaults`, `GET /api/admin/tool-permissions/users`, `PUT /api/admin/tool-permissions/user/:userId`
 
 ---
 
