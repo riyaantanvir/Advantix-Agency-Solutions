@@ -52,6 +52,7 @@ const CustomPageEditor = lazy(() => import("./pages/CustomPageEditor"));
 const InvoiceGenerator = lazy(() => import("./pages/InvoiceGenerator"));
 const PostComposer  = lazy(() => import("./pages/PostComposer"));
 const ImageStudio   = lazy(() => import("./pages/ImageStudio"));
+const AssistantUsage = lazy(() => import("./pages/AssistantUsage"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -187,6 +188,10 @@ function Router() {
 
       <Route path="/assistant-requests">
         <ProtectedLayout><AssistantRequests /></ProtectedLayout>
+      </Route>
+
+      <Route path="/assistant-usage">
+        <ProtectedLayout><AssistantUsage /></ProtectedLayout>
       </Route>
 
       <Route path="/user-management">

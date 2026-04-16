@@ -868,6 +868,28 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  // ── AI usage tracking ──────────────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS agent_usage (
+      id                  serial PRIMARY KEY,
+      user_id             integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      provider            text NOT NULL DEFAULT 'anthropic',
+      model               text NOT NULL DEFAULT '',
+      input_tokens        integer NOT NULL DEFAULT 0,
+      output_tokens       integer NOT NULL DEFAULT 0,
+      total_tokens        integer NOT NULL DEFAULT 0,
+      estimated_cost_usd  numeric(10,6) NOT NULL DEFAULT 0,
+      tool_calls          integer NOT NULL DEFAULT 0,
+      created_at          timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_agent_usage_user_id ON agent_usage (user_id)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_agent_usage_created_at ON agent_usage (created_at)
+  `);
+
   logger.info("Migrations applied");
 }
 

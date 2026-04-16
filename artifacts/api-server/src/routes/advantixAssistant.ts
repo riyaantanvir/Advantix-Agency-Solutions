@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "crypto";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { requireToolUser } from "../middleware/toolAuth.js";
+import { requireAdmin } from "../middleware/auth.js";
 import { getAgentScript } from "../lib/agentScript.js";
 import {
   isAgentConnected, getAgentInfo, sendToolCall, registerAgent,
@@ -29,6 +30,27 @@ router.get("/tools/assistant/agent.mjs", (_req: Request, res: Response) => {
 
 function hashKey(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
+}
+
+/* Cost per 1M tokens [input, output] in USD */
+const TOKEN_PRICING: Record<string, [number, number]> = {
+  "claude-sonnet-4-5":           [3.0,   15.0],
+  "claude-3-5-sonnet-20241022":  [3.0,   15.0],
+  "claude-3-5-haiku-20241022":   [0.8,    4.0],
+  "claude-opus-4-5":             [15.0,  75.0],
+  "gpt-4o":                      [2.5,   10.0],
+  "gpt-4o-mini":                 [0.15,   0.60],
+  "o1-mini":                     [1.1,    4.4],
+  "gemini-2.0-flash":            [0.075,  0.30],
+  "gemini-2.0-flash-exp":        [0.075,  0.30],
+  "gemini-1.5-flash":            [0.075,  0.30],
+  "gemini-1.5-pro":              [1.25,   5.0],
+};
+
+function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
+  const shortModel = model.includes("/") ? model.split("/").pop()! : model;
+  const [ip, op] = TOKEN_PRICING[shortModel] ?? TOKEN_PRICING[model] ?? [3.0, 15.0];
+  return (inputTokens * ip + outputTokens * op) / 1_000_000;
 }
 
 function userId(req: Request): number {
@@ -81,25 +103,45 @@ router.delete("/tools/assistant/key", requireToolUser, async (req: Request, res:
 /* GET /api/tools/assistant/stats — usage statistics */
 router.get("/tools/assistant/stats", requireToolUser, async (req: Request, res: Response) => {
   const uid = userId(req);
-  const r = await db.execute(sql`
-    SELECT
-      COUNT(*) FILTER (WHERE role = 'user')       AS messages_sent,
-      COUNT(*) FILTER (WHERE role = 'assistant')  AS ai_responses,
-      COUNT(*) FILTER (WHERE role = 'tool')       AS tool_calls,
-      MIN(created_at)                              AS first_message_at,
-      MAX(created_at)                              AS last_message_at
-    FROM agent_messages WHERE user_id = ${uid}
-  `);
-  const row = r.rows[0] as {
+  const [msgRow, usageRow] = await Promise.all([
+    db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE role = 'user')       AS messages_sent,
+        COUNT(*) FILTER (WHERE role = 'assistant')  AS ai_responses,
+        COUNT(*) FILTER (WHERE role = 'tool')       AS tool_calls,
+        MIN(created_at)                              AS first_message_at,
+        MAX(created_at)                              AS last_message_at
+      FROM agent_messages WHERE user_id = ${uid}
+    `),
+    db.execute(sql`
+      SELECT
+        COALESCE(SUM(total_tokens), 0)          AS total_tokens,
+        COALESCE(SUM(input_tokens), 0)          AS input_tokens,
+        COALESCE(SUM(output_tokens), 0)         AS output_tokens,
+        COALESCE(SUM(estimated_cost_usd), 0)    AS total_cost_usd,
+        COALESCE(SUM(CASE WHEN created_at >= date_trunc('month', now()) THEN estimated_cost_usd ELSE 0 END), 0) AS month_cost_usd
+      FROM agent_usage WHERE user_id = ${uid}
+    `),
+  ]);
+  const msg = msgRow.rows[0] as {
     messages_sent: string; ai_responses: string; tool_calls: string;
     first_message_at: string | null; last_message_at: string | null;
   };
+  const usage = usageRow.rows[0] as {
+    total_tokens: string; input_tokens: string; output_tokens: string;
+    total_cost_usd: string; month_cost_usd: string;
+  };
   res.json({
-    messagesSent:   parseInt(row.messages_sent ?? "0"),
-    aiResponses:    parseInt(row.ai_responses ?? "0"),
-    toolCalls:      parseInt(row.tool_calls ?? "0"),
-    firstMessageAt: row.first_message_at,
-    lastMessageAt:  row.last_message_at,
+    messagesSent:     parseInt(msg.messages_sent ?? "0"),
+    aiResponses:      parseInt(msg.ai_responses ?? "0"),
+    toolCalls:        parseInt(msg.tool_calls ?? "0"),
+    firstMessageAt:   msg.first_message_at,
+    lastMessageAt:    msg.last_message_at,
+    totalTokens:      parseInt(usage.total_tokens ?? "0"),
+    inputTokens:      parseInt(usage.input_tokens ?? "0"),
+    outputTokens:     parseInt(usage.output_tokens ?? "0"),
+    totalCostUsd:     parseFloat(usage.total_cost_usd ?? "0"),
+    monthCostUsd:     parseFloat(usage.month_cost_usd ?? "0"),
   });
 });
 
@@ -416,7 +458,9 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     const sessionMessages: InternalMsg[] = [{ role: "user", content: message }];
 
     let fullText = "";
-    let totalTokens = 0;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let totalToolCalls = 0;
     const MAX_TOOL_ROUNDS = 8;
     const SYSTEM_PROMPT = `You are Advantix Assistant — an AI agent that controls the user's machine via tools. Be concise. ${sysContext}`;
 
@@ -508,7 +552,8 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
         hasTools && round < MAX_TOOL_ROUNDS - 1,
       );
 
-      totalTokens += usage.input_tokens + usage.output_tokens;
+      totalInputTokens += usage.input_tokens;
+      totalOutputTokens += usage.output_tokens;
 
       /* ── Stream text ── */
       if (text) {
@@ -533,6 +578,8 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       `);
 
       const toolResults: object[] = [];
+
+      totalToolCalls += toolCalls.length;
 
       for (const tc of toolCalls) {
         const toolId   = tc.id;
@@ -578,12 +625,72 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       `);
     }
 
-    sse(res, { type: "done", totalTokens });
+    /* ── Save usage record ── */
+    const totalTokens = totalInputTokens + totalOutputTokens;
+    const costUsd = estimateCostUsd(model, totalInputTokens, totalOutputTokens);
+    try {
+      await db.execute(sql`
+        INSERT INTO agent_usage
+          (user_id, provider, model, input_tokens, output_tokens, total_tokens, estimated_cost_usd, tool_calls)
+        VALUES
+          (${uid}, ${provider}, ${model}, ${totalInputTokens}, ${totalOutputTokens}, ${totalTokens}, ${costUsd}, ${totalToolCalls})
+      `);
+    } catch { /* non-fatal — don't block the response */ }
+
+    sse(res, { type: "done", totalTokens, inputTokens: totalInputTokens, outputTokens: totalOutputTokens, estimatedCostUsd: costUsd });
   } catch (err) {
     sse(res, { type: "error", message: (err as Error).message ?? "Unknown error" });
   }
 
   res.end();
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/*  ADMIN — usage analytics                                                   */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* GET /api/admin/assistant/usage — per-user AI usage summary */
+router.get("/admin/assistant/usage", requireAdmin, async (_req: Request, res: Response) => {
+  const [usersRow, recentRow] = await Promise.all([
+    /* Per-user totals */
+    db.execute(sql`
+      SELECT
+        tu.id                                                             AS user_id,
+        tu.email,
+        tu.name,
+        tu.created_at                                                     AS joined_at,
+        COALESCE(SUM(au.total_tokens), 0)                                 AS total_tokens,
+        COALESCE(SUM(au.input_tokens), 0)                                 AS input_tokens,
+        COALESCE(SUM(au.output_tokens), 0)                                AS output_tokens,
+        COALESCE(SUM(au.estimated_cost_usd), 0)                           AS total_cost_usd,
+        COALESCE(SUM(CASE WHEN au.created_at >= date_trunc('month', now()) THEN au.estimated_cost_usd ELSE 0 END), 0) AS month_cost_usd,
+        COALESCE(SUM(au.tool_calls), 0)                                   AS total_tool_calls,
+        COUNT(DISTINCT au.id)                                             AS request_count,
+        MAX(au.created_at)                                                AS last_used_at,
+        COUNT(DISTINCT am.id) FILTER (WHERE am.role = 'user')             AS messages_sent
+      FROM tool_users tu
+      LEFT JOIN agent_usage au ON au.user_id = tu.id
+      LEFT JOIN agent_messages am ON am.user_id = tu.id
+      GROUP BY tu.id, tu.email, tu.name, tu.created_at
+      ORDER BY total_cost_usd DESC
+    `),
+    /* Last 50 requests across all users */
+    db.execute(sql`
+      SELECT
+        au.id, au.user_id, tu.email, tu.name,
+        au.provider, au.model,
+        au.input_tokens, au.output_tokens, au.total_tokens,
+        au.estimated_cost_usd, au.tool_calls, au.created_at
+      FROM agent_usage au
+      JOIN tool_users tu ON tu.id = au.user_id
+      ORDER BY au.created_at DESC
+      LIMIT 50
+    `),
+  ]);
+  res.json({
+    users: usersRow.rows,
+    recentRequests: recentRow.rows,
+  });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */
