@@ -89,7 +89,7 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    label: "Marketing",
+    label: "Mail Management",
     icon: Megaphone,
     children: [
       { path: "/email-marketing", label: "Email Marketing", icon: Mail },
@@ -176,7 +176,7 @@ const PAGE_SLUG_MAP: Record<string, { type: "group"; label: string } | { type: "
   "dashboard":          { type: "path",  path: "/dashboard" },
   "management":         { type: "group", label: "Management" },
   "project-management": { type: "group", label: "Project Management" },
-  "marketing":          { type: "group", label: "Marketing" },
+  "marketing":          { type: "group", label: "Mail Management" },
   "content":            { type: "group", label: "Content" },
   "social-media":       { type: "group", label: "AD Social Media" },
   "analytics":          { type: "path",  path: "/website-analytics" },

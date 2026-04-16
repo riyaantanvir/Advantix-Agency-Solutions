@@ -89,7 +89,7 @@ const PAGE_COLORS: Record<string, string> = {
   "dashboard":          "text-blue-400 bg-blue-500/10",
   "management":         "text-orange-400 bg-orange-500/10",
   "project-management": "text-emerald-400 bg-emerald-500/10",
-  "marketing":          "text-pink-400 bg-pink-500/10",
+  "marketing":         "text-pink-400 bg-pink-500/10",
   "content":            "text-amber-400 bg-amber-500/10",
   "social-media":       "text-cyan-400 bg-cyan-500/10",
   "analytics":          "text-indigo-400 bg-indigo-500/10",

@@ -11,7 +11,7 @@ export const ALL_ADMIN_PAGES = [
   { slug: "dashboard",          label: "Dashboard",             group: null },
   { slug: "management",         label: "Management",            group: "Management" },
   { slug: "project-management", label: "Project Management",    group: "Project Management" },
-  { slug: "marketing",          label: "Marketing",             group: "Marketing" },
+  { slug: "marketing",          label: "Mail Management",       group: "Mail Management" },
   { slug: "content",            label: "Content",               group: "Content" },
   { slug: "social-media",       label: "Social Media",          group: "Social Media" },
   { slug: "analytics",          label: "Website Analytics",     group: null },
