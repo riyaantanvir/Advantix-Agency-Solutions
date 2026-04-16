@@ -78,6 +78,31 @@ router.delete("/tools/assistant/key", requireToolUser, async (req: Request, res:
 /*  AGENT STATUS                                                              */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
+/* GET /api/tools/assistant/stats — usage statistics */
+router.get("/tools/assistant/stats", requireToolUser, async (req: Request, res: Response) => {
+  const uid = userId(req);
+  const r = await db.execute(sql`
+    SELECT
+      COUNT(*) FILTER (WHERE role = 'user')       AS messages_sent,
+      COUNT(*) FILTER (WHERE role = 'assistant')  AS ai_responses,
+      COUNT(*) FILTER (WHERE role = 'tool')       AS tool_calls,
+      MIN(created_at)                              AS first_message_at,
+      MAX(created_at)                              AS last_message_at
+    FROM agent_messages WHERE user_id = ${uid}
+  `);
+  const row = r.rows[0] as {
+    messages_sent: string; ai_responses: string; tool_calls: string;
+    first_message_at: string | null; last_message_at: string | null;
+  };
+  res.json({
+    messagesSent:   parseInt(row.messages_sent ?? "0"),
+    aiResponses:    parseInt(row.ai_responses ?? "0"),
+    toolCalls:      parseInt(row.tool_calls ?? "0"),
+    firstMessageAt: row.first_message_at,
+    lastMessageAt:  row.last_message_at,
+  });
+});
+
 router.get("/tools/assistant/status", requireToolUser, async (req: Request, res: Response) => {
   const uid = userId(req);
   const connected = isAgentConnected(uid);

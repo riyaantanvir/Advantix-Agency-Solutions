@@ -4,10 +4,19 @@ import {
   Terminal, Wifi, WifiOff, Key, RefreshCw, Copy, Download, Trash2,
   ChevronDown, ChevronRight, Send, Loader2, CheckCircle2, XCircle,
   FolderOpen, FileText, Edit3, Monitor, Zap, AlertTriangle, Info,
-  Bot, User, Settings, X, Shield, Clock, Calendar,
+  Bot, User, Settings, X, Shield, Clock, Calendar, MessageSquare,
+  Wrench, BarChart3, Activity,
 } from "lucide-react";
 import { useToolsUser } from "@/context/ToolsUserContext";
 import { useLocation } from "wouter";
+
+type UsageStats = {
+  messagesSent: number;
+  aiResponses: number;
+  toolCalls: number;
+  firstMessageAt: string | null;
+  lastMessageAt: string | null;
+};
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
@@ -164,17 +173,31 @@ function SettingsModal({
   onClose,
   keyInfo,
   onRegenerate,
+  user,
 }: {
   open: boolean;
   onClose: () => void;
   keyInfo: KeyInfo | null;
   onRegenerate: () => Promise<{ key: string; preview: string }>;
+  user: { name?: string; email?: string } | null;
 }) {
   const [newKey, setNewKey] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [revokeConfirm, setRevokeConfirm] = useState(false);
+  const [stats, setStats] = useState<UsageStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setStatsLoading(true);
+    fetch("/api/tools/assistant/stats", { credentials: "include" })
+      .then(r => r.json())
+      .then(setStats)
+      .catch(() => {})
+      .finally(() => setStatsLoading(false));
+  }, [open]);
 
   const serverBase = window.location.origin;
 
@@ -248,6 +271,59 @@ function SettingsModal({
           </div>
 
           <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+
+            {/* ── User profile ── */}
+            {user && (
+              <div className="rounded-xl border border-border/40 bg-secondary/20 p-4 flex items-center gap-3">
+                <div className="w-11 h-11 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-lg font-bold text-primary">
+                  {(user.name ?? user.email ?? "?")[0].toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-foreground text-sm truncate">{user.name ?? "User"}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+                </div>
+                <div className="ml-auto shrink-0">
+                  <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 font-semibold">Active</span>
+                </div>
+              </div>
+            )}
+
+            {/* ── Usage stats ── */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-primary" /> Usage
+              </h3>
+              {statsLoading ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading stats...
+                </div>
+              ) : stats ? (
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { icon: MessageSquare, label: "Messages Sent", value: stats.messagesSent, color: "text-blue-400", bg: "bg-blue-500/10" },
+                    { icon: Bot,           label: "AI Responses",  value: stats.aiResponses,  color: "text-violet-400", bg: "bg-violet-500/10" },
+                    { icon: Wrench,        label: "Tool Calls",    value: stats.toolCalls,    color: "text-green-400", bg: "bg-green-500/10" },
+                  ].map(({ icon: Icon, label, value, color, bg }) => (
+                    <div key={label} className={`rounded-xl border border-border/30 ${bg} p-3 text-center`}>
+                      <Icon className={`w-4 h-4 mx-auto mb-1.5 ${color}`} />
+                      <p className={`text-xl font-bold font-display ${color}`}>{value.toLocaleString()}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{label}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No usage data yet.</p>
+              )}
+              {stats?.lastMessageAt && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5" />
+                  Last active {new Date(stats.lastMessageAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                  {stats.firstMessageAt && stats.firstMessageAt !== stats.lastMessageAt && (
+                    <> · First chat {new Date(stats.firstMessageAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</>
+                  )}
+                </p>
+              )}
+            </div>
 
             {/* ── New key revealed ── */}
             {newKey && (
@@ -777,6 +853,7 @@ export default function AssistantPage() {
         onClose={() => setShowSettings(false)}
         keyInfo={keyInfo}
         onRegenerate={handleRegenerate}
+        user={user}
       />
     </div>
   );
