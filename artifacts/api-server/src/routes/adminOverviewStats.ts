@@ -41,32 +41,38 @@ router.get("/admin/overview-stats", requireAdmin, async (_req: Request, res: Res
     const c = (counts.rows[0] ?? {}) as Record<string, number>;
 
     /* ── Recent activity feed ─────────────────────────────────── */
-    const activity = await db.execute(sql`
-      SELECT * FROM (
-        SELECT 'lead'        AS type, 'New Lead'         AS action, name AS title,
-               NULL::text    AS sub, created_at          AS ts FROM leads
-        UNION ALL
-        SELECT 'contact'     AS type, 'New Contact'      AS action, name AS title,
-               subject       AS sub, created_at          AS ts FROM contacts
-        UNION ALL
-        SELECT 'user'        AS type, 'User Registered'  AS action, name AS title,
-               email         AS sub, created_at          AS ts FROM tool_users
-        UNION ALL
-        SELECT 'task'        AS type, 'Task Created'     AS action, title AS title,
-               status        AS sub, created_at          AS ts FROM tasks
-        UNION ALL
-        SELECT 'bug'         AS type, 'Bug Report'       AS action, title AS title,
-               status        AS sub, created_at          AS ts FROM bug_reports
-        UNION ALL
-        SELECT 'chat'        AS type, 'Chat Started'     AS action, title AS title,
-               visitor_email AS sub, created_at          AS ts FROM conversations
-        UNION ALL
-        SELECT 'email'       AS type, 'Email Sent'       AS action, subject AS title,
-               NULL::text    AS sub, created_at          AS ts FROM inbox_messages WHERE direction = 'outbound'
-      ) AS combined
-      ORDER BY ts DESC
-      LIMIT 20
-    `);
+    let activityRows: any[] = [];
+    try {
+      const activity = await db.execute(sql`
+        SELECT * FROM (
+          SELECT 'lead'        AS type, 'New Lead'         AS action, name AS title,
+                 NULL::text    AS sub, created_at          AS ts FROM leads
+          UNION ALL
+          SELECT 'contact'     AS type, 'New Contact'      AS action, name AS title,
+                 message       AS sub, created_at          AS ts FROM contacts
+          UNION ALL
+          SELECT 'user'        AS type, 'User Registered'  AS action, name AS title,
+                 email         AS sub, created_at          AS ts FROM tool_users
+          UNION ALL
+          SELECT 'task'        AS type, 'Task Created'     AS action, title AS title,
+                 status        AS sub, created_at          AS ts FROM tasks
+          UNION ALL
+          SELECT 'bug'         AS type, 'Bug Report'       AS action, title AS title,
+                 status        AS sub, created_at          AS ts FROM bug_reports
+          UNION ALL
+          SELECT 'chat'        AS type, 'Chat Started'     AS action, title AS title,
+                 visitor_email AS sub, created_at          AS ts FROM conversations
+          UNION ALL
+          SELECT 'email'       AS type, 'Email Sent'       AS action, subject AS title,
+                 NULL::text    AS sub, created_at          AS ts FROM inbox_messages WHERE direction = 'outbound'
+        ) AS combined
+        ORDER BY ts DESC
+        LIMIT 20
+      `);
+      activityRows = activity.rows as any[];
+    } catch (actErr) {
+      console.error("[overview-stats] activity query failed:", actErr);
+    }
 
     res.json({
       totalUsers:            c.total_users            ?? 0,
@@ -81,7 +87,7 @@ router.get("/admin/overview-stats", requireAdmin, async (_req: Request, res: Res
       totalIntegrations:     c.total_integrations     ?? 0,
       emailsSentToday:       c.emails_sent_today      ?? 0,
       emailEngagementsToday: c.email_engagements_today ?? 0,
-      recentActivity: (activity.rows as any[]).map(r => ({
+      recentActivity: activityRows.map(r => ({
         type:   r.type,
         action: r.action,
         title:  r.title,
