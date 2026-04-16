@@ -342,29 +342,44 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     let totalTokens = 0;
     const MAX_TOOL_ROUNDS = 8;
 
+    /* ── Helper: call Claude with retry on rate_limit_error ── */
+    const callClaude = async (msgs: typeof messages, retries = 3): Promise<Response> => {
+      for (let attempt = 0; attempt < retries; attempt++) {
+        const r = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-5",
+            max_tokens: 4096,
+            system: `You are Advantix Assistant — an expert AI agent that can directly control the user's computer through their local agent. You can run any terminal command, read/write files, open VS Code, and more. Always be precise, safe, and explain what you're doing before doing it. If a task requires multiple steps, execute them one by one and report results. ${sysContext}`,
+            tools: agentConnected ? TOOLS_DEF : [],
+            messages: msgs,
+          }),
+        });
+        if (r.ok) return r;
+        /* Check if rate limit — wait and retry */
+        const errText = await r.text();
+        let isRateLimit = false;
+        try { isRateLimit = JSON.parse(errText)?.error?.type === "rate_limit_error"; } catch {}
+        if (isRateLimit && attempt < retries - 1) {
+          const waitSecs = (attempt + 1) * 8;
+          sse(res, { type: "content", delta: `\n\n_Rate limit reached — waiting ${waitSecs}s and retrying…_\n\n` });
+          await new Promise(resolve => setTimeout(resolve, waitSecs * 1000));
+          continue;
+        }
+        /* Non-rate-limit error or out of retries — throw so outer try/catch can handle */
+        throw new Error(`Claude API error: ${errText}`);
+      }
+      throw new Error("Max retries exceeded");
+    };
+
     /* ══ Agentic loop ══════════════════════════════════════════════════════ */
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": anthropicKey,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-5",
-          max_tokens: 4096,
-          system: `You are Advantix Assistant — an expert AI agent that can directly control the user's computer through their local agent. You can run any terminal command, read/write files, open VS Code, and more. Always be precise, safe, and explain what you're doing before doing it. If a task requires multiple steps, execute them one by one and report results. ${sysContext}`,
-          tools: agentConnected ? TOOLS_DEF : [],
-          messages,
-        }),
-      });
-
-      if (!claudeRes.ok) {
-        const err = await claudeRes.text();
-        sse(res, { type: "error", message: `Claude API error: ${err}` });
-        break;
-      }
+      const claudeRes = await callClaude(messages);
 
       const claudeData = await claudeRes.json() as {
         content: Array<{ type: string; text?: string; id?: string; name?: string; input?: object }>;
