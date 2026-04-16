@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { Link2, Video, ArrowRight, Zap, Sparkles, Shield } from "lucide-react";
+import { Link2, Video, ArrowRight, Zap, Sparkles, Shield, Headphones } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 const expo = [0.22, 1, 0.36, 1] as const;
@@ -46,6 +46,16 @@ const tools = [
     color: "text-red-400",
     bg: "bg-red-500/10",
     badge: "New",
+  },
+  {
+    icon: Headphones,
+    name: "PDF to Audio",
+    description: "Upload any PDF and convert it to natural-sounding audio instantly. Listen to documents, reports, or books — hands-free, anytime.",
+    href: "/tools/pdf-audio",
+    available: true,
+    color: "text-orange-400",
+    bg: "bg-orange-500/10",
+    badge: null,
   },
 ];
 
