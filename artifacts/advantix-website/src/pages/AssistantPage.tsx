@@ -748,186 +748,92 @@ export default function AssistantPage() {
     <div className="flex flex-col h-screen bg-background pt-16">
 
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border/50 bg-card/50 backdrop-blur-sm shrink-0">
+      <div className="flex items-center gap-3 px-5 py-2.5 border-b border-border/30 bg-background/80 backdrop-blur-sm shrink-0">
         <div className="flex items-center gap-2">
-          <Terminal className="w-5 h-5 text-primary" />
-          <span className="font-display font-bold text-foreground text-sm">Advantix Assistant</span>
-          <span className="text-xs text-muted-foreground bg-primary/10 text-primary px-2 py-0.5 rounded-full border border-primary/20 font-semibold">Beta</span>
+          <Sparkles className="w-4 h-4 text-primary" />
+          <span className="font-display font-semibold text-foreground text-sm">Advantix Assistant</span>
+          <span className="text-[10px] text-primary bg-primary/8 px-1.5 py-0.5 rounded-md border border-primary/15 font-semibold tracking-wide">BETA</span>
         </div>
 
         <div className="flex-1" />
 
-        <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${
+        {/* Connection pill */}
+        <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border transition-all ${
           agentStatus.connected
-            ? "bg-green-500/10 text-green-400 border-green-500/20"
-            : "bg-red-500/10 text-red-400 border-red-500/20"
+            ? "bg-green-500/8 text-green-400 border-green-500/15"
+            : "bg-border/30 text-muted-foreground border-border/30"
         }`}>
-          {agentStatus.connected
-            ? <><Wifi className="w-3.5 h-3.5" />Connected · {agentStatus.info?.hostname ?? "Agent"}</>
-            : <><WifiOff className="w-3.5 h-3.5" />Agent not connected</>}
+          <span className={`w-1.5 h-1.5 rounded-full ${agentStatus.connected ? "bg-green-400 animate-pulse" : "bg-muted-foreground/40"}`} />
+          {agentStatus.connected ? agentStatus.info?.hostname ?? "Connected" : "Not connected"}
         </div>
 
-        {agentStatus.connected && agentStatus.info && (
-          <span className="text-xs text-muted-foreground hidden sm:block">
-            {agentStatus.info.os} · {agentStatus.info.username} · {agentStatus.info.cwd}
-          </span>
-        )}
-
-        <button
-          onClick={() => setShowSettings(true)}
-          title="Agent Settings & API Key"
-          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
-        <button onClick={clearHistory} title="Clear chat" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setShowSettings(true)}
+            title="Settings"
+            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          <button onClick={clearHistory} title="Clear chat" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden">
 
-        {/* ── Sidebar: Setup ──────────────────────────────────────────────── */}
-        <div className={`shrink-0 border-r border-border/50 bg-card/30 overflow-y-auto transition-all duration-300 ${
-          showSetup || !agentStatus.connected ? "w-72" : "w-10"
-        }`}>
-          {(!agentStatus.connected || showSetup) ? (
-            <div className="p-4 space-y-5">
-              <div>
-                <h3 className="text-sm font-display font-bold text-foreground flex items-center gap-2 mb-1">
-                  <Zap className="w-4 h-4 text-primary" /> Setup Guide
-                </h3>
-                <p className="text-xs text-muted-foreground">Run the agent on your machine to allow AI to execute commands, read files, and code with you.</p>
-              </div>
+        {/* ── Not-connected banner ─────────────────────────────────────────── */}
+        {!agentStatus.connected && (
+          <div className="shrink-0 flex items-center justify-center gap-2 px-5 py-2 bg-amber-500/5 border-b border-amber-500/10 text-xs text-amber-400/80">
+            <WifiOff className="w-3.5 h-3.5 shrink-0" />
+            <span>Agent not connected —{" "}
+              <button onClick={() => setShowSettings(true)} className="underline underline-offset-2 hover:text-amber-300 font-medium transition-colors">
+                Open Settings
+              </button>{" "}
+              to get your run command.
+            </span>
+          </div>
+        )}
 
-              {/* Step 1 */}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center shrink-0 font-bold">1</span>
-                  Generate Your API Key
-                </p>
-                {keyInfo?.exists ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 bg-secondary/40 rounded-lg px-3 py-2 border border-border/40">
-                      <Key className="w-3.5 h-3.5 text-primary shrink-0" />
-                      <code className="text-xs text-foreground flex-1 font-mono">{keyInfo.preview}</code>
-                    </div>
-                    <button onClick={() => setShowSettings(true)}
-                      className="text-xs text-primary hover:text-primary/80 flex items-center gap-1 transition-colors font-semibold">
-                      <Settings className="w-3 h-3" /> Manage key in Settings
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={async () => { setShowSettings(true); }}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-semibold hover:bg-primary/90 transition-colors">
-                    <Key className="w-3.5 h-3.5" /> Generate API Key
-                  </button>
-                )}
-
-                {newKeyForSidebar && (
-                  <div className="space-y-1">
-                    <p className="text-[10px] text-amber-400 font-semibold flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> Key generated — open Settings to copy it!
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Step 2 */}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center shrink-0 font-bold">2</span>
-                  Download Agent Script
-                </p>
-                <button onClick={downloadAgent}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-secondary border border-border/40 text-foreground rounded-lg text-xs font-semibold hover:bg-secondary/80 transition-colors">
-                  <Download className="w-3.5 h-3.5 text-primary" /> Download agent.mjs
-                </button>
-                <p className="text-[10px] text-muted-foreground">Requires Node.js v22+</p>
-              </div>
-
-              {/* Step 3 */}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center shrink-0 font-bold">3</span>
-                  Run in Terminal
-                </p>
-                <div className="bg-black/50 border border-border/40 rounded-lg p-3">
-                  <code className="text-[11px] text-green-400 font-mono">node agent.mjs --key YOUR_KEY</code>
-                  <p className="text-[10px] text-muted-foreground mt-1.5">Open Settings (⚙) to get your full key and run command.</p>
-                </div>
-              </div>
-
-              <div className="border-t border-border/30 pt-4 space-y-1.5">
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">What AI can do</p>
-                {[
-                  { icon: Terminal,   label: "Run any shell command" },
-                  { icon: FileText,   label: "Read & write files" },
-                  { icon: FolderOpen, label: "Browse directories" },
-                  { icon: Monitor,    label: "Open VS Code" },
-                  { icon: RefreshCw,  label: "Auto-reconnects" },
-                ].map(({ icon: Icon, label }) => (
-                  <div key={label} className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                    <Icon className="w-3.5 h-3.5 text-primary/70 shrink-0" />
-                    {label}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setShowSetup(true)}
-              className="h-full w-full flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-              title="Show setup">
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* ── Chat area ────────────────────────────────────────────────────── */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-5 py-6 space-y-5">
+        {/* ── Messages ─────────────────────────────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center gap-5 pb-8">
+              <div className="flex flex-col items-center justify-center min-h-[50vh] text-center gap-5">
                 <div className="relative">
-                  <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent border border-primary/20 flex items-center justify-center shadow-xl shadow-primary/5">
-                    <Sparkles className="w-9 h-9 text-primary" />
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/15 flex items-center justify-center">
+                    <Sparkles className="w-7 h-7 text-primary" />
                   </div>
-                  <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-background flex items-center justify-center bg-green-500 shadow">
-                    {agentStatus.connected
-                      ? <Wifi className="w-3 h-3 text-white" />
-                      : <WifiOff className="w-3 h-3 text-white" />}
-                  </div>
+                  <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-background ${agentStatus.connected ? "bg-green-500" : "bg-muted"}`} />
                 </div>
-                <div className="space-y-1.5">
-                  <h3 className="font-display font-bold text-foreground text-xl">
-                    {user?.name ? `Hi, ${user.name.split(" ")[0]}! 👋` : "Advantix Assistant"}
+                <div className="space-y-1">
+                  <h3 className="font-display font-semibold text-foreground text-lg">
+                    {user?.name ? `Hi, ${user.name.split(" ")[0]}` : "Advantix Assistant"}
                   </h3>
-                  <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
+                  <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
                     {agentStatus.connected
-                      ? `Connected to **${agentStatus.info?.hostname}**. I can run commands, read & write files, open VS Code, and anything else on your machine.`
-                      : "Set up your local agent using the guide on the left, then I can execute commands directly on your computer."}
+                      ? `Connected to ${agentStatus.info?.hostname}. Ask me anything — I can run commands, write files, and code on your machine.`
+                      : "Connect your local agent via Settings, then I can work directly on your computer."}
                   </p>
                 </div>
                 {!keyInfo?.exists && (
-                  <button
-                    onClick={() => setShowSettings(true)}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
-                  >
-                    <Key className="w-4 h-4" /> Generate API Key to get started
+                  <button onClick={() => setShowSettings(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all">
+                    <Key className="w-3.5 h-3.5" /> Get started
                   </button>
                 )}
                 {agentStatus.connected && (
-                  <div className="grid grid-cols-2 gap-2 max-w-sm w-full">
+                  <div className="grid grid-cols-2 gap-2 w-full max-w-xs">
                     {[
-                      { text: "List files in my project", icon: FolderOpen },
-                      { text: "Create a Hello World in Python", icon: Terminal },
-                      { text: "Show me my git status", icon: Info },
-                      { text: "What's in my Downloads folder?", icon: FileText },
+                      { text: "List files here", icon: FolderOpen },
+                      { text: "Hello World in Python", icon: Terminal },
+                      { text: "Show git status", icon: Info },
+                      { text: "What's in Downloads?", icon: FileText },
                     ].map(({ text, icon: Icon }) => (
                       <button key={text} onClick={() => { setInput(text); inputRef.current?.focus(); }}
-                        className="flex items-center gap-2 text-left text-xs px-3 py-2.5 rounded-xl border border-border/50 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-all group">
-                        <Icon className="w-3.5 h-3.5 text-primary/60 group-hover:text-primary shrink-0 transition-colors" />
+                        className="flex items-center gap-2 text-left text-xs px-3 py-2 rounded-lg border border-border/40 text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-primary/5 transition-all">
+                        <Icon className="w-3 h-3 shrink-0 text-primary/50" />
                         <span>{text}</span>
                       </button>
                     ))}
@@ -940,19 +846,12 @@ export default function AssistantPage() {
             </AnimatePresence>
             <div ref={messagesEndRef} />
           </div>
+        </div>
 
-          <div className="shrink-0 px-4 pb-4 pt-3 border-t border-border/20 bg-background/50 backdrop-blur-sm">
-            {!agentStatus.connected && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                className="flex items-center gap-2 text-xs text-amber-400/90 bg-amber-500/8 border border-amber-500/15 rounded-xl px-3 py-2 mb-3"
-              >
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                <span>Agent not connected — I can still answer questions but can't execute commands on your machine</span>
-              </motion.div>
-            )}
-            <div className="flex items-end gap-3 bg-card border border-border/50 rounded-2xl px-4 py-3 focus-within:border-primary/40 focus-within:shadow-lg focus-within:shadow-primary/5 transition-all duration-200">
+        {/* ── Input bar ────────────────────────────────────────────────────── */}
+        <div className="shrink-0 border-t border-border/20 bg-background/80 backdrop-blur-sm px-4 pb-4 pt-3">
+          <div className="max-w-3xl mx-auto">
+            <div className="flex items-end gap-3 bg-card border border-border/40 rounded-2xl px-4 py-3 focus-within:border-primary/35 focus-within:shadow-lg focus-within:shadow-primary/5 transition-all duration-200">
               <textarea
                 ref={inputRef}
                 value={input}
@@ -960,7 +859,7 @@ export default function AssistantPage() {
                 onKeyDown={handleKeyDown}
                 placeholder={agentStatus.connected ? "Ask me to run a command, write code, read a file…" : "Ask me anything…"}
                 rows={1}
-                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 resize-none focus:outline-none max-h-40 overflow-y-auto leading-relaxed"
+                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none max-h-40 overflow-y-auto leading-relaxed"
                 style={{ height: "auto" }}
                 onInput={e => {
                   const el = e.currentTarget;
@@ -972,12 +871,12 @@ export default function AssistantPage() {
               <button
                 onClick={sendMessage}
                 disabled={!input.trim() || sending}
-                className="shrink-0 w-9 h-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-md shadow-primary/20"
+                className="shrink-0 w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
-                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
               </button>
             </div>
-            <p className="text-[10px] text-muted-foreground text-center mt-1.5">
+            <p className="text-[10px] text-muted-foreground/40 text-center mt-2">
               Enter to send · Shift+Enter for new line · Powered by Claude
             </p>
           </div>
