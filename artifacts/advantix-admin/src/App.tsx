@@ -32,6 +32,7 @@ const MarketingReports = lazy(() => import("./pages/MarketingReports"));
 const PushNotifications = lazy(() => import("./pages/PushNotifications"));
 const EmailSubscribers  = lazy(() => import("./pages/EmailSubscribers"));
 const SiteSettings      = lazy(() => import("./pages/SiteSettings"));
+const UserPermission    = lazy(() => import("./pages/UserPermission"));
 const ContentPlanner    = lazy(() => import("./pages/ContentPlanner"));
 const EmailMarketing    = lazy(() => import("./pages/EmailMarketing"));
 const InboxPage         = lazy(() => import("./pages/InboxPage"));
@@ -274,6 +275,10 @@ function Router() {
 
       <Route path="/site-settings">
         <ProtectedLayout><SiteSettings /></ProtectedLayout>
+      </Route>
+
+      <Route path="/user-permission">
+        <ProtectedLayout><UserPermission /></ProtectedLayout>
       </Route>
 
       <Route path="/content-planner">

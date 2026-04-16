@@ -44,6 +44,7 @@ import {
   PenTool,
   ImagePlay,
   Wrench,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -152,6 +153,7 @@ const navItems: NavItem[] = [
       { path: "/site-settings", label: "Site Settings", icon: Settings },
       { path: "/notifications", label: "Notification Alerts", icon: Bell },
       { path: "/user-management", label: "User Management", icon: UserCog },
+      { path: "/user-permission", label: "User Permission", icon: ShieldCheck },
     ],
   },
 ];
