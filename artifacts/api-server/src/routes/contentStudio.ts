@@ -1,36 +1,10 @@
 import { Router, Request, Response } from "express";
-import { eq } from "drizzle-orm";
-import { db } from "@workspace/db";
-import { integrationsTable } from "@workspace/db/schema";
-import { createAnthropic } from "@workspace/integrations-anthropic-ai";
-import { createOpenAI } from "@workspace/integrations-openai-ai-server";
-import { generateImage } from "@workspace/integrations-gemini-ai/image";
+import { anthropic } from "@workspace/integrations-anthropic-ai";
+import { openai } from "@workspace/integrations-openai-ai-server";
+import { generateImageBuffer } from "@workspace/integrations-openai-ai-server/image";
 import { requireSuperAdmin } from "../middleware/auth.js";
 
 const router = Router();
-
-async function getDbKey(name: string): Promise<string | null> {
-  try {
-    const [row] = await db.select().from(integrationsTable).where(eq(integrationsTable.name, name));
-    return row?.value || null;
-  } catch { return null; }
-}
-
-async function getAnthropic() {
-  const key = await getDbKey("ANTHROPIC_API_KEY") ?? process.env.ANTHROPIC_API_KEY ?? process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY;
-  if (!key) throw new Error("Anthropic API key not configured.");
-  return createAnthropic(key);
-}
-
-async function getOpenAI() {
-  const key = await getDbKey("OPENAI_API_KEY") ?? process.env.OPENAI_API_KEY ?? process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-  if (!key) throw new Error("OpenAI API key not configured.");
-  return createOpenAI(key);
-}
-
-async function getGeminiKey(): Promise<string | null> {
-  return await getDbKey("GOOGLE_AI_API_KEY") ?? process.env.GOOGLE_AI_API_KEY ?? process.env.AI_INTEGRATIONS_GEMINI_API_KEY ?? null;
-}
 
 /* ═══════════════════════════════════════════════════
    PLATFORM PROFILES
@@ -189,14 +163,13 @@ ${profile.outputFormat}
 IMPORTANT: Return ONLY valid JSON, no markdown code blocks, no explanation.`;
 
   try {
-    const anthropic = await getAnthropic();
     const message = await anthropic.messages.create({
-      model: "claude-opus-4-5",
-      max_tokens: 1500,
+      model: "claude-sonnet-4-6",
+      max_tokens: 8192,
+      system: systemPrompt,
       messages: [
         { role: "user", content: `Create a ${profile.name} post about: ${topic}` }
       ],
-      system: systemPrompt,
     });
 
     const raw = message.content[0].type === "text" ? message.content[0].text : "";
@@ -238,37 +211,12 @@ router.post("/admin/content/generate-image", requireSuperAdmin, async (req: Requ
   };
 
   const styleGuide = styleGuides[style || "photography"] || styleGuides.photography;
-
   const enhancedPrompt = `${styleGuide}. ${prompt}. Social media optimized, high quality, visually striking, ${platform ? `optimized for ${platform}` : "versatile aspect ratio"}.`;
 
   try {
-    // Try Gemini image generation first
-    const geminiKey = await getGeminiKey();
-    if (geminiKey) {
-      try {
-        const { b64_json, mimeType } = await generateImage(enhancedPrompt, geminiKey);
-        res.json({ success: true, b64_json, mimeType: mimeType || "image/png", source: "gemini" });
-        return;
-      } catch {
-        // fall through to OpenAI
-      }
-    }
-
-    // Fallback to OpenAI DALL-E
-    const openai = await getOpenAI();
-    const response = await openai.images.generate({
-      model: "dall-e-3",
-      prompt: enhancedPrompt.slice(0, 3900),
-      n: 1,
-      size: "1024x1024",
-      quality: "hd",
-      response_format: "b64_json",
-    });
-
-    const b64 = response.data[0]?.b64_json;
-    if (!b64) throw new Error("No image generated");
-
-    res.json({ success: true, b64_json: b64, mimeType: "image/png", source: "dall-e-3" });
+    const buffer = await generateImageBuffer(enhancedPrompt.slice(0, 3900), "1024x1024");
+    const b64 = buffer.toString("base64");
+    res.json({ success: true, b64_json: b64, mimeType: "image/png", source: "gpt-image-1" });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Image generation failed";
     res.status(500).json({ error: msg });
@@ -313,11 +261,14 @@ Return ONLY this JSON:
 }`;
 
   try {
-    const openai = await getOpenAI();
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      max_tokens: 1500,
+      model: "gpt-5.2",
+      max_completion_tokens: 8192,
       messages: [
+        {
+          role: "system",
+          content: systemPrompt,
+        },
         {
           role: "user",
           content: [
@@ -332,8 +283,7 @@ Return ONLY this JSON:
           ],
         },
       ],
-      system: systemPrompt,
-    } as Parameters<typeof openai.chat.completions.create>[0]);
+    });
 
     const raw = response.choices[0]?.message?.content ?? "";
     let parsed: Record<string, unknown>;
