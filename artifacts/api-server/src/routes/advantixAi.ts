@@ -366,7 +366,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
   const { provider, model, label } = imageData
     ? { provider: "openai-vision", model: "gpt-4o", label: "GPT-4o Vision" }
     : useOpenRouter
-      ? { provider: "openrouter", model: "anthropic/claude-3.7-sonnet", label: "Claude 3.7 Sonnet (OpenRouter)" }
+      ? { provider: "openrouter", model: "anthropic/claude-haiku-4-5", label: "Claude Haiku (OpenRouter)" }
       : getProvider(intent);
 
   // Update session title if first message
@@ -442,7 +442,7 @@ router.post("/chat/:sessionId", requireToolUser, async (req: Request, res: Respo
 
       const stream = await (await getOpenRouter()).chat.completions.create({
         model,
-        max_tokens: 2048,
+        max_tokens: 1024,
         stream: true,
         messages: [
           { role: "system", content: buildSystemPrompt(projectInstructions, "You are Advantix AI, a highly capable assistant. Be concise, precise, and helpful. For code, always use proper formatting with code blocks.", memoriesContext) },
