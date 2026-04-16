@@ -832,6 +832,31 @@ export async function runMigrations(): Promise<void> {
       ON smm_scheduled_posts (status)
   `);
 
+  // ── Advantix Assistant — local agent API keys + chat history ──────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS agent_sessions (
+      id               serial PRIMARY KEY,
+      user_id          integer NOT NULL UNIQUE REFERENCES tool_users(id) ON DELETE CASCADE,
+      api_key_hash     text NOT NULL UNIQUE,
+      api_key_preview  text NOT NULL,
+      created_at       timestamptz DEFAULT now() NOT NULL,
+      last_connected_at timestamptz
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS agent_messages (
+      id          serial PRIMARY KEY,
+      user_id     integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      role        text NOT NULL,
+      content     text NOT NULL DEFAULT '',
+      tool_name   text,
+      tool_input  text,
+      tool_result text,
+      created_at  timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
   // ── Admin permissions — per-admin page access control ─────────────────────
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS admin_permissions (

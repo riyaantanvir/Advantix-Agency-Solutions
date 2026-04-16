@@ -16,6 +16,7 @@
     "@types/multer": "^2.1.0",
     "@types/pdf-parse": "^1.1.5",
     "@types/web-push": "^3.6.4",
+    "@types/ws": "^8.18.1",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/integrations-anthropic-ai": "workspace:*",
@@ -42,7 +43,8 @@
     "resend": "^6.10.0",
     "svix": "^1.90.0",
     "tesseract.js": "^7.0.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

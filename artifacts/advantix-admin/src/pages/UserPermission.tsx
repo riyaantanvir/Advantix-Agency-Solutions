@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ShieldCheck, Users, Search, Save, Loader2, ChevronDown, ChevronRight,
-  Link2, Video, Headphones, Sparkles, Check, X, UserCog, Crown,
+  Link2, Video, Headphones, Sparkles, Terminal, Check, X, UserCog, Crown,
   LayoutDashboard, CheckSquare, FolderKanban, Megaphone, BookOpen,
   Share2, BarChart2, Zap, Landmark, Settings2, Settings,
 } from "lucide-react";
@@ -35,16 +35,18 @@ type ToolUser = {
 };
 
 const TOOL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-  "url-shortener":   Link2,
-  "screen-recorder": Video,
-  "pdf-audio":       Headphones,
-  "advantix-ai":     Sparkles,
+  "url-shortener":      Link2,
+  "screen-recorder":    Video,
+  "pdf-audio":          Headphones,
+  "advantix-ai":        Sparkles,
+  "advantix-assistant": Terminal,
 };
 const TOOL_COLORS: Record<string, string> = {
-  "url-shortener":   "text-blue-400 bg-blue-500/10",
-  "screen-recorder": "text-purple-400 bg-purple-500/10",
-  "pdf-audio":       "text-orange-400 bg-orange-500/10",
-  "advantix-ai":     "text-violet-400 bg-violet-500/10",
+  "url-shortener":      "text-blue-400 bg-blue-500/10",
+  "screen-recorder":    "text-purple-400 bg-purple-500/10",
+  "pdf-audio":          "text-orange-400 bg-orange-500/10",
+  "advantix-ai":        "text-violet-400 bg-violet-500/10",
+  "advantix-assistant": "text-green-400 bg-green-500/10",
 };
 
 function ToolToggle({ slug, name, enabled, onChange }: { slug: string; name: string; enabled: boolean; onChange: (v: boolean) => void }) {

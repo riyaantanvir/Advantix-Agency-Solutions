@@ -7,6 +7,7 @@ Full-stack pnpm monorepo for **Advantix Digital** (advantix.digital). A complete
 - Admin dashboard
 - Multi-model AI chat tool
 - REST API backend
+- **Advantix Assistant** — AI agent with local machine control via WebSocket
 
 **GitHub**: `thehiddenlogic01/Advantix-Agency-Solutions` (branch: `main`)
 **Deployed on**: DigitalOcean App Platform → `https://seal-app-i7x9j.ondigitalocean.app`

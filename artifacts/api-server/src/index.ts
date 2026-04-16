@@ -1,14 +1,15 @@
+import { createServer } from "http";
+import { WebSocketServer } from "ws";
 import app from "./app.js";
 import { logger } from "./lib/logger.js";
 import { seedAdmin, ensureSessionTable, runMigrations, seedServices, seedTelegramDefaults } from "./seed.js";
 import { startSmmScheduler } from "./lib/smmPublisher.js";
+import { handleAgentWebSocket } from "./routes/advantixAssistant.js";
 
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
+  throw new Error("PORT environment variable is required but was not provided.");
 }
 
 const port = Number(rawPort);
@@ -24,16 +25,33 @@ async function start(): Promise<void> {
   await seedServices();
   await seedTelegramDefaults();
 
-  app.listen(port, (err) => {
+  const httpServer = createServer(app);
+
+  /* ── WebSocket upgrade handler ─────────────────────────────────────────── */
+  const wss = new WebSocketServer({ noServer: true });
+
+  httpServer.on("upgrade", (req, socket, head) => {
+    if (req.url?.startsWith("/api/agent/ws")) {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        handleAgentWebSocket(ws, req).catch((err) => {
+          logger.error({ err }, "Agent WS handler error");
+          ws.close(1011, "server error");
+        });
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+
+  httpServer.listen(port, (err?: Error) => {
     if (err) {
       logger.error({ err }, "Error listening on port");
       process.exit(1);
     }
 
     logger.info({ port }, "Server listening");
+    logger.info("Agent WebSocket endpoint: ws://host/api/agent/ws?key=API_KEY");
 
-    // Start SMM scheduler after server is ready — picks up any missed posts
-    // and sets precise setTimeout timers for upcoming ones (no polling needed)
     startSmmScheduler().catch(e => logger.error({ err: e }, "SMM scheduler init failed"));
   });
 }
