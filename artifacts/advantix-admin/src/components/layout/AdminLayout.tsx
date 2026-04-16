@@ -64,7 +64,6 @@ function isGroup(item: NavItem): item is NavGroup {
 
 const navItems: NavItem[] = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/tools-dashboard", label: "Tools Dashboard", icon: Wrench, href: "/tools/dashboard" },
   {
     label: "Management",
     icon: CheckSquare,
@@ -139,6 +138,7 @@ const navItems: NavItem[] = [
     icon: Settings,
     children: [
       { path: "/tools", label: "Advantix Tools", icon: Zap },
+      { path: "/tools-dashboard", label: "Tools Dashboard", icon: Wrench, href: "/tools/dashboard" },
       { path: "/manage-ai", label: "Manage AI", icon: Sparkles },
       { path: "/assistant-requests", label: "Assistant Requests", icon: HeadphonesIcon },
     ],
