@@ -236,8 +236,10 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     const historyRows = await db.execute(sql`
       SELECT role, content, tool_name, tool_input, tool_result
       FROM agent_messages WHERE user_id = ${uid}
-      ORDER BY created_at ASC LIMIT 50
+      ORDER BY created_at DESC LIMIT 30
     `);
+    /* Reverse so oldest-first */
+    (historyRows.rows as unknown[]).reverse();
 
     type DBRow = { role: string; content: string; tool_name: string | null; tool_input: string | null; tool_result: string | null };
 
@@ -260,10 +262,14 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
         const last = flat[flat.length - 1];
         const lastIsToolResultBatch = last?.role === "user" && Array.isArray(last.content) &&
           (last.content as Block[]).some(b => b.type === "tool_result");
+        const HIST_MAX = 2000;
+        const resultContent = (r.tool_result ?? "").length > HIST_MAX
+          ? (r.tool_result ?? "").slice(0, HIST_MAX) + "\n...(truncated)"
+          : (r.tool_result ?? "");
         if (lastIsToolResultBatch) {
-          (last.content as Block[]).push({ type: "tool_result", tool_use_id: toolUseId, content: r.tool_result ?? "" });
+          (last.content as Block[]).push({ type: "tool_result", tool_use_id: toolUseId, content: resultContent });
         } else {
-          flat.push({ role: "user", content: [{ type: "tool_result", tool_use_id: toolUseId, content: r.tool_result ?? "" }] });
+          flat.push({ role: "user", content: [{ type: "tool_result", tool_use_id: toolUseId, content: resultContent }] });
         }
         continue;
       }
@@ -413,11 +419,16 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
           result = { id: toolId, stdout: "", stderr: String(err), exitCode: -1, error: String(err) };
         }
 
-        const toolOutput = result.error
+        const rawOutput = result.error
           ? `ERROR: ${result.error}`
           : [result.stdout, result.stderr ? `STDERR: ${result.stderr}` : ""].filter(Boolean).join("\n");
 
-        sse(res, { type: "tool_done", id: toolId, tool: toolName, stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode });
+        const MAX_OUTPUT = 3000;
+        const toolOutput = rawOutput.length > MAX_OUTPUT
+          ? rawOutput.slice(0, MAX_OUTPUT) + `\n...(truncated — ${rawOutput.length - MAX_OUTPUT} chars omitted)`
+          : rawOutput;
+
+        sse(res, { type: "tool_done", id: toolId, tool: toolName, stdout: result.stdout?.slice(0, MAX_OUTPUT), stderr: result.stderr, exitCode: result.exitCode });
 
         toolResults.push({ type: "tool_result", tool_use_id: toolId, content: toolOutput || "(no output)" });
 
