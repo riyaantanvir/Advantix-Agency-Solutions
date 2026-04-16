@@ -5,8 +5,10 @@ import {
   ChevronDown, ChevronRight, Send, Loader2, CheckCircle2, XCircle,
   FolderOpen, FileText, Edit3, Monitor, Zap, AlertTriangle, Info,
   Bot, User, Settings, X, Shield, Clock, Calendar, MessageSquare,
-  Wrench, BarChart3, Activity,
+  Wrench, BarChart3, Activity, Sparkles, ChevronLeft,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useToolsUser } from "@/context/ToolsUserContext";
 import { useLocation } from "wouter";
 
@@ -72,92 +74,168 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
   const [open, setOpen] = useState(tool.status === "running");
   const meta = TOOL_META[tool.tool] ?? { icon: Terminal, label: tool.tool, color: "text-slate-400" };
   const Icon = meta.icon;
+  const isRunning = tool.status === "running";
+  const isError = tool.status === "error" || (tool.exitCode !== undefined && tool.exitCode !== 0);
+  const isDone = !isRunning && !isError;
 
   const getCommandDisplay = () => {
     if (tool.tool === "run_command" && tool.input.command) return `$ ${tool.input.command}`;
     if (tool.tool === "read_file" && tool.input.path) return String(tool.input.path);
-    if (tool.tool === "write_file" && tool.input.path) return String(tool.input.path);
+    if (tool.tool === "write_file" && tool.input.path) return `→ ${tool.input.path}`;
     if (tool.tool === "list_directory") return String(tool.input.path ?? ".");
     if (tool.tool === "open_vscode") return String(tool.input.path ?? ".");
-    return JSON.stringify(tool.input).slice(0, 60);
+    return JSON.stringify(tool.input).slice(0, 80);
   };
 
   return (
-    <div className={`rounded-xl border text-xs font-mono overflow-hidden ${
-      tool.status === "running" ? "border-amber-500/30 bg-amber-500/5"
-      : tool.exitCode === 0 || tool.status === "done" ? "border-green-500/20 bg-green-500/5"
-      : "border-red-500/20 bg-red-500/5"
-    }`}>
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`rounded-xl border overflow-hidden text-xs font-mono transition-all ${
+        isRunning ? "border-amber-500/40 bg-gradient-to-r from-amber-500/5 to-transparent"
+        : isDone   ? "border-green-500/25 bg-gradient-to-r from-green-500/5 to-transparent"
+        : "border-red-500/25 bg-gradient-to-r from-red-500/5 to-transparent"
+      }`}
+    >
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 w-full px-3 py-2 hover:bg-white/5 transition-colors text-left"
+        className="flex items-center gap-2.5 w-full px-3 py-2.5 hover:bg-white/[0.03] transition-colors text-left"
       >
-        <Icon className={`w-3.5 h-3.5 shrink-0 ${meta.color}`} />
-        <span className={`font-semibold ${meta.color}`}>{meta.label}</span>
-        <span className="text-muted-foreground truncate flex-1">{getCommandDisplay()}</span>
-        {tool.status === "running" && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400 shrink-0" />}
-        {tool.status === "done" && tool.exitCode === 0 && <CheckCircle2 className="w-3.5 h-3.5 text-green-400 shrink-0" />}
-        {(tool.status === "error" || (tool.exitCode !== undefined && tool.exitCode !== 0)) &&
-          <XCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
-        {open ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
-      </button>
-      {open && (tool.stdout || tool.stderr) && (
-        <div className="px-3 pb-3 space-y-1.5 border-t border-white/5">
-          {tool.stdout && (
-            <pre className="mt-2 text-foreground/80 whitespace-pre-wrap break-all max-h-64 overflow-y-auto">{tool.stdout}</pre>
-          )}
-          {tool.stderr && (
-            <pre className="text-red-400 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">STDERR: {tool.stderr}</pre>
-          )}
-          {tool.exitCode !== undefined && tool.exitCode !== 0 && (
-            <p className="text-red-400">Exit code: {tool.exitCode}</p>
-          )}
+        <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
+          isRunning ? "bg-amber-500/15" : isDone ? "bg-green-500/15" : "bg-red-500/15"
+        }`}>
+          <Icon className={`w-3.5 h-3.5 ${meta.color}`} />
         </div>
-      )}
-    </div>
+        <span className={`font-semibold text-[11px] uppercase tracking-wide shrink-0 ${meta.color}`}>{meta.label}</span>
+        <span className="text-muted-foreground/70 truncate flex-1 text-[11px]">{getCommandDisplay()}</span>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {isRunning && (
+            <span className="flex items-center gap-1 text-amber-400 text-[10px] font-medium">
+              <Loader2 className="w-3 h-3 animate-spin" /> running
+            </span>
+          )}
+          {isDone && <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />}
+          {isError && <XCircle className="w-3.5 h-3.5 text-red-400" />}
+          {open ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/50" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50" />}
+        </div>
+      </button>
+      <AnimatePresence>
+        {open && (tool.stdout || tool.stderr) && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden"
+          >
+            <div className="px-3 pb-3 pt-0 space-y-1.5 border-t border-white/5">
+              {tool.stdout && (
+                <pre className="mt-2.5 text-foreground/75 whitespace-pre-wrap break-all max-h-52 overflow-y-auto text-[11px] leading-relaxed scrollbar-thin">{tool.stdout}</pre>
+              )}
+              {tool.stderr && (
+                <pre className="text-red-400/80 whitespace-pre-wrap break-all max-h-32 overflow-y-auto text-[11px] leading-relaxed"><span className="text-red-500 font-semibold">stderr: </span>{tool.stderr}</pre>
+              )}
+              {tool.exitCode !== undefined && tool.exitCode !== 0 && (
+                <p className="text-red-400 text-[10px] font-semibold pt-0.5">exit code {tool.exitCode}</p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 
-function MessageBubble({ msg }: { msg: Message }) {
+const mdComponents = {
+  p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+  ul: ({ children }: React.HTMLAttributes<HTMLUListElement>) => <ul className="mb-2 space-y-1 pl-5 list-disc marker:text-primary/50">{children}</ul>,
+  ol: ({ children }: React.HTMLAttributes<HTMLOListElement>) => <ol className="mb-2 space-y-1 pl-5 list-decimal marker:text-muted-foreground">{children}</ol>,
+  li: ({ children }: React.HTMLAttributes<HTMLLIElement>) => <li className="leading-relaxed">{children}</li>,
+  strong: ({ children }: React.HTMLAttributes<HTMLElement>) => <strong className="font-semibold text-foreground">{children}</strong>,
+  em: ({ children }: React.HTMLAttributes<HTMLElement>) => <em className="italic opacity-90">{children}</em>,
+  code: ({ children, className }: React.HTMLAttributes<HTMLElement>) => {
+    const isBlock = className?.includes("language-");
+    if (isBlock) return (
+      <pre className="my-2 bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 overflow-x-auto text-[11px] text-green-300 font-mono leading-relaxed">
+        <code>{children}</code>
+      </pre>
+    );
+    return <code className="px-1.5 py-0.5 rounded bg-black/30 text-green-300 text-[12px] font-mono border border-white/10">{children}</code>;
+  },
+  h1: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h1 className="text-base font-bold text-foreground mt-2 mb-1">{children}</h1>,
+  h2: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h2 className="text-sm font-bold text-foreground mt-2 mb-1">{children}</h2>,
+  h3: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h3 className="text-sm font-semibold text-foreground mt-1.5 mb-0.5">{children}</h3>,
+  a: ({ children, href }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary/90 underline underline-offset-2 hover:text-primary transition-colors">{children}</a>,
+  blockquote: ({ children }: React.HTMLAttributes<HTMLQuoteElement>) => <blockquote className="border-l-2 border-primary/40 pl-3 my-2 text-muted-foreground italic">{children}</blockquote>,
+  hr: () => <hr className="border-border/30 my-2" />,
+};
+
+function MessageBubble({ msg, userName }: { msg: Message; userName?: string }) {
   const isUser = msg.role === "user";
+  const initial = (userName ?? "U")[0].toUpperCase();
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"}`}
+      transition={{ duration: 0.2 }}
+      className={`flex gap-3 group ${isUser ? "justify-end" : "justify-start"}`}
     >
       {!isUser && (
-        <div className="w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-          <Bot className="w-4 h-4 text-primary" />
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/25 flex items-center justify-center shrink-0 mt-1 shadow-sm">
+          <Sparkles className="w-3.5 h-3.5 text-primary" />
         </div>
       )}
-      <div className={`max-w-[85%] space-y-2 ${isUser ? "items-end" : "items-start"} flex flex-col`}>
+
+      <div className={`max-w-[78%] flex flex-col gap-2 ${isUser ? "items-end" : "items-start"}`}>
+        {/* Tool cards */}
         {msg.tools && msg.tools.length > 0 && (
-          <div className="w-full space-y-1.5">
+          <div className="w-full space-y-1.5 min-w-64">
             {msg.tools.map(t => <ToolCard key={t.id} tool={t} />)}
           </div>
         )}
+
+        {/* Message bubble */}
         {(msg.content || msg.streaming) && (
-          <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+          <div className={`relative text-sm leading-relaxed ${
             isUser
-              ? "bg-primary text-primary-foreground rounded-br-sm"
-              : "bg-secondary/60 text-foreground rounded-bl-sm border border-border/30"
+              ? "px-4 py-3 bg-primary text-primary-foreground rounded-2xl rounded-br-md shadow-md shadow-primary/10"
+              : "px-4 py-3 bg-card border border-border/40 text-foreground rounded-2xl rounded-bl-md shadow-sm"
           }`}>
-            {msg.content || <span className="opacity-50">Thinking...</span>}
-            {msg.streaming && <span className="ml-1 inline-block w-1.5 h-4 bg-current align-middle animate-pulse rounded-sm" />}
+            {isUser ? (
+              <p className="whitespace-pre-wrap">{msg.content}</p>
+            ) : msg.content ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                {msg.content}
+              </ReactMarkdown>
+            ) : (
+              <span className="flex items-center gap-2 text-muted-foreground">
+                <span className="flex gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: "300ms" }} />
+                </span>
+                Thinking…
+              </span>
+            )}
+            {msg.streaming && msg.content && (
+              <span className="inline-block w-0.5 h-[1em] bg-current align-middle ml-0.5 animate-pulse rounded-full" />
+            )}
           </div>
         )}
+
+        {/* Error */}
         {msg.error && (
-          <div className="px-4 py-3 rounded-2xl text-sm bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            {msg.error}
+          <div className="px-4 py-3 rounded-2xl rounded-bl-md text-sm bg-red-500/8 text-red-400 border border-red-500/20 flex items-start gap-2.5 max-w-full">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="text-xs leading-relaxed break-words">{msg.error}</span>
           </div>
         )}
       </div>
+
       {isUser && (
-        <div className="w-8 h-8 rounded-full bg-secondary border border-border/40 flex items-center justify-center shrink-0 mt-0.5">
-          <User className="w-4 h-4 text-muted-foreground" />
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-secondary to-secondary/60 border border-border/50 flex items-center justify-center shrink-0 mt-1 text-xs font-bold text-foreground shadow-sm">
+          {initial}
         </div>
       )}
     </motion.div>
@@ -808,34 +886,49 @@ export default function AssistantPage() {
 
         {/* ── Chat area ────────────────────────────────────────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+          <div className="flex-1 overflow-y-auto px-5 py-6 space-y-5">
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-center gap-4">
-                <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                  <Terminal className="w-8 h-8 text-primary" />
-                </div>
-                <div>
-                  <h3 className="font-display font-bold text-foreground text-lg">Advantix Assistant</h3>
-                  <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+              <div className="flex flex-col items-center justify-center h-full text-center gap-5 pb-8">
+                <div className="relative">
+                  <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-primary/20 via-primary/10 to-transparent border border-primary/20 flex items-center justify-center shadow-xl shadow-primary/5">
+                    <Sparkles className="w-9 h-9 text-primary" />
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full border-2 border-background flex items-center justify-center bg-green-500 shadow">
                     {agentStatus.connected
-                      ? `Connected to ${agentStatus.info?.hostname}. Ask me to run commands, read files, write code, or anything else on your machine.`
-                      : "Connect your local agent using the setup guide on the left, then start chatting."}
+                      ? <Wifi className="w-3 h-3 text-white" />
+                      : <WifiOff className="w-3 h-3 text-white" />}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="font-display font-bold text-foreground text-xl">
+                    {user?.name ? `Hi, ${user.name.split(" ")[0]}! 👋` : "Advantix Assistant"}
+                  </h3>
+                  <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
+                    {agentStatus.connected
+                      ? `Connected to **${agentStatus.info?.hostname}**. I can run commands, read & write files, open VS Code, and anything else on your machine.`
+                      : "Set up your local agent using the guide on the left, then I can execute commands directly on your computer."}
                   </p>
                 </div>
                 {!keyInfo?.exists && (
                   <button
                     onClick={() => setShowSettings(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+                    className="flex items-center gap-2 px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
                   >
                     <Key className="w-4 h-4" /> Generate API Key to get started
                   </button>
                 )}
                 {agentStatus.connected && (
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    {["List files in my project", "Create a Hello World in Python", "Show me my git status", "What's in my Downloads folder?"].map(s => (
-                      <button key={s} onClick={() => { setInput(s); inputRef.current?.focus(); }}
-                        className="text-xs px-3 py-1.5 rounded-full border border-border/50 text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5 transition-all">
-                        {s}
+                  <div className="grid grid-cols-2 gap-2 max-w-sm w-full">
+                    {[
+                      { text: "List files in my project", icon: FolderOpen },
+                      { text: "Create a Hello World in Python", icon: Terminal },
+                      { text: "Show me my git status", icon: Info },
+                      { text: "What's in my Downloads folder?", icon: FileText },
+                    ].map(({ text, icon: Icon }) => (
+                      <button key={text} onClick={() => { setInput(text); inputRef.current?.focus(); }}
+                        className="flex items-center gap-2 text-left text-xs px-3 py-2.5 rounded-xl border border-border/50 text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-all group">
+                        <Icon className="w-3.5 h-3.5 text-primary/60 group-hover:text-primary shrink-0 transition-colors" />
+                        <span>{text}</span>
                       </button>
                     ))}
                   </div>
@@ -843,27 +936,31 @@ export default function AssistantPage() {
               </div>
             )}
             <AnimatePresence initial={false}>
-              {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
+              {messages.map(msg => <MessageBubble key={msg.id} msg={msg} userName={user?.name ?? user?.email} />)}
             </AnimatePresence>
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="shrink-0 px-4 pb-4 pt-2 border-t border-border/30">
+          <div className="shrink-0 px-4 pb-4 pt-3 border-t border-border/20 bg-background/50 backdrop-blur-sm">
             {!agentStatus.connected && (
-              <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 mb-2">
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                className="flex items-center gap-2 text-xs text-amber-400/90 bg-amber-500/8 border border-amber-500/15 rounded-xl px-3 py-2 mb-3"
+              >
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                Agent not connected — AI can still chat but cannot execute commands
-              </div>
+                <span>Agent not connected — I can still answer questions but can't execute commands on your machine</span>
+              </motion.div>
             )}
-            <div className="flex items-end gap-2 bg-secondary/30 border border-border/50 rounded-2xl px-4 py-3 focus-within:border-primary/50 focus-within:bg-secondary/50 transition-all">
+            <div className="flex items-end gap-3 bg-card border border-border/50 rounded-2xl px-4 py-3 focus-within:border-primary/40 focus-within:shadow-lg focus-within:shadow-primary/5 transition-all duration-200">
               <textarea
                 ref={inputRef}
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={agentStatus.connected ? "Ask me to run a command, write code, read a file..." : "Type a message..."}
+                placeholder={agentStatus.connected ? "Ask me to run a command, write code, read a file…" : "Ask me anything…"}
                 rows={1}
-                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none max-h-40 overflow-y-auto leading-relaxed"
+                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 resize-none focus:outline-none max-h-40 overflow-y-auto leading-relaxed"
                 style={{ height: "auto" }}
                 onInput={e => {
                   const el = e.currentTarget;
@@ -875,7 +972,7 @@ export default function AssistantPage() {
               <button
                 onClick={sendMessage}
                 disabled={!input.trim() || sending}
-                className="shrink-0 w-9 h-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                className="shrink-0 w-9 h-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-md shadow-primary/20"
               >
                 {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>
