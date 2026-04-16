@@ -241,24 +241,44 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
 
     type DBRow = { role: string; content: string; tool_name: string | null; tool_input: string | null; tool_result: string | null };
 
-    const history = (historyRows.rows as DBRow[]).map(r => {
+    /* Build raw history, then validate pairs to avoid orphan tool_result errors */
+    const rawHistory: Array<{ role: "user" | "assistant"; content: string | object[] }> = [];
+
+    for (const r of historyRows.rows as DBRow[]) {
       if (r.role === "tool") {
-        return {
+        /* Only include tool_result if the previous message is an assistant turn with a matching tool_use */
+        const prev = rawHistory[rawHistory.length - 1];
+        const prevContent = prev?.content;
+        const toolUseId = r.tool_name ?? "";
+        const hasMatchingToolUse =
+          prev?.role === "assistant" &&
+          Array.isArray(prevContent) &&
+          (prevContent as Array<{ type?: string; id?: string }>).some(
+            b => b.type === "tool_use" && b.id === toolUseId
+          );
+        if (!hasMatchingToolUse) continue; /* skip orphaned tool_result */
+        rawHistory.push({
           role: "user" as const,
-          content: [{ type: "tool_result" as const, tool_use_id: r.tool_name ?? "", content: r.tool_result ?? "" }],
-        };
+          content: [{ type: "tool_result" as const, tool_use_id: toolUseId, content: r.tool_result ?? "" }],
+        });
+        continue;
       }
-      if (r.role === "assistant" && r.tool_name) {
-        return {
-          role: "assistant" as const,
-          content: [
-            ...(r.content ? [{ type: "text" as const, text: r.content }] : []),
-            { type: "tool_use" as const, id: r.tool_name, name: r.tool_input ?? "", input: {} },
-          ],
-        };
+      if (r.role === "assistant") {
+        try {
+          const parsed = JSON.parse(r.content);
+          if (Array.isArray(parsed)) {
+            rawHistory.push({ role: "assistant" as const, content: parsed });
+            continue;
+          }
+        } catch { /* plain text */ }
+        if (!r.content) continue; /* skip empty assistant rows */
+        rawHistory.push({ role: "assistant" as const, content: r.content });
+        continue;
       }
-      return { role: r.role as "user" | "assistant", content: r.content };
-    });
+      rawHistory.push({ role: r.role as "user" | "assistant", content: r.content });
+    }
+
+    const history = rawHistory;
 
     /* ── Store user message ── */
     await db.execute(sql`
@@ -335,6 +355,12 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
         ...toolBlocks.map(b => ({ type: "tool_use", id: b.id, name: b.name, input: b.input ?? {} })),
       ];
       messages.push({ role: "assistant", content: assistantContent });
+
+      /* Persist the assistant's tool_use turn so history can be reconstructed */
+      await db.execute(sql`
+        INSERT INTO agent_messages (user_id, role, content)
+        VALUES (${uid}, 'assistant', ${JSON.stringify(assistantContent)})
+      `);
 
       const toolResults: object[] = [];
 
