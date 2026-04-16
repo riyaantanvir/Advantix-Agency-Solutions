@@ -338,6 +338,12 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       { role: "user", content: message },
     ];
 
+    /* Tracks only the current agentic turn's messages (no history),
+       used from round 1 onward to avoid re-sending history every loop */
+    const sessionMessages: Array<{ role: "user" | "assistant"; content: string | object[] }> = [
+      { role: "user", content: message },
+    ];
+
     let fullText = "";
     let totalTokens = 0;
     const MAX_TOOL_ROUNDS = 8;
@@ -379,7 +385,9 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
 
     /* ══ Agentic loop ══════════════════════════════════════════════════════ */
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const claudeRes = await callClaude(messages);
+      /* Round 0 uses full history; later rounds use only the session chain
+         to avoid re-sending history + previous tool output on every loop */
+      const claudeRes = await callClaude(round === 0 ? messages : sessionMessages);
 
       const claudeData = await claudeRes.json() as {
         content: Array<{ type: string; text?: string; id?: string; name?: string; input?: object }>;
@@ -411,6 +419,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
         ...toolBlocks.map(b => ({ type: "tool_use", id: b.id, name: b.name, input: b.input ?? {} })),
       ];
       messages.push({ role: "assistant", content: assistantContent });
+      sessionMessages.push({ role: "assistant", content: assistantContent });
 
       /* Persist the assistant's tool_use turn so history can be reconstructed */
       await db.execute(sql`
@@ -455,6 +464,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       }
 
       messages.push({ role: "user", content: toolResults });
+      sessionMessages.push({ role: "user", content: toolResults });
     }
     /* ══ End of agentic loop ══════════════════════════════════════════════ */
 
