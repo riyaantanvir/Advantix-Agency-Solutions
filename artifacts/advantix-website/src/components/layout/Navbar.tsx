@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Menu, X, LogIn, Wrench, ChevronDown, Link2, Video, LayoutDashboard, LogOut, Bug, Shield } from "lucide-react";
+import { Menu, X, LogIn, Wrench, LayoutDashboard, LogOut, Bug, Shield } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToolsUser } from "@/context/ToolsUserContext";
@@ -10,16 +10,10 @@ import { useQuery } from "@tanstack/react-query";
 
 const expo = [0.22, 1, 0.36, 1] as const;
 
-const tools = [
-  { href: "/tools/url-shortener", icon: Link2, label: "URL Shortener", desc: "Shorten & track links" },
-  { href: "/tools/screen-recorder", icon: Video, label: "Screen Recorder", desc: "Record up to 10 min" },
-];
-
 export function Navbar() {
   const [location] = useLocation();
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const { user, isAdmin, logout } = useToolsUser();
@@ -40,7 +34,6 @@ export function Navbar() {
 
   useEffect(() => {
     setMobileMenuOpen(false);
-    setToolsOpen(false);
   }, [location]);
 
   const navLinks = [
@@ -50,9 +43,8 @@ export function Navbar() {
     { href: "/team", label: "Team" },
     { href: "/blog", label: "Blog" },
     { href: "/careers", label: "Careers" },
+    { href: "/tools", label: "Tools", icon: Wrench },
   ];
-
-  const isToolsActive = location.startsWith("/tools");
 
   return (
     <motion.header
@@ -84,15 +76,19 @@ export function Navbar() {
           {/* Desktop Nav */}
           <nav className="hidden md:flex items-center gap-6">
             {navLinks.map((link) => {
-              const isActive = location === link.href;
+              const isActive = link.href === "/tools"
+                ? location.startsWith("/tools")
+                : location === link.href;
+              const Icon = link.icon;
               return (
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`relative text-sm font-medium transition-colors duration-200 hover:text-primary ${
+                  className={`relative flex items-center gap-1 text-sm font-medium transition-colors duration-200 hover:text-primary ${
                     isActive ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
+                  {Icon && <Icon className="w-3.5 h-3.5" />}
                   {link.label}
                   {isActive && (
                     <motion.span
@@ -104,64 +100,6 @@ export function Navbar() {
                 </Link>
               );
             })}
-
-            {/* Tools dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setToolsOpen(!toolsOpen)}
-                onBlur={() => setTimeout(() => setToolsOpen(false), 150)}
-                className={`relative flex items-center gap-1 text-sm font-medium transition-colors duration-200 hover:text-primary ${isToolsActive ? "text-primary" : "text-muted-foreground"}`}
-              >
-                <Wrench className="w-3.5 h-3.5" />
-                Tools
-                <motion.span animate={{ rotate: toolsOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </motion.span>
-                {isToolsActive && (
-                  <motion.span
-                    layoutId="nav-underline"
-                    className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary rounded-full"
-                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                  />
-                )}
-              </button>
-
-              <AnimatePresence>
-                {toolsOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                    transition={{ duration: 0.18, ease: expo }}
-                    className="absolute top-full mt-3 left-1/2 -translate-x-1/2 w-60 bg-card border border-border/60 rounded-2xl shadow-xl overflow-hidden"
-                  >
-                    <div className="p-1.5">
-                      {tools.map((tool) => {
-                        const Icon = tool.icon;
-                        return (
-                          <Link key={tool.label} href={tool.href}>
-                            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors hover:bg-secondary/60 cursor-pointer">
-                              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                                <Icon className="w-4 h-4 text-primary" />
-                              </div>
-                              <div className="text-left">
-                                <p className="text-sm font-semibold text-foreground leading-none mb-0.5">{tool.label}</p>
-                                <p className="text-xs text-muted-foreground">{tool.desc}</p>
-                              </div>
-                            </div>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                    <div className="border-t border-border/50 px-4 py-3">
-                      <Link href="/tools">
-                        <p className="text-xs text-center text-primary font-medium hover:underline">View all tools →</p>
-                      </Link>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
 
             {/* Conditional: admin / logged-in user / login button */}
             {isAdminLoggedIn ? (
@@ -263,52 +201,36 @@ export function Navbar() {
             className="md:hidden bg-background/95 backdrop-blur-xl border-b border-border/50 overflow-hidden"
           >
             <nav className="flex flex-col p-4 gap-1">
-              {navLinks.map((link, i) => (
-                <motion.div
-                  key={link.href}
-                  initial={{ opacity: 0, x: -16 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.06, duration: 0.3, ease: expo }}
-                >
-                  <Link
-                    href={link.href}
-                    className={`block px-3 py-2.5 rounded-xl text-base font-medium transition-colors hover:bg-secondary/60 hover:text-primary ${
-                      location === link.href ? "text-primary bg-primary/5" : "text-muted-foreground"
-                    }`}
+              {navLinks.map((link, i) => {
+                const isActive = link.href === "/tools"
+                  ? location.startsWith("/tools")
+                  : location === link.href;
+                const Icon = link.icon;
+                return (
+                  <motion.div
+                    key={link.href}
+                    initial={{ opacity: 0, x: -16 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.06, duration: 0.3, ease: expo }}
                   >
-                    {link.label}
-                  </Link>
-                </motion.div>
-              ))}
-
-              {/* Tools section in mobile */}
-              <motion.div
-                initial={{ opacity: 0, x: -16 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.18, duration: 0.3, ease: expo }}
-              >
-                <p className="px-3 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-widest mt-2">Tools</p>
-                {tools.map(tool => {
-                  const Icon = tool.icon;
-                  const isActive = isToolsActive && location.includes(tool.href.split("/tools/")[1] ?? "");
-                  return (
-                    <Link key={tool.label} href={tool.href}>
-                      <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-secondary/60">
-                        <Icon className="w-4 h-4 text-primary" />
-                        <span className={`text-base font-medium ${isActive ? "text-primary" : "text-muted-foreground"}`}>
-                          {tool.label}
-                        </span>
-                      </div>
+                    <Link
+                      href={link.href}
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-base font-medium transition-colors hover:bg-secondary/60 hover:text-primary ${
+                        isActive ? "text-primary bg-primary/5" : "text-muted-foreground"
+                      }`}
+                    >
+                      {Icon && <Icon className="w-4 h-4" />}
+                      {link.label}
                     </Link>
-                  );
-                })}
-              </motion.div>
+                  </motion.div>
+                );
+              })}
 
               {/* Report Bug in mobile */}
               <motion.div
                 initial={{ opacity: 0, x: -16 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.22, duration: 0.3, ease: expo }}
+                transition={{ delay: 0.42, duration: 0.3, ease: expo }}
               >
                 <button
                   onClick={() => { setMobileMenuOpen(false); setBugReportOpen(true); }}
@@ -322,7 +244,7 @@ export function Navbar() {
               <motion.div
                 initial={{ opacity: 0, x: -16 }}
                 animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.24, duration: 0.3, ease: expo }}
+                transition={{ delay: 0.48, duration: 0.3, ease: expo }}
                 className="pt-2 flex flex-col gap-2"
               >
                 {isAdminLoggedIn ? (
