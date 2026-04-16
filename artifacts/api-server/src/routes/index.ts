@@ -38,8 +38,11 @@ import toolsTtsRouter from "./toolsTts.js";
 import smmRouter from "./smm.js";
 import contentStudioRouter from "./contentStudio.js";
 import toolPermissionsRouter from "./toolPermissions.js";
+import adminPermissionsRouter, { ensureAdminPermissionsTable } from "./adminPermissions.js";
 
 const router: IRouter = Router();
+
+ensureAdminPermissionsTable().catch(console.error);
 
 router.use(healthRouter);
 router.use(authRouter);
@@ -80,5 +83,6 @@ router.use(toolsTtsRouter);
 router.use(smmRouter);
 router.use(contentStudioRouter);
 router.use(toolPermissionsRouter);
+router.use(adminPermissionsRouter);
 
 export default router;

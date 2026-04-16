@@ -171,6 +171,36 @@ function getSeenReplies(): Set<number> {
   }
 }
 
+/* ── Page slug → nav group label / path mapping ────────────────── */
+const PAGE_SLUG_MAP: Record<string, { type: "group"; label: string } | { type: "path"; path: string }> = {
+  "dashboard":          { type: "path",  path: "/dashboard" },
+  "management":         { type: "group", label: "Management" },
+  "project-management": { type: "group", label: "Project Management" },
+  "marketing":          { type: "group", label: "Marketing" },
+  "content":            { type: "group", label: "Content" },
+  "social-media":       { type: "group", label: "AD Social Media" },
+  "analytics":          { type: "path",  path: "/website-analytics" },
+  "generate-content":   { type: "group", label: "Generate Content" },
+  "finance":            { type: "group", label: "Advantix Finance" },
+  "system":             { type: "group", label: "System" },
+  "admin-settings":     { type: "group", label: "Admin Settings" },
+};
+
+function filterNavItems(items: NavItem[], allowedSlugs: string[]): NavItem[] {
+  return items.filter(item => {
+    if (isGroup(item)) {
+      const entry = Object.values(PAGE_SLUG_MAP).find(v => v.type === "group" && (v as any).label === item.label);
+      if (!entry) return true; // unknown group — keep
+      const slug = Object.keys(PAGE_SLUG_MAP).find(k => PAGE_SLUG_MAP[k] === entry);
+      return slug ? allowedSlugs.includes(slug) : true;
+    } else {
+      const entry = Object.entries(PAGE_SLUG_MAP).find(([, v]) => v.type === "path" && (v as any).path === item.path);
+      if (!entry) return true; // not a restricted page — keep (e.g. Tools Dashboard external link)
+      return allowedSlugs.includes(entry[0]);
+    }
+  });
+}
+
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -187,6 +217,17 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     },
     staleTime: 60_000,
   });
+
+  const { data: myPerms } = useQuery<{ pages: string[]; isSuperAdmin: boolean }>({
+    queryKey: ["my-admin-permissions"],
+    queryFn: () => fetch("/api/auth/my-admin-permissions", { credentials: "include" }).then(r => r.ok ? r.json() : null),
+    staleTime: 60_000,
+    enabled: !!me,
+  });
+
+  const allowedNavItems: NavItem[] = (myPerms && !myPerms.isSuperAdmin)
+    ? filterNavItems(navItems, myPerms.pages)
+    : navItems;
 
   const { data: replies = [] } = useQuery<{ id: number }[]>({
     queryKey: ["pm-replies"],
@@ -322,17 +363,9 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       <nav className="flex-1 px-3 space-y-1 mt-2 overflow-y-auto">
-        {navItems
-          .filter((item) => {
-            if (isGroup(item) && item.label === "Admin Settings") {
-              // Show while loading (me undefined), hide only when confirmed non-superadmin
-              return me?.isSuperAdmin !== false;
-            }
-            return true;
-          })
-          .map((item) =>
-            isGroup(item) ? renderGroup(item) : renderLink(item)
-          )}
+        {allowedNavItems.map((item) =>
+          isGroup(item) ? renderGroup(item) : renderLink(item)
+        )}
       </nav>
 
       <div className="shrink-0 border-t border-border/50">
