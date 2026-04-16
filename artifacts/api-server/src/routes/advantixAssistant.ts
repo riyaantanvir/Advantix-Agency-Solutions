@@ -326,53 +326,169 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       INSERT INTO agent_messages (user_id, role, content) VALUES (${uid}, 'user', ${message})
     `);
 
-    /* ── Get Claude key ── */
-    const anthropicKey = await getApiKey("ANTHROPIC_API_KEY") ?? process.env.ANTHROPIC_API_KEY;
-    if (!anthropicKey) {
-      sse(res, { type: "error", message: "Anthropic API key not configured. Add ANTHROPIC_API_KEY in Admin → Integrations." });
+    /* ── Load AI provider + model from settings ── */
+    const providerSetting = await getApiKey("ASSISTANT_PROVIDER");
+    const modelSetting    = await getApiKey("ASSISTANT_MODEL");
+
+    type Provider = "anthropic" | "openai" | "openrouter" | "gemini";
+    const provider: Provider = (providerSetting as Provider) || "anthropic";
+
+    const PROVIDER_URLS: Record<Provider, string> = {
+      anthropic:  "https://api.anthropic.com/v1/messages",
+      openai:     "https://api.openai.com/v1/chat/completions",
+      openrouter: "https://openrouter.ai/api/v1/chat/completions",
+      gemini:     "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    };
+    const PROVIDER_KEY_NAMES: Record<Provider, string> = {
+      anthropic:  "ANTHROPIC_API_KEY",
+      openai:     "OPENAI_API_KEY",
+      openrouter: "OPENROUTER_API_KEY",
+      gemini:     "GEMINI_API_KEY",
+    };
+    const DEFAULT_MODELS: Record<Provider, string> = {
+      anthropic:  "claude-sonnet-4-5",
+      openai:     "gpt-4o",
+      openrouter: "anthropic/claude-3-5-sonnet",
+      gemini:     "gemini-2.0-flash",
+    };
+
+    const apiKey = await getApiKey(PROVIDER_KEY_NAMES[provider])
+      ?? process.env[PROVIDER_KEY_NAMES[provider]];
+    if (!apiKey) {
+      sse(res, { type: "error", message: `${PROVIDER_KEY_NAMES[provider]} not configured. Add it in Admin → Integrations.` });
       res.end(); return;
     }
+    const model = modelSetting || DEFAULT_MODELS[provider];
 
-    const messages: Array<{ role: "user" | "assistant"; content: string | object[] }> = [
-      ...history,
-      { role: "user", content: message },
-    ];
+    /* ── Convert Anthropic-format messages to OpenAI-compatible format ── */
+    type InternalMsg = { role: "user" | "assistant"; content: string | object[] };
+    type ABlock = { type?: string; id?: string; tool_use_id?: string; text?: string; name?: string; input?: object; content?: string };
 
-    /* Tracks only the current agentic turn's messages (no history),
-       used from round 1 onward to avoid re-sending history every loop */
-    const sessionMessages: Array<{ role: "user" | "assistant"; content: string | object[] }> = [
-      { role: "user", content: message },
-    ];
+    function toOpenAIMessages(msgs: InternalMsg[]): object[] {
+      const out: object[] = [];
+      for (const msg of msgs) {
+        if (msg.role === "user") {
+          if (typeof msg.content === "string") {
+            out.push({ role: "user", content: msg.content });
+          } else {
+            const blocks = msg.content as ABlock[];
+            const trBlocks = blocks.filter(b => b.type === "tool_result");
+            const txtBlocks = blocks.filter(b => b.type === "text");
+            if (txtBlocks.length > 0) out.push({ role: "user", content: txtBlocks.map(b => b.text ?? "").join("\n") });
+            for (const tr of trBlocks) out.push({ role: "tool", tool_call_id: tr.tool_use_id ?? "", content: tr.content ?? "" });
+          }
+        } else {
+          if (typeof msg.content === "string") {
+            out.push({ role: "assistant", content: msg.content });
+          } else {
+            const blocks = msg.content as ABlock[];
+            const txtBlocks = blocks.filter(b => b.type === "text");
+            const tuBlocks  = blocks.filter(b => b.type === "tool_use");
+            const m: Record<string, unknown> = { role: "assistant", content: txtBlocks.map(b => b.text ?? "").join("") || null };
+            if (tuBlocks.length > 0) {
+              m.tool_calls = tuBlocks.map(b => ({
+                id: b.id, type: "function",
+                function: { name: b.name, arguments: JSON.stringify(b.input ?? {}) },
+              }));
+            }
+            out.push(m);
+          }
+        }
+      }
+      return out;
+    }
+
+    /* ── OpenAI-format tools ── */
+    const TOOLS_DEF_OPENAI = TOOLS_DEF.map(t => ({
+      type: "function" as const,
+      function: { name: t.name, description: t.description, parameters: t.input_schema },
+    }));
+
+    /* ── Unified AI response type ── */
+    type AIResponse = {
+      text: string;
+      toolCalls: Array<{ id: string; name: string; input: object }>;
+      stopReason: string;
+      usage: { input_tokens: number; output_tokens: number };
+    };
+
+    const messages: InternalMsg[] = [...history, { role: "user", content: message }];
+    const sessionMessages: InternalMsg[] = [{ role: "user", content: message }];
 
     let fullText = "";
     let totalTokens = 0;
     const MAX_TOOL_ROUNDS = 8;
+    const SYSTEM_PROMPT = `You are Advantix Assistant — an AI agent that controls the user's machine via tools. Be concise. ${sysContext}`;
 
-    /* ── Helper: call Claude — unlimited retries on rate limit, exponential backoff ── */
-    const callClaude = async (msgs: typeof messages, isToolRound = false): Promise<Response> => {
-      const WAIT_STEPS = [10, 20, 30, 60]; // seconds to wait per attempt
+    /* ── callAI — unified multi-provider call with unlimited rate-limit retry ── */
+    const callAI = async (msgs: InternalMsg[], isToolRound = false): Promise<AIResponse> => {
+      const maxTokens = isToolRound ? 1024 : 4096;
+      const WAIT_STEPS = [10, 20, 30, 60];
       let attempt = 0;
+
       while (true) {
-        const r = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-5",
-            /* Tool rounds only need short responses; final answer can be full */
-            max_tokens: isToolRound ? 1024 : 4096,
-            system: `You are Advantix Assistant — an AI agent that controls the user's machine via tools. Be concise. ${sysContext}`,
-            tools: agentConnected ? TOOLS_DEF : [],
-            messages: msgs,
-          }),
-        });
-        if (r.ok) return r;
-        const errText = await r.text();
-        let isRateLimit = false;
-        try { isRateLimit = JSON.parse(errText)?.error?.type === "rate_limit_error"; } catch {}
+        let response: Response;
+
+        if (provider === "anthropic") {
+          response = await fetch(PROVIDER_URLS.anthropic, {
+            method: "POST",
+            headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+            body: JSON.stringify({
+              model, max_tokens: maxTokens,
+              system: SYSTEM_PROMPT,
+              tools: agentConnected ? TOOLS_DEF : [],
+              messages: msgs,
+            }),
+          });
+        } else {
+          const oaiMsgs = toOpenAIMessages(msgs);
+          const headers: Record<string, string> = { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" };
+          if (provider === "openrouter") headers["HTTP-Referer"] = "https://advantix.digital";
+          response = await fetch(PROVIDER_URLS[provider], {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model, max_tokens: maxTokens,
+              messages: [{ role: "system", content: SYSTEM_PROMPT }, ...oaiMsgs],
+              ...(agentConnected ? { tools: TOOLS_DEF_OPENAI } : {}),
+            }),
+          });
+        }
+
+        if (response.ok) {
+          if (provider === "anthropic") {
+            const d = await response.json() as {
+              content: Array<{ type: string; text?: string; id?: string; name?: string; input?: object }>;
+              usage?: { input_tokens: number; output_tokens: number };
+              stop_reason?: string;
+            };
+            return {
+              text: d.content.filter(b => b.type === "text").map(b => b.text ?? "").join(""),
+              toolCalls: d.content.filter(b => b.type === "tool_use").map(b => ({ id: b.id ?? crypto.randomUUID(), name: b.name ?? "", input: b.input ?? {} })),
+              stopReason: d.stop_reason ?? "end_turn",
+              usage: d.usage ?? { input_tokens: 0, output_tokens: 0 },
+            };
+          } else {
+            const d = await response.json() as {
+              choices: Array<{ message: { content?: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }; finish_reason?: string }>;
+              usage?: { prompt_tokens: number; completion_tokens: number };
+            };
+            const choice = d.choices[0];
+            return {
+              text: choice.message.content ?? "",
+              toolCalls: (choice.message.tool_calls ?? []).map(tc => ({
+                id: tc.id, name: tc.function.name,
+                input: (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })(),
+              })),
+              stopReason: choice.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
+              usage: { input_tokens: d.usage?.prompt_tokens ?? 0, output_tokens: d.usage?.completion_tokens ?? 0 },
+            };
+          }
+        }
+
+        const errText = await response.text();
+        let isRateLimit = response.status === 429;
+        try { if (JSON.parse(errText)?.error?.type === "rate_limit_error") isRateLimit = true; } catch {}
         if (isRateLimit) {
           const waitSecs = WAIT_STEPS[Math.min(attempt, WAIT_STEPS.length - 1)];
           sse(res, { type: "content", delta: `\n\n_Rate limit — waiting ${waitSecs}s…_\n\n` });
@@ -380,54 +496,37 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
           attempt++;
           continue;
         }
-        throw new Error(`Claude API error: ${errText}`);
+        throw new Error(`AI API error (${provider}): ${errText}`);
       }
     };
 
     /* ══ Agentic loop ══════════════════════════════════════════════════════ */
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      /* Round 0 uses full history; later rounds use only the session chain.
-         Tool rounds use lower max_tokens to save output credits. */
       const hasTools = agentConnected && TOOLS_DEF.length > 0;
-      const claudeRes = await callClaude(
+      const { text, toolCalls, stopReason, usage } = await callAI(
         round === 0 ? messages : sessionMessages,
-        /* isToolRound: true for all but the last allowed round (likely a final text answer) */
         hasTools && round < MAX_TOOL_ROUNDS - 1,
       );
 
-      const claudeData = await claudeRes.json() as {
-        content: Array<{ type: string; text?: string; id?: string; name?: string; input?: object }>;
-        usage?: { input_tokens: number; output_tokens: number };
-        stop_reason?: string;
-      };
-
-      totalTokens += (claudeData.usage?.input_tokens ?? 0) + (claudeData.usage?.output_tokens ?? 0);
-
-      const textBlocks = claudeData.content.filter(b => b.type === "text");
-      const toolBlocks = claudeData.content.filter(b => b.type === "tool_use");
+      totalTokens += usage.input_tokens + usage.output_tokens;
 
       /* ── Stream text ── */
-      for (const block of textBlocks) {
-        if (block.text) {
-          fullText += block.text;
-          sse(res, { type: "content", delta: block.text });
-        }
+      if (text) {
+        fullText += text;
+        sse(res, { type: "content", delta: text });
       }
 
       /* ── If no tool calls, we're done ── */
-      if (toolBlocks.length === 0 || claudeData.stop_reason === "end_turn") {
-        break;
-      }
+      if (toolCalls.length === 0 || stopReason === "end_turn" || stopReason === "stop") break;
 
       /* ── Execute tool calls in sequence ── */
       const assistantContent: object[] = [
-        ...textBlocks.map(b => ({ type: "text", text: b.text ?? "" })),
-        ...toolBlocks.map(b => ({ type: "tool_use", id: b.id, name: b.name, input: b.input ?? {} })),
+        ...(text ? [{ type: "text", text }] : []),
+        ...toolCalls.map(tc => ({ type: "tool_use", id: tc.id, name: tc.name, input: tc.input })),
       ];
       messages.push({ role: "assistant", content: assistantContent });
       sessionMessages.push({ role: "assistant", content: assistantContent });
 
-      /* Persist the assistant's tool_use turn so history can be reconstructed */
       await db.execute(sql`
         INSERT INTO agent_messages (user_id, role, content)
         VALUES (${uid}, 'assistant', ${JSON.stringify(assistantContent)})
@@ -435,10 +534,10 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
 
       const toolResults: object[] = [];
 
-      for (const tool of toolBlocks) {
-        const toolId = tool.id ?? crypto.randomUUID();
-        const toolName = tool.name ?? "unknown";
-        const toolInput = (tool.input ?? {}) as Record<string, unknown>;
+      for (const tc of toolCalls) {
+        const toolId   = tc.id;
+        const toolName = tc.name;
+        const toolInput = tc.input as Record<string, unknown>;
 
         sse(res, { type: "tool_start", id: toolId, tool: toolName, input: toolInput });
 
@@ -462,7 +561,6 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
 
         toolResults.push({ type: "tool_result", tool_use_id: toolId, content: toolOutput || "(no output)" });
 
-        /* store tool in history */
         await db.execute(sql`
           INSERT INTO agent_messages (user_id, role, content, tool_name, tool_input, tool_result)
           VALUES (${uid}, 'tool', '', ${toolId}, ${toolName}, ${toolOutput})
@@ -474,7 +572,6 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     }
     /* ══ End of agentic loop ══════════════════════════════════════════════ */
 
-    /* Store assistant response */
     if (fullText) {
       await db.execute(sql`
         INSERT INTO agent_messages (user_id, role, content) VALUES (${uid}, 'assistant', ${fullText})

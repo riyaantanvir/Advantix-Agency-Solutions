@@ -43,6 +43,7 @@ const PRESETS = [
   { name: "OPENAI_API_KEY", label: "OpenAI API Key", category: "AI", description: "API key for OpenAI (GPT models, DALL-E, Whisper)" },
   { name: "ANTHROPIC_API_KEY", label: "Anthropic API Key", category: "AI", description: "API key for Anthropic Claude models" },
   { name: "GEMINI_API_KEY", label: "Google Gemini API Key", category: "AI", description: "API key for Google Gemini models" },
+  { name: "OPENROUTER_API_KEY", label: "OpenRouter API Key", category: "AI", description: "API key for OpenRouter (access 200+ models with one key — sk-or-v1-...)" },
   { name: "GROK_API_KEY", label: "Grok (xAI) API Key", category: "AI", description: "API key for xAI Grok models" },
   { name: "STRIPE_SECRET_KEY", label: "Stripe Secret Key", category: "Payment", description: "Stripe secret key for payment processing" },
   { name: "SENDGRID_API_KEY", label: "SendGrid API Key", category: "Email", description: "API key for SendGrid email delivery" },

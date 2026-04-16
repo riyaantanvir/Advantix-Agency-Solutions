@@ -157,4 +157,32 @@ router.post("/admin/integrations/:id/test", requireSuperAdmin, async (req: Reque
   res.json(result);
 });
 
+/* ── Assistant AI provider/model settings ──────────────────────────────── */
+
+async function upsertSetting(name: string, value: string, label: string) {
+  const existing = await db.select().from(integrationsTable).where(eq(integrationsTable.name, name));
+  if (existing.length > 0) {
+    await db.update(integrationsTable).set({ value, updatedAt: new Date() }).where(eq(integrationsTable.name, name));
+  } else {
+    await db.insert(integrationsTable).values({ name, label, value, category: "AI", description: `Advantix Assistant setting: ${label}` });
+  }
+}
+
+router.get("/admin/settings/assistant-ai", requireSuperAdmin, async (_req: Request, res: Response) => {
+  const rows = await db.select().from(integrationsTable)
+    .where(eq(integrationsTable.category, "AI"));
+  const byName = Object.fromEntries(rows.map(r => [r.name, r.value]));
+  res.json({
+    provider: byName["ASSISTANT_PROVIDER"] || "anthropic",
+    model: byName["ASSISTANT_MODEL"] || "",
+  });
+});
+
+router.post("/admin/settings/assistant-ai", requireSuperAdmin, async (req: Request, res: Response) => {
+  const { provider, model } = req.body as { provider?: string; model?: string };
+  if (provider) await upsertSetting("ASSISTANT_PROVIDER", provider, "Assistant AI Provider");
+  if (model !== undefined) await upsertSetting("ASSISTANT_MODEL", model, "Assistant AI Model");
+  res.json({ ok: true });
+});
+
 export default router;
