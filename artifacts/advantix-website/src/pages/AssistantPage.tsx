@@ -617,15 +617,55 @@ export default function AssistantPage() {
     fetch("/api/tools/assistant/history", { credentials: "include" })
       .then(r => r.json())
       .then(({ messages: rows }) => {
-        if (!rows?.length) return;
-        const loaded: Message[] = rows
-          .filter((r: { role: string }) => r.role === "user" || r.role === "assistant")
-          .map((r: { role: string; content: string }) => ({
-            id: genId(), role: r.role as "user" | "assistant", content: r.content,
-          }));
+        if (!rows?.length) { setHistoryLoaded(true); return; }
+
+        type DBRow = { role: string; content: string; tool_name: string | null; tool_input: string | null; tool_result: string | null };
+        type Block = { type: string; id?: string; text?: string; name?: string; input?: Record<string, unknown> };
+
+        /* Build a map: tool_use_id → tool result row */
+        const toolResults = new Map<string, DBRow>();
+        for (const r of rows as DBRow[]) {
+          if (r.role === "tool" && r.tool_name) toolResults.set(r.tool_name, r);
+        }
+
+        const loaded: Message[] = [];
+        for (const r of rows as DBRow[]) {
+          if (r.role === "user") {
+            loaded.push({ id: genId(), role: "user", content: r.content });
+            continue;
+          }
+          if (r.role === "assistant") {
+            let textContent = r.content;
+            let tools: ToolExecution[] = [];
+            /* Try to parse JSON content (tool_use turn) */
+            if (typeof r.content === "string" && r.content.startsWith("[")) {
+              try {
+                const blocks: Block[] = JSON.parse(r.content);
+                textContent = blocks.filter(b => b.type === "text").map(b => b.text ?? "").join("\n").trim();
+                tools = blocks
+                  .filter(b => b.type === "tool_use" && b.id)
+                  .map(b => {
+                    const resultRow = toolResults.get(b.id!);
+                    return {
+                      id: b.id!,
+                      tool: b.name ?? "unknown",
+                      input: (b.input ?? {}) as Record<string, unknown>,
+                      status: resultRow ? "done" : "error",
+                      stdout: resultRow?.tool_result ?? undefined,
+                      exitCode: resultRow ? 0 : 1,
+                    } as ToolExecution;
+                  });
+              } catch { /* plain text fallback */ }
+            }
+            if (!textContent && tools.length === 0) continue; /* skip empty */
+            loaded.push({ id: genId(), role: "assistant", content: textContent, tools });
+            continue;
+          }
+          /* skip role="tool" rows — merged into assistant turns above */
+        }
         setMessages(loaded);
         setHistoryLoaded(true);
-      }).catch(() => {});
+      }).catch(() => { setHistoryLoaded(true); });
   }, [historyLoaded]);
 
   useEffect(() => {

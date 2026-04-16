@@ -278,7 +278,37 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       rawHistory.push({ role: r.role as "user" | "assistant", content: r.content });
     }
 
-    const history = rawHistory;
+    /* ── Validate: strip assistant tool_use blocks that have no matching tool_result ── */
+    type HistoryMsg = { role: "user" | "assistant"; content: string | object[] };
+    type Block = { type?: string; id?: string; tool_use_id?: string; text?: string };
+
+    const validated: HistoryMsg[] = [];
+    for (let i = 0; i < rawHistory.length; i++) {
+      const msg = rawHistory[i];
+      if (msg.role === "assistant" && Array.isArray(msg.content)) {
+        const blocks = msg.content as Block[];
+        const toolUseIds = blocks.filter(b => b.type === "tool_use").map(b => b.id!);
+        if (toolUseIds.length > 0) {
+          const next = rawHistory[i + 1];
+          const nextBlocks = Array.isArray(next?.content) ? (next.content as Block[]) : [];
+          const resolvedIds = new Set(nextBlocks.filter(b => b.type === "tool_result").map(b => b.tool_use_id));
+          const allResolved = toolUseIds.every(id => resolvedIds.has(id));
+          if (!allResolved) {
+            /* Strip tool_use blocks; keep only text */
+            const textOnly = blocks.filter(b => b.type === "text");
+            if (textOnly.length === 0) continue; /* skip entirely */
+            validated.push({ role: "assistant", content: textOnly.length === 1 ? (textOnly[0].text ?? "") : textOnly });
+            /* Also skip the next message if it's a partial tool_result turn */
+            if (next?.role === "user" && Array.isArray(next.content) && nextBlocks.some(b => b.type === "tool_result")) {
+              i++; /* skip next */
+            }
+            continue;
+          }
+        }
+      }
+      validated.push(msg);
+    }
+    const history = validated;
 
     /* ── Store user message ── */
     await db.execute(sql`
