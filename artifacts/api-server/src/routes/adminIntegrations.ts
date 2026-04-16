@@ -133,6 +133,14 @@ async function testIntegrationKey(name: string, key: string): Promise<{ ok: bool
       }
       return { ok: false, message: `Resend returned ${r.status}: ${msg}` };
     }
+    if (name.includes("OPENROUTER")) {
+      const r = await fetch("https://openrouter.ai/api/v1/models", {
+        headers: { Authorization: `Bearer ${key}`, "HTTP-Referer": "https://advantix.digital" },
+      });
+      return r.ok
+        ? { ok: true, message: "Connected — OpenRouter key is valid" }
+        : { ok: false, message: `OpenRouter returned ${r.status}: ${r.statusText}` };
+    }
     if (name.includes("SLACK") && key.startsWith("https://")) {
       const r = await fetch(key, {
         method: "POST",
