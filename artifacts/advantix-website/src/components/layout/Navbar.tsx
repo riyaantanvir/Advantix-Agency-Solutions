@@ -104,20 +104,15 @@ export function Navbar() {
             {/* Conditional: admin / logged-in user / login button */}
             {isAdminLoggedIn ? (
               <div className="flex items-center gap-2">
-                <Link
+                <a
                   href="/tools/dashboard"
-                  className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-semibold transition-colors duration-200 hover:text-primary hover:bg-primary/5 ${location === "/tools/dashboard" ? "text-primary bg-primary/5" : "text-muted-foreground"}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-semibold transition-colors duration-200 hover:text-primary hover:bg-primary/5 text-muted-foreground"
                 >
                   <LayoutDashboard className="w-4 h-4" />
                   Tools Dashboard
-                  {location === "/tools/dashboard" && (
-                    <motion.span
-                      layoutId="nav-underline"
-                      className="absolute -bottom-1 left-2 right-2 h-0.5 bg-primary rounded-full"
-                      transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                    />
-                  )}
-                </Link>
+                </a>
                 <a href="/admin/" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-semibold text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors duration-200">
                   <Shield className="w-4 h-4" />
                   Admin Panel
@@ -265,11 +260,11 @@ export function Navbar() {
               >
                 {isAdminLoggedIn ? (
                   <>
-                    <Link href="/tools/dashboard" className="block">
+                    <a href="/tools/dashboard" target="_blank" rel="noopener noreferrer" className="w-full">
                       <Button variant="outline" className="w-full font-semibold gap-2">
                         <LayoutDashboard className="w-4 h-4" /> Tools Dashboard
                       </Button>
-                    </Link>
+                    </a>
                     <a href="/admin/" className="w-full">
                       <Button variant="outline" className="w-full font-semibold gap-2 border-amber-500/40 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300">
                         <Shield className="w-4 h-4" /> Admin Panel

@@ -236,7 +236,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 
     if (link.href) {
       return (
-        <a key={link.path} href={link.href} className={cls} onClick={() => setIsMobileMenuOpen(false)}>
+        <a key={link.path} href={link.href} target="_blank" rel="noopener noreferrer" className={cls} onClick={() => setIsMobileMenuOpen(false)}>
           <Icon className="w-4 h-4 shrink-0 transition-colors group-hover:text-foreground" />
           <span className="truncate flex-1">{link.label}</span>
         </a>
