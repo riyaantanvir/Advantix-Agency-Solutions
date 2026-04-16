@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Terminal, Wifi, WifiOff, Key, RefreshCw, Copy, Download, Trash2,
   ChevronDown, ChevronRight, Send, Loader2, CheckCircle2, XCircle,
   FolderOpen, FileText, Edit3, Monitor, Zap, AlertTriangle, Info,
   Bot, User, Settings, X, Shield, Clock, Calendar, MessageSquare,
-  Wrench, BarChart3, Activity, Sparkles, ChevronLeft,
+  Wrench, BarChart3, Activity, Sparkles, ChevronLeft, PenSquare, Menu,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -36,9 +36,18 @@ type ToolStartEvent  = { type: "tool_start"; id: string; tool: string; input: Re
 type ToolDoneEvent   = { type: "tool_done"; id: string; tool: string; stdout: string; stderr: string; exitCode: number };
 type ContentEvent    = { type: "content"; delta: string };
 type DoneEvent       = { type: "done"; totalTokens: number };
+type ConvIdEvent     = { type: "conversation_id"; conversationId: number };
 type ErrorEvent      = { type: "error"; message: string };
 
-type StreamEvent = ToolStartEvent | ToolDoneEvent | ContentEvent | DoneEvent | ErrorEvent;
+type StreamEvent = ToolStartEvent | ToolDoneEvent | ContentEvent | DoneEvent | ConvIdEvent | ErrorEvent;
+
+type Conversation = {
+  id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: string;
+};
 
 type ToolExecution = {
   id: string; tool: string; input: Record<string, unknown>;
@@ -634,6 +643,12 @@ export default function AssistantPage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [newKeyForSidebar, setNewKeyForSidebar] = useState<string | null>(null);
 
+  /* ── Conversations ──────────────────────────────────────────────────────── */
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationId, setConversationId] = useState<number | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [deletingConvId, setDeletingConvId] = useState<number | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -652,61 +667,92 @@ export default function AssistantPage() {
       .then(r => r.json()).then(setKeyInfo).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (historyLoaded) return;
-    fetch("/api/tools/assistant/history", { credentials: "include" })
+  /* ── Shared history parser ──────────────────────────────────────────────── */
+  const parseHistoryRows = useCallback((rows: unknown[]): Message[] => {
+    type DBRow = { role: string; content: string; tool_name: string | null; tool_input: string | null; tool_result: string | null };
+    type Block = { type: string; id?: string; text?: string; name?: string; input?: Record<string, unknown> };
+    const toolResults = new Map<string, DBRow>();
+    for (const r of rows as DBRow[]) {
+      if (r.role === "tool" && r.tool_name) toolResults.set(r.tool_name, r);
+    }
+    const loaded: Message[] = [];
+    for (const r of rows as DBRow[]) {
+      if (r.role === "user") { loaded.push({ id: genId(), role: "user", content: r.content }); continue; }
+      if (r.role === "assistant") {
+        let textContent = r.content;
+        let tools: ToolExecution[] = [];
+        if (typeof r.content === "string" && r.content.startsWith("[")) {
+          try {
+            const blocks: Block[] = JSON.parse(r.content);
+            textContent = blocks.filter(b => b.type === "text").map(b => b.text ?? "").join("\n").trim();
+            tools = blocks.filter(b => b.type === "tool_use" && b.id).map(b => {
+              const resultRow = toolResults.get(b.id!);
+              return { id: b.id!, tool: b.name ?? "unknown", input: (b.input ?? {}) as Record<string, unknown>,
+                status: resultRow ? "done" : "error", stdout: resultRow?.tool_result ?? undefined, exitCode: resultRow ? 0 : 1 } as ToolExecution;
+            });
+          } catch { /* plain text fallback */ }
+        }
+        if (!textContent && tools.length === 0) continue;
+        loaded.push({ id: genId(), role: "assistant", content: textContent, tools });
+      }
+    }
+    return loaded;
+  }, []);
+
+  /* ── Fetch conversations list ───────────────────────────────────────────── */
+  const fetchConversations = useCallback(() => {
+    fetch("/api/tools/assistant/conversations", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => setConversations(d.conversations ?? []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => { fetchConversations(); }, [fetchConversations]);
+
+  /* ── Load history for a specific conversation ───────────────────────────── */
+  const loadConversationHistory = useCallback((convId: number | null) => {
+    const url = convId
+      ? `/api/tools/assistant/history?conversationId=${convId}`
+      : "/api/tools/assistant/history";
+    fetch(url, { credentials: "include" })
       .then(r => r.json())
       .then(({ messages: rows }) => {
-        if (!rows?.length) { setHistoryLoaded(true); return; }
-
-        type DBRow = { role: string; content: string; tool_name: string | null; tool_input: string | null; tool_result: string | null };
-        type Block = { type: string; id?: string; text?: string; name?: string; input?: Record<string, unknown> };
-
-        /* Build a map: tool_use_id → tool result row */
-        const toolResults = new Map<string, DBRow>();
-        for (const r of rows as DBRow[]) {
-          if (r.role === "tool" && r.tool_name) toolResults.set(r.tool_name, r);
-        }
-
-        const loaded: Message[] = [];
-        for (const r of rows as DBRow[]) {
-          if (r.role === "user") {
-            loaded.push({ id: genId(), role: "user", content: r.content });
-            continue;
-          }
-          if (r.role === "assistant") {
-            let textContent = r.content;
-            let tools: ToolExecution[] = [];
-            /* Try to parse JSON content (tool_use turn) */
-            if (typeof r.content === "string" && r.content.startsWith("[")) {
-              try {
-                const blocks: Block[] = JSON.parse(r.content);
-                textContent = blocks.filter(b => b.type === "text").map(b => b.text ?? "").join("\n").trim();
-                tools = blocks
-                  .filter(b => b.type === "tool_use" && b.id)
-                  .map(b => {
-                    const resultRow = toolResults.get(b.id!);
-                    return {
-                      id: b.id!,
-                      tool: b.name ?? "unknown",
-                      input: (b.input ?? {}) as Record<string, unknown>,
-                      status: resultRow ? "done" : "error",
-                      stdout: resultRow?.tool_result ?? undefined,
-                      exitCode: resultRow ? 0 : 1,
-                    } as ToolExecution;
-                  });
-              } catch { /* plain text fallback */ }
-            }
-            if (!textContent && tools.length === 0) continue; /* skip empty */
-            loaded.push({ id: genId(), role: "assistant", content: textContent, tools });
-            continue;
-          }
-          /* skip role="tool" rows — merged into assistant turns above */
-        }
-        setMessages(loaded);
+        setMessages(rows?.length ? parseHistoryRows(rows) : []);
         setHistoryLoaded(true);
       }).catch(() => { setHistoryLoaded(true); });
+  }, [parseHistoryRows]);
+
+  /* Initial load — no conversation selected yet, start fresh */
+  useEffect(() => {
+    if (historyLoaded) return;
+    setHistoryLoaded(true); /* start with empty, user picks a conversation */
   }, [historyLoaded]);
+
+  /* ── Start a new chat ───────────────────────────────────────────────────── */
+  const newChat = useCallback(() => {
+    setMessages([]);
+    setConversationId(null);
+    setInput("");
+    inputRef.current?.focus();
+  }, []);
+
+  /* ── Switch to a conversation ───────────────────────────────────────────── */
+  const openConversation = useCallback((conv: Conversation) => {
+    setConversationId(conv.id);
+    setMessages([]);
+    loadConversationHistory(conv.id);
+    if (window.innerWidth < 768) setSidebarOpen(false);
+  }, [loadConversationHistory]);
+
+  /* ── Delete a conversation ──────────────────────────────────────────────── */
+  const deleteConversation = useCallback(async (convId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeletingConvId(convId);
+    await fetch(`/api/tools/assistant/conversations/${convId}`, { method: "DELETE", credentials: "include" });
+    setConversations(prev => prev.filter(c => c.id !== convId));
+    if (conversationId === convId) { setMessages([]); setConversationId(null); }
+    setDeletingConvId(null);
+  }, [conversationId]);
 
   useEffect(() => {
     const poll = async () => {
@@ -745,9 +791,12 @@ export default function AssistantPage() {
   };
 
   const clearHistory = async () => {
-    await fetch("/api/tools/assistant/history", { method: "DELETE", credentials: "include" });
+    if (conversationId) {
+      await fetch(`/api/tools/assistant/conversations/${conversationId}`, { method: "DELETE", credentials: "include" });
+      setConversations(prev => prev.filter(c => c.id !== conversationId));
+      setConversationId(null);
+    }
     setMessages([]);
-    setHistoryLoaded(true);
   };
 
   const sendMessage = useCallback(async () => {
@@ -762,12 +811,14 @@ export default function AssistantPage() {
 
     setMessages(prev => [...prev, userMsg, assistantMsg]);
 
+    let currentConvId = conversationId;
+
     try {
       const res = await fetch("/api/tools/assistant/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, conversationId: currentConvId }),
       });
 
       if (!res.body) throw new Error("No response body");
@@ -786,7 +837,11 @@ export default function AssistantPage() {
           if (!line.startsWith("data: ")) continue;
           try {
             const event: StreamEvent = JSON.parse(line.slice(6));
-            if (event.type === "tool_start") {
+            if (event.type === "conversation_id") {
+              currentConvId = event.conversationId;
+              setConversationId(event.conversationId);
+              fetchConversations();
+            } else if (event.type === "tool_start") {
               const status = getToolStatus(event.tool, event.input);
               setMessages(prev => prev.map(m => m.id === assistantId
                 ? { ...m, statusText: status, tools: [...(m.tools ?? []), { id: event.id, tool: event.tool, input: event.input, status: "running" }] }
@@ -803,6 +858,7 @@ export default function AssistantPage() {
                 : m));
             } else if (event.type === "done") {
               setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streaming: false, statusText: undefined } : m));
+              fetchConversations();
             } else if (event.type === "error") {
               setMessages(prev => prev.map(m => m.id === assistantId
                 ? { ...m, streaming: false, statusText: undefined, error: event.message }
@@ -819,17 +875,113 @@ export default function AssistantPage() {
 
     setSending(false);
     inputRef.current?.focus();
-  }, [input, sending]);
+  }, [input, sending, conversationId, fetchConversations]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   };
 
+  /* ── Relative time helper ─────────────────────────────────────────────────── */
+  const relativeTime = (iso: string) => {
+    const diff = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return "just now";
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24);
+    return `${d}d ago`;
+  };
+
   return (
-    <div className="flex flex-col h-screen bg-background pt-16">
+    <div className="flex h-screen bg-background pt-16">
+
+      {/* ── Conversation Sidebar ────────────────────────────────────────────── */}
+      <AnimatePresence initial={false}>
+        {sidebarOpen && (
+          <motion.aside
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 256, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            className="h-full border-r border-border/30 bg-background/60 backdrop-blur-sm flex flex-col overflow-hidden shrink-0"
+          >
+            {/* Sidebar header */}
+            <div className="flex items-center gap-2 px-3 py-3 border-b border-border/20 shrink-0">
+              <MessageSquare className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-xs font-semibold text-foreground flex-1">Conversations</span>
+              <button
+                onClick={newChat}
+                title="New chat"
+                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+              >
+                <PenSquare className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Conversation list */}
+            <div className="flex-1 overflow-y-auto py-1">
+              {conversations.length === 0 ? (
+                <div className="px-3 py-6 text-center text-xs text-muted-foreground/60">
+                  No conversations yet.<br />Start chatting to create one.
+                </div>
+              ) : (
+                conversations.map(conv => (
+                  <button
+                    key={conv.id}
+                    onClick={() => openConversation(conv)}
+                    className={`w-full text-left px-3 py-2.5 group flex items-start gap-2 transition-colors rounded-md mx-1 ${
+                      conversationId === conv.id
+                        ? "bg-primary/10 text-foreground"
+                        : "hover:bg-secondary/40 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-50" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium truncate leading-tight">{conv.title || "Untitled"}</div>
+                      <div className="text-[10px] text-muted-foreground/60 mt-0.5">{relativeTime(conv.updated_at)}</div>
+                    </div>
+                    <button
+                      onClick={e => deleteConversation(conv.id, e)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:text-red-400"
+                      title="Delete"
+                    >
+                      {deletingConvId === conv.id
+                        ? <Loader2 className="w-3 h-3 animate-spin" />
+                        : <Trash2 className="w-3 h-3" />}
+                    </button>
+                  </button>
+                ))
+              )}
+            </div>
+
+            {/* New Chat CTA */}
+            <div className="p-2 border-t border-border/20 shrink-0">
+              <button
+                onClick={newChat}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/50 border border-border/30 transition-colors"
+              >
+                <PenSquare className="w-3.5 h-3.5" />
+                New Chat
+              </button>
+            </div>
+          </motion.aside>
+        )}
+      </AnimatePresence>
+
+      {/* ── Main panel ──────────────────────────────────────────────────────── */}
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
 
       {/* ── Top bar ──────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-5 py-2.5 border-b border-border/30 bg-background/80 backdrop-blur-sm shrink-0">
+        <button
+          onClick={() => setSidebarOpen(v => !v)}
+          title="Toggle sidebar"
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+        >
+          <Menu className="w-4 h-4" />
+        </button>
+
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-primary" />
           <span className="font-display font-semibold text-foreground text-sm">Advantix Assistant</span>
@@ -856,7 +1008,7 @@ export default function AssistantPage() {
           >
             <Settings className="w-4 h-4" />
           </button>
-          <button onClick={clearHistory} title="Clear chat" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
+          <button onClick={clearHistory} title="Clear / delete conversation" className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors">
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
@@ -962,6 +1114,7 @@ export default function AssistantPage() {
             </p>
           </div>
         </div>
+      </div>
       </div>
 
       {/* ── Settings Modal ─────────────────────────────────────────────────── */}

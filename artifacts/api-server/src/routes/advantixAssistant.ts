@@ -153,22 +153,85 @@ router.get("/tools/assistant/status", requireToolUser, async (req: Request, res:
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */
+/*  CONVERSATIONS                                                              */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* GET /api/tools/assistant/conversations — list all conversations */
+router.get("/tools/assistant/conversations", requireToolUser, async (req: Request, res: Response) => {
+  const uid = userId(req);
+  const r = await db.execute(sql`
+    SELECT
+      c.id, c.title, c.created_at, c.updated_at,
+      COUNT(m.id) FILTER (WHERE m.role = 'user') AS message_count
+    FROM agent_conversations c
+    LEFT JOIN agent_messages m ON m.conversation_id = c.id
+    WHERE c.user_id = ${uid}
+    GROUP BY c.id, c.title, c.created_at, c.updated_at
+    ORDER BY c.updated_at DESC
+    LIMIT 50
+  `);
+  res.json({ conversations: r.rows });
+});
+
+/* POST /api/tools/assistant/conversations — create a new conversation */
+router.post("/tools/assistant/conversations", requireToolUser, async (req: Request, res: Response) => {
+  const uid = userId(req);
+  const r = await db.execute(sql`
+    INSERT INTO agent_conversations (user_id, title) VALUES (${uid}, 'New Chat') RETURNING id, title, created_at
+  `);
+  res.json(r.rows[0]);
+});
+
+/* PATCH /api/tools/assistant/conversations/:id — rename */
+router.patch("/tools/assistant/conversations/:id", requireToolUser, async (req: Request, res: Response) => {
+  const uid = userId(req);
+  const cid = parseInt(req.params.id);
+  const { title } = req.body as { title: string };
+  if (!title?.trim()) { res.status(400).json({ error: "title required" }); return; }
+  await db.execute(sql`
+    UPDATE agent_conversations SET title = ${title.slice(0, 120)} WHERE id = ${cid} AND user_id = ${uid}
+  `);
+  res.json({ ok: true });
+});
+
+/* DELETE /api/tools/assistant/conversations/:id — delete conversation + messages */
+router.delete("/tools/assistant/conversations/:id", requireToolUser, async (req: Request, res: Response) => {
+  const uid = userId(req);
+  const cid = parseInt(req.params.id);
+  await db.execute(sql`DELETE FROM agent_messages WHERE conversation_id = ${cid} AND user_id = ${uid}`);
+  await db.execute(sql`DELETE FROM agent_conversations WHERE id = ${cid} AND user_id = ${uid}`);
+  res.json({ ok: true });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
 /*  CHAT HISTORY                                                              */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
 router.get("/tools/assistant/history", requireToolUser, async (req: Request, res: Response) => {
   const uid = userId(req);
-  const r = await db.execute(sql`
-    SELECT id, role, content, tool_name, tool_input, tool_result, created_at
-    FROM agent_messages WHERE user_id = ${uid}
-    ORDER BY created_at ASC
-    LIMIT 100
-  `);
+  const convId = req.query.conversationId ? parseInt(req.query.conversationId as string) : null;
+  const r = convId
+    ? await db.execute(sql`
+        SELECT id, role, content, tool_name, tool_input, tool_result, created_at
+        FROM agent_messages WHERE user_id = ${uid} AND conversation_id = ${convId}
+        ORDER BY created_at ASC LIMIT 200
+      `)
+    : await db.execute(sql`
+        SELECT id, role, content, tool_name, tool_input, tool_result, created_at
+        FROM agent_messages WHERE user_id = ${uid} AND conversation_id IS NULL
+        ORDER BY created_at ASC LIMIT 100
+      `);
   res.json({ messages: r.rows });
 });
 
 router.delete("/tools/assistant/history", requireToolUser, async (req: Request, res: Response) => {
-  await db.execute(sql`DELETE FROM agent_messages WHERE user_id = ${userId(req)}`);
+  const uid = userId(req);
+  const convId = req.query.conversationId ? parseInt(req.query.conversationId as string) : null;
+  if (convId) {
+    await db.execute(sql`DELETE FROM agent_messages WHERE user_id = ${uid} AND conversation_id = ${convId}`);
+  } else {
+    await db.execute(sql`DELETE FROM agent_messages WHERE user_id = ${uid} AND conversation_id IS NULL`);
+  }
   res.json({ ok: true });
 });
 
@@ -258,8 +321,17 @@ function sse(res: Response, data: object) {
 
 router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: Response) => {
   const uid = userId(req);
-  const { message } = req.body as { message: string };
+  const { message, conversationId: rawConvId } = req.body as { message: string; conversationId?: number | null };
   if (!message?.trim()) { res.status(400).json({ error: "message required" }); return; }
+
+  /* ── Ensure we have a conversation ── */
+  let convId: number | null = rawConvId ?? null;
+  if (!convId) {
+    const newConv = await db.execute(sql`
+      INSERT INTO agent_conversations (user_id, title) VALUES (${uid}, 'New Chat') RETURNING id
+    `);
+    convId = (newConv.rows[0] as { id: number }).id;
+  }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -274,11 +346,32 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     : "No agent connected. Tell the user to start the agent first. Answer questions but cannot run commands.";
 
   try {
+    /* ── Auto-title conversation from first user message ── */
+    const existingMsgCount = await db.execute(sql`
+      SELECT COUNT(*) AS cnt FROM agent_messages WHERE conversation_id = ${convId}
+    `);
+    const isFirstMsg = parseInt((existingMsgCount.rows[0] as { cnt: string }).cnt) === 0;
+    if (isFirstMsg) {
+      const title = message.slice(0, 80).trim();
+      await db.execute(sql`
+        UPDATE agent_conversations SET title = ${title}, updated_at = now() WHERE id = ${convId}
+      `);
+    }
+
+    /* ── Save user message ── */
+    await db.execute(sql`
+      INSERT INTO agent_messages (user_id, conversation_id, role, content)
+      VALUES (${uid}, ${convId}, 'user', ${message})
+    `);
+
+    /* ── Emit conversationId to frontend immediately ── */
+    sse(res, { type: "conversation_id", conversationId: convId });
+
     /* ── Load history — only last 10 rows for minimal context ── */
     const historyRows = await db.execute(sql`
       SELECT role, content, tool_name, tool_input, tool_result
-      FROM agent_messages WHERE user_id = ${uid}
-      ORDER BY created_at DESC LIMIT 10
+      FROM agent_messages WHERE user_id = ${uid} AND conversation_id = ${convId}
+      ORDER BY created_at DESC LIMIT 11
     `);
     /* Reverse so oldest-first */
     (historyRows.rows as unknown[]).reverse();
@@ -362,11 +455,6 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       }
       history.push(msg);
     }
-
-    /* ── Store user message ── */
-    await db.execute(sql`
-      INSERT INTO agent_messages (user_id, role, content) VALUES (${uid}, 'user', ${message})
-    `);
 
     /* ── Load AI provider + model from settings ── */
     const providerSetting = await getApiKey("ASSISTANT_PROVIDER");
@@ -573,8 +661,8 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       sessionMessages.push({ role: "assistant", content: assistantContent });
 
       await db.execute(sql`
-        INSERT INTO agent_messages (user_id, role, content)
-        VALUES (${uid}, 'assistant', ${JSON.stringify(assistantContent)})
+        INSERT INTO agent_messages (user_id, conversation_id, role, content)
+        VALUES (${uid}, ${convId}, 'assistant', ${JSON.stringify(assistantContent)})
       `);
 
       const toolResults: object[] = [];
@@ -609,8 +697,8 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
         toolResults.push({ type: "tool_result", tool_use_id: toolId, content: toolOutput || "(no output)" });
 
         await db.execute(sql`
-          INSERT INTO agent_messages (user_id, role, content, tool_name, tool_input, tool_result)
-          VALUES (${uid}, 'tool', '', ${toolId}, ${toolName}, ${toolOutput})
+          INSERT INTO agent_messages (user_id, conversation_id, role, content, tool_name, tool_input, tool_result)
+          VALUES (${uid}, ${convId}, 'tool', '', ${toolId}, ${toolName}, ${toolOutput})
         `);
       }
 
@@ -621,9 +709,15 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
 
     if (fullText) {
       await db.execute(sql`
-        INSERT INTO agent_messages (user_id, role, content) VALUES (${uid}, 'assistant', ${fullText})
+        INSERT INTO agent_messages (user_id, conversation_id, role, content)
+        VALUES (${uid}, ${convId}, 'assistant', ${fullText})
       `);
     }
+
+    /* ── Bump conversation updated_at ── */
+    await db.execute(sql`
+      UPDATE agent_conversations SET updated_at = now() WHERE id = ${convId}
+    `);
 
     /* ── Save usage record ── */
     const totalTokens = totalInputTokens + totalOutputTokens;

@@ -868,6 +868,23 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  // ── Conversation threading ─────────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS agent_conversations (
+      id          serial PRIMARY KEY,
+      user_id     integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      title       text NOT NULL DEFAULT 'New Chat',
+      created_at  timestamptz DEFAULT now() NOT NULL,
+      updated_at  timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_agent_conversations_user_id ON agent_conversations (user_id)
+  `);
+  await db.execute(sql`
+    ALTER TABLE agent_messages ADD COLUMN IF NOT EXISTS conversation_id integer REFERENCES agent_conversations(id) ON DELETE SET NULL
+  `);
+
   // ── AI usage tracking ──────────────────────────────────────────────────────
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS agent_usage (
