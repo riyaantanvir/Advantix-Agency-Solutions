@@ -38,8 +38,10 @@ type AgentEntry = {
 
 const agents = new Map<number, AgentEntry>();
 
-const PING_INTERVAL_MS = 20_000;
-const PONG_TIMEOUT_MS  = 15_000;
+/* Keep well below DO App Platform's proxy idle timeout (~30s).
+   8 s interval + 10 s grace = 18 s worst-case, safe on any cloud proxy. */
+const PING_INTERVAL_MS = 8_000;
+const PONG_TIMEOUT_MS  = 10_000;
 
 function schedulePing(entry: AgentEntry): void {
   if (entry.pingTimer) clearTimeout(entry.pingTimer);
@@ -52,7 +54,10 @@ function schedulePing(entry: AgentEntry): void {
 
     entry.alive = false;
 
-    /* Send JSON-level ping — works with any WebSocket client (browser, Node built-in, ws) */
+    /* Native WebSocket ping frame — keeps TCP/proxy alive at network level */
+    try { entry.ws.ping(); } catch { /* ignore if unsupported */ }
+
+    /* JSON-level ping — agent.mjs (Node built-in WS) responds with JSON pong */
     try {
       entry.ws.send(JSON.stringify({ type: "ping" }));
     } catch {
@@ -60,7 +65,7 @@ function schedulePing(entry: AgentEntry): void {
       return;
     }
 
-    /* If no JSON pong arrives within PONG_TIMEOUT_MS, terminate the connection */
+    /* If neither pong arrives within PONG_TIMEOUT_MS, terminate the connection */
     if (entry.deadTimer) clearTimeout(entry.deadTimer);
     entry.deadTimer = setTimeout(() => {
       if (!entry.alive) {

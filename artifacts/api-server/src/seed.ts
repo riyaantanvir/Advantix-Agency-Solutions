@@ -843,6 +843,12 @@ export async function runMigrations(): Promise<void> {
       last_connected_at timestamptz
     )
   `);
+  /* Add is_online column if not present (idempotent) */
+  await db.execute(sql`
+    ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS is_online boolean NOT NULL DEFAULT false
+  `);
+  /* On every server start, reset all agents to offline (they must reconnect) */
+  await db.execute(sql`UPDATE agent_sessions SET is_online = false`);
 
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS agent_messages (

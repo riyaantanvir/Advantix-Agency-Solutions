@@ -147,9 +147,32 @@ router.get("/tools/assistant/stats", requireToolUser, async (req: Request, res: 
 
 router.get("/tools/assistant/status", requireToolUser, async (req: Request, res: Response) => {
   const uid = userId(req);
-  const connected = isAgentConnected(uid);
-  const info = connected ? getAgentInfo(uid) : null;
-  res.json({ connected, info });
+
+  /* Fast path: agent is connected to THIS instance */
+  if (isAgentConnected(uid)) {
+    return res.json({ connected: true, info: getAgentInfo(uid) });
+  }
+
+  /* Cross-instance fallback: check DB heartbeat.
+     Consider online if is_online=true AND last heartbeat within 30 s.
+     This handles autoscale multi-replica deployments. */
+  try {
+    const r = await db.execute(sql`
+      SELECT is_online, last_connected_at
+        FROM agent_sessions
+       WHERE user_id = ${uid}
+       LIMIT 1
+    `);
+    const row = r.rows[0] as { is_online: boolean; last_connected_at: string | null } | undefined;
+    if (row?.is_online && row.last_connected_at) {
+      const age = Date.now() - new Date(row.last_connected_at).getTime();
+      if (age < 30_000) {
+        return res.json({ connected: true, info: null });
+      }
+    }
+  } catch { /* fall through */ }
+
+  res.json({ connected: false, info: null });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -863,6 +886,21 @@ export async function handleAgentWebSocket(ws: WebSocket, req: IncomingMessage):
   await db.execute(sql`UPDATE agent_sessions SET last_connected_at = now() WHERE user_id = ${uid}`);
 
   registerAgent(uid, ws);
+
+  /* Enable TCP-level keepalive so DO/cloud proxies don't silently drop the socket */
+  try {
+    const sock = (ws as any)._socket;
+    if (sock?.setKeepAlive) sock.setKeepAlive(true, 5_000);
+    if (sock?.setNoDelay)   sock.setNoDelay(true);
+  } catch { /* ignore */ }
+
+  /* Mark online in DB — any instance can now see the agent is connected */
+  await db.execute(sql`
+    UPDATE agent_sessions
+       SET is_online = true, last_connected_at = now()
+     WHERE user_id = ${uid}
+  `);
+
   ws.send(JSON.stringify({ type: "authenticated", userId: uid }));
 
   ws.on("message", (data) => {
@@ -885,12 +923,34 @@ export async function handleAgentWebSocket(ws: WebSocket, req: IncomingMessage):
         return;
       }
 
-      if (msg.type === "pong") { markAgentAlive(uid); return; }
+      if (msg.type === "pong") {
+        markAgentAlive(uid);
+        /* Update heartbeat in DB so other instances see the agent is still alive */
+        db.execute(sql`
+          UPDATE agent_sessions SET last_connected_at = now() WHERE user_id = ${uid}
+        `).catch(() => {});
+        return;
+      }
     } catch { /* ignore parse errors */ }
   });
 
-  ws.on("close", () => removeAgent(uid));
-  ws.on("error", () => removeAgent(uid));
+  /* Also mark alive on native WebSocket pong frame (future-proofing) */
+  ws.on("pong", () => {
+    markAgentAlive(uid);
+    db.execute(sql`
+      UPDATE agent_sessions SET last_connected_at = now() WHERE user_id = ${uid}
+    `).catch(() => {});
+  });
+
+  const markOffline = () => {
+    removeAgent(uid);
+    db.execute(sql`
+      UPDATE agent_sessions SET is_online = false WHERE user_id = ${uid}
+    `).catch(() => {});
+  };
+
+  ws.on("close", markOffline);
+  ws.on("error", markOffline);
 }
 
 export default router;
