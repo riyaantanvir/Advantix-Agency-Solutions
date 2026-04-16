@@ -12,7 +12,7 @@ export const ALL_ADMIN_PAGES = [
   { slug: "management",         label: "Management",            group: "Management" },
   { slug: "project-management", label: "Project Management",    group: "Project Management" },
   { slug: "marketing",          label: "Mail Management",       group: "Mail Management" },
-  { slug: "content",            label: "Content",               group: "Content" },
+  { slug: "content",            label: "Content Management",    group: "Content Management" },
   { slug: "social-media",       label: "Social Media",          group: "Social Media" },
   { slug: "analytics",          label: "Website Analytics",     group: null },
   { slug: "generate-content",   label: "Generate Content",      group: "Generate Content" },

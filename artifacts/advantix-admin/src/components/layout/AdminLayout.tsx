@@ -101,7 +101,7 @@ const navItems: NavItem[] = [
     ],
   },
   {
-    label: "Content",
+    label: "Content Management",
     icon: BookOpen,
     children: [
       { path: "/blog", label: "Blog", icon: BookOpen },
@@ -177,7 +177,7 @@ const PAGE_SLUG_MAP: Record<string, { type: "group"; label: string } | { type: "
   "management":         { type: "group", label: "Management" },
   "project-management": { type: "group", label: "Project Management" },
   "marketing":          { type: "group", label: "Mail Management" },
-  "content":            { type: "group", label: "Content" },
+  "content":            { type: "group", label: "Content Management" },
   "social-media":       { type: "group", label: "AD Social Media" },
   "analytics":          { type: "path",  path: "/website-analytics" },
   "generate-content":   { type: "group", label: "Generate Content" },
