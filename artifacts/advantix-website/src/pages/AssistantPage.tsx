@@ -237,7 +237,8 @@ function SettingsModal({
 
   const runCmd = newKey
     ? `node agent.mjs --key ${newKey} --server ${serverBase}`
-    : `node agent.mjs --key YOUR_KEY --server ${serverBase}`;
+    : null;
+  const hasKey = !!(keyInfo?.exists || newKey);
 
   if (!open) return null;
 
@@ -432,40 +433,52 @@ function SettingsModal({
                 {/* Step-by-step run instructions */}
                 <div className="space-y-2">
                   <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Run command</p>
-                  <div className="bg-black/60 rounded-lg p-3 border border-border/30 space-y-1.5">
-                    <div className="flex items-start gap-2">
-                      <span className="text-muted-foreground text-xs mt-0.5 select-none shrink-0">1.</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[10px] text-muted-foreground mb-0.5">Navigate to the folder where you downloaded it (e.g. Downloads)</p>
-                        <code className="text-xs text-amber-400 font-mono">cd ~/Downloads</code>
+
+                  {runCmd ? (
+                    <div className="bg-black/60 rounded-lg p-3 border border-border/30 space-y-1.5">
+                      <div className="flex items-start gap-2">
+                        <span className="text-muted-foreground text-xs mt-0.5 select-none shrink-0">1.</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] text-muted-foreground mb-0.5">In your terminal, go to your Downloads folder</p>
+                          <code className="text-xs text-amber-400 font-mono">cd ~/Downloads</code>
+                        </div>
+                        <button
+                          onClick={() => { navigator.clipboard.writeText("cd ~/Downloads"); setCopied("cd"); setTimeout(() => setCopied(null), 1500); }}
+                          className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                          title="Copy"
+                        >
+                          {copied === "cd" ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
                       </div>
-                      <button
-                        onClick={() => { navigator.clipboard.writeText("cd ~/Downloads"); setCopied("cd"); setTimeout(() => setCopied(null), 1500); }}
-                        className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                        title="Copy"
-                      >
-                        {copied === "cd" ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <span className="text-muted-foreground text-xs mt-0.5 select-none shrink-0">2.</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[10px] text-muted-foreground mb-0.5">Start the agent</p>
-                        <code className="text-xs text-green-400 font-mono break-all">{runCmd}</code>
+                      <div className="flex items-start gap-2">
+                        <span className="text-muted-foreground text-xs mt-0.5 select-none shrink-0">2.</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] text-muted-foreground mb-0.5">Start the agent</p>
+                          <code className="text-xs text-green-400 font-mono break-all">{runCmd}</code>
+                        </div>
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(runCmd); setCopied("runcmd"); setTimeout(() => setCopied(null), 1500); }}
+                          className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                          title="Copy"
+                        >
+                          {copied === "runcmd" ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
                       </div>
-                      <button
-                        onClick={() => { navigator.clipboard.writeText(runCmd); setCopied("runcmd"); setTimeout(() => setCopied(null), 1500); }}
-                        className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                        title="Copy"
-                      >
-                        {copied === "runcmd" ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
                     </div>
-                  </div>
-                  {!newKey && (
-                    <p className="text-[10px] text-amber-400 flex items-center gap-1.5">
-                      <AlertTriangle className="w-3 h-3 shrink-0" /> Generate or regenerate your API key above to see your actual key in the command.
-                    </p>
+                  ) : (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 flex items-start gap-3">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-semibold text-amber-300">
+                          {hasKey ? "Click \"Regenerate API Key\" to reveal your run command" : "Generate an API key first"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {hasKey
+                            ? "For security, your full API key is only shown once — right after it is generated. Regenerate to get a new key and see the ready-to-run command here."
+                            : "You don't have an API key yet. Click \"Generate API Key\" above and the full run command will appear here automatically."}
+                        </p>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
