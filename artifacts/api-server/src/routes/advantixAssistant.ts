@@ -478,7 +478,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     const DEFAULT_MODELS: Record<Provider, string> = {
       anthropic:  "claude-sonnet-4-5",
       openai:     "gpt-4o",
-      openrouter: "anthropic/claude-3.5-sonnet",
+      openrouter: "anthropic/claude-3.7-sonnet",
       gemini:     "gemini-2.0-flash",
     };
 
