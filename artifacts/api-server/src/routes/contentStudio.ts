@@ -1,10 +1,32 @@
 import { Router, Request, Response } from "express";
-import { anthropic } from "@workspace/integrations-anthropic-ai";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { eq } from "drizzle-orm";
+import { db } from "@workspace/db";
+import { integrationsTable } from "@workspace/db/schema";
+import { anthropic, createAnthropic } from "@workspace/integrations-anthropic-ai";
+import { openai, createOpenAI } from "@workspace/integrations-openai-ai-server";
 import { generateImageBuffer } from "@workspace/integrations-openai-ai-server/image";
 import { requireSuperAdmin } from "../middleware/auth.js";
 
 const router = Router();
+
+async function getDbKey(name: string): Promise<string | null> {
+  try {
+    const [row] = await db.select().from(integrationsTable).where(eq(integrationsTable.name, name));
+    return row?.value || null;
+  } catch { return null; }
+}
+
+async function getAnthropicClient() {
+  const dbKey = await getDbKey("ANTHROPIC_API_KEY");
+  if (dbKey) return createAnthropic(dbKey);
+  return anthropic;
+}
+
+async function getOpenAIClient() {
+  const dbKey = await getDbKey("OPENAI_API_KEY");
+  if (dbKey) return createOpenAI(dbKey);
+  return openai;
+}
 
 /* ═══════════════════════════════════════════════════
    PLATFORM PROFILES
@@ -163,7 +185,8 @@ ${profile.outputFormat}
 IMPORTANT: Return ONLY valid JSON, no markdown code blocks, no explanation.`;
 
   try {
-    const message = await anthropic.messages.create({
+    const ai = await getAnthropicClient();
+    const message = await ai.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 8192,
       system: systemPrompt,
@@ -214,9 +237,25 @@ router.post("/admin/content/generate-image", requireSuperAdmin, async (req: Requ
   const enhancedPrompt = `${styleGuide}. ${prompt}. Social media optimized, high quality, visually striking, ${platform ? `optimized for ${platform}` : "versatile aspect ratio"}.`;
 
   try {
-    const buffer = await generateImageBuffer(enhancedPrompt.slice(0, 3900), "1024x1024");
-    const b64 = buffer.toString("base64");
-    res.json({ success: true, b64_json: b64, mimeType: "image/png", source: "gpt-image-1" });
+    const dbKey = await getDbKey("OPENAI_API_KEY");
+    let b64: string;
+    if (dbKey) {
+      const client = createOpenAI(dbKey);
+      const response = await client.images.generate({
+        model: "dall-e-3",
+        prompt: enhancedPrompt.slice(0, 3900),
+        n: 1,
+        size: "1024x1024",
+        quality: "hd",
+        response_format: "b64_json",
+      });
+      b64 = response.data[0]?.b64_json ?? "";
+      if (!b64) throw new Error("No image generated");
+    } else {
+      const buffer = await generateImageBuffer(enhancedPrompt.slice(0, 3900), "1024x1024");
+      b64 = buffer.toString("base64");
+    }
+    res.json({ success: true, b64_json: b64, mimeType: "image/png", source: dbKey ? "dall-e-3" : "gpt-image-1" });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Image generation failed";
     res.status(500).json({ error: msg });
@@ -261,9 +300,10 @@ Return ONLY this JSON:
 }`;
 
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-5.2",
-      max_completion_tokens: 8192,
+    const ai = await getOpenAIClient();
+    const response = await ai.chat.completions.create({
+      model: "gpt-4o",
+      max_tokens: 1500,
       messages: [
         {
           role: "system",
