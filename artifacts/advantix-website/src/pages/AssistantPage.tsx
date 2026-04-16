@@ -6,6 +6,7 @@ import {
   FolderOpen, FileText, Edit3, Monitor, Zap, AlertTriangle, Info,
   Bot, User, Settings, X, Shield, Clock, Calendar, MessageSquare,
   Wrench, BarChart3, Activity, Sparkles, ChevronLeft, PenSquare, Menu,
+  Paperclip,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -55,6 +56,15 @@ type ToolExecution = {
   stdout?: string; stderr?: string; exitCode?: number;
 };
 
+type AttachedFile = {
+  id: string;
+  name: string;
+  mimeType: string;
+  type: "image" | "text";
+  data: string;      /* base64 for images, raw text for text files */
+  preview?: string;  /* data-url for images only */
+};
+
 type Message = {
   id: string;
   role: "user" | "assistant";
@@ -63,6 +73,7 @@ type Message = {
   streaming?: boolean;
   statusText?: string;
   error?: string;
+  attachments?: AttachedFile[];
 };
 
 type KeyInfo = {
@@ -218,6 +229,27 @@ function MessageBubble({ msg, userName }: { msg: Message; userName?: string }) {
         {msg.tools && msg.tools.length > 0 && (
           <div className="w-full space-y-1.5 min-w-64">
             {msg.tools.map(t => <ToolCard key={t.id} tool={t} />)}
+          </div>
+        )}
+
+        {/* Image attachments */}
+        {isUser && msg.attachments && msg.attachments.filter(a => a.type === "image").length > 0 && (
+          <div className="flex flex-wrap gap-2 justify-end">
+            {msg.attachments.filter(a => a.type === "image").map(a => (
+              <img key={a.id} src={a.preview} alt={a.name}
+                className="max-w-[200px] max-h-[150px] rounded-xl object-cover border border-white/10 shadow-md" />
+            ))}
+          </div>
+        )}
+        {/* Text file attachments */}
+        {isUser && msg.attachments && msg.attachments.filter(a => a.type === "text").length > 0 && (
+          <div className="flex flex-wrap gap-1.5 justify-end">
+            {msg.attachments.filter(a => a.type === "text").map(a => (
+              <span key={a.id} className="flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-primary/15 border border-primary/25 text-primary-foreground/80">
+                <FileText className="w-3 h-3" />
+                {a.name}
+              </span>
+            ))}
           </div>
         )}
 
@@ -649,8 +681,12 @@ export default function AssistantPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [deletingConvId, setDeletingConvId] = useState<number | null>(null);
 
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!loading && !user) navigate("/login");
@@ -799,13 +835,65 @@ export default function AssistantPage() {
     setMessages([]);
   };
 
+  const MAX_FILES = 5;
+  const MAX_SIZE  = 5 * 1024 * 1024; /* 5 MB */
+  const ALLOWED_IMAGE = ["image/jpeg","image/png","image/gif","image/webp"];
+  const ALLOWED_TEXT  = ["text/plain","application/json","text/markdown","text/csv",
+                         "text/javascript","text/typescript","text/html","text/css",
+                         "application/javascript","application/typescript"];
+
+  const handleFiles = useCallback((files: FileList | File[]) => {
+    const arr = Array.from(files);
+    for (const file of arr) {
+      if (attachedFiles.length >= MAX_FILES) break;
+      if (file.size > MAX_SIZE) continue;
+      const isImage = ALLOWED_IMAGE.includes(file.type);
+      const isText  = ALLOWED_TEXT.includes(file.type) || file.name.match(/\.(txt|md|json|csv|js|ts|py|html|css|sh|yaml|yml|env|log|xml|sql)$/i);
+      if (!isImage && !isText) continue;
+
+      const reader = new FileReader();
+      if (isImage) {
+        reader.onload = e => {
+          const dataUrl = e.target?.result as string;
+          const base64 = dataUrl.split(",")[1];
+          setAttachedFiles(prev => prev.length < MAX_FILES ? [...prev, {
+            id: genId(), name: file.name, mimeType: file.type, type: "image", data: base64, preview: dataUrl,
+          }] : prev);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        reader.onload = e => {
+          const text = e.target?.result as string;
+          setAttachedFiles(prev => prev.length < MAX_FILES ? [...prev, {
+            id: genId(), name: file.name, mimeType: file.type || "text/plain", type: "text", data: text,
+          }] : prev);
+        };
+        reader.readAsText(file);
+      }
+    }
+  }, [attachedFiles]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFiles(e.dataTransfer.files);
+  }, [handleFiles]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const files = e.clipboardData.files;
+    if (files.length > 0) handleFiles(files);
+  }, [handleFiles]);
+
   const sendMessage = useCallback(async () => {
     const text = input.trim();
-    if (!text || sending) return;
+    if ((!text && attachedFiles.length === 0) || sending) return;
     setInput("");
     setSending(true);
 
-    const userMsg: Message = { id: genId(), role: "user", content: text };
+    const currentAttachments = [...attachedFiles];
+    setAttachedFiles([]);
+
+    const userMsg: Message = { id: genId(), role: "user", content: text, attachments: currentAttachments };
     const assistantId = genId();
     const assistantMsg: Message = { id: assistantId, role: "assistant", content: "", tools: [], streaming: true };
 
@@ -818,7 +906,11 @@ export default function AssistantPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ message: text, conversationId: currentConvId }),
+        body: JSON.stringify({
+          message: text,
+          conversationId: currentConvId,
+          attachments: currentAttachments.map(({ id: _id, preview: _p, ...rest }) => rest),
+        }),
       });
 
       if (!res.body) throw new Error("No response body");
@@ -1084,33 +1176,92 @@ export default function AssistantPage() {
         {/* ── Input bar ────────────────────────────────────────────────────── */}
         <div className="shrink-0 border-t border-border/20 bg-background/80 backdrop-blur-sm px-4 pb-4 pt-3">
           <div className="max-w-3xl mx-auto">
-            <div className="flex items-end gap-3 bg-card border border-border/40 rounded-2xl px-4 py-3 focus-within:border-primary/35 focus-within:shadow-lg focus-within:shadow-primary/5 transition-all duration-200">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={agentStatus.connected ? "Ask me to run a command, write code, read a file…" : "Ask me anything…"}
-                rows={1}
-                className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none max-h-40 overflow-y-auto leading-relaxed"
-                style={{ height: "auto" }}
-                onInput={e => {
-                  const el = e.currentTarget;
-                  el.style.height = "auto";
-                  el.style.height = Math.min(el.scrollHeight, 160) + "px";
-                }}
-                disabled={sending}
-              />
-              <button
-                onClick={sendMessage}
-                disabled={!input.trim() || sending}
-                className="shrink-0 w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              </button>
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,.txt,.md,.json,.csv,.js,.ts,.py,.html,.css,.sh,.yaml,.yml,.log,.xml,.sql"
+              className="hidden"
+              onChange={e => { if (e.target.files) { handleFiles(e.target.files); e.target.value = ""; } }}
+            />
+
+            {/* Attachment preview strip */}
+            {attachedFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2 px-1">
+                {attachedFiles.map(f => (
+                  <div key={f.id} className="relative group flex items-center gap-1.5">
+                    {f.type === "image" ? (
+                      <div className="relative">
+                        <img src={f.preview} alt={f.name}
+                          className="w-14 h-14 rounded-lg object-cover border border-border/40 shadow-sm" />
+                        <button
+                          onClick={() => setAttachedFiles(prev => prev.filter(x => x.id !== f.id))}
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-background border border-border flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                        ><X className="w-2.5 h-2.5" /></button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-card border border-border/40 text-xs max-w-[140px]">
+                        <FileText className="w-3 h-3 text-primary/60 shrink-0" />
+                        <span className="truncate text-muted-foreground">{f.name}</span>
+                        <button
+                          onClick={() => setAttachedFiles(prev => prev.filter(x => x.id !== f.id))}
+                          className="shrink-0 hover:text-foreground transition-colors"
+                        ><X className="w-3 h-3" /></button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Drop zone wrapper */}
+            <div
+              onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              className={`transition-all rounded-2xl ${isDragging ? "ring-2 ring-primary/50 bg-primary/5" : ""}`}
+            >
+              <div className="flex items-end gap-3 bg-card border border-border/40 rounded-2xl px-4 py-3 focus-within:border-primary/35 focus-within:shadow-lg focus-within:shadow-primary/5 transition-all duration-200">
+                {/* Attach button */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending || attachedFiles.length >= 5}
+                  title="Attach image or file"
+                  className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30 transition-all disabled:opacity-30"
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  placeholder={isDragging ? "Drop files here…" : agentStatus.connected ? "Ask me to run a command, write code, read a file…" : "Ask me anything…"}
+                  rows={1}
+                  className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 resize-none focus:outline-none max-h-40 overflow-y-auto leading-relaxed"
+                  style={{ height: "auto" }}
+                  onInput={e => {
+                    const el = e.currentTarget;
+                    el.style.height = "auto";
+                    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+                  }}
+                  disabled={sending}
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={(!input.trim() && attachedFiles.length === 0) || sending}
+                  className="shrink-0 w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                </button>
+              </div>
             </div>
+
             <p className="text-[10px] text-muted-foreground/40 text-center mt-2">
-              Enter to send · Shift+Enter for new line · Powered by Claude
+              Enter to send · Shift+Enter for new line · Drag & drop or paste images/files
             </p>
           </div>
         </div>

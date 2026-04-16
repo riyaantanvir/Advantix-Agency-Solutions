@@ -319,10 +319,23 @@ function sse(res: Response, data: object) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+type Attachment = {
+  name: string;
+  mimeType: string;
+  type: "image" | "text";
+  data: string; /* base64 for images, raw text for text files */
+};
+
 router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: Response) => {
   const uid = userId(req);
-  const { message, conversationId: rawConvId } = req.body as { message: string; conversationId?: number | null };
-  if (!message?.trim()) { res.status(400).json({ error: "message required" }); return; }
+  const { message, conversationId: rawConvId, attachments } = req.body as {
+    message: string;
+    conversationId?: number | null;
+    attachments?: Attachment[];
+  };
+  if (!message?.trim() && (!attachments || attachments.length === 0)) {
+    res.status(400).json({ error: "message required" }); return;
+  }
 
   /* ── Ensure we have a conversation ── */
   let convId: number | null = rawConvId ?? null;
@@ -358,10 +371,12 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       `);
     }
 
-    /* ── Save user message ── */
+    /* ── Save user message (text only for history) ── */
+    const filesSummary = (attachments ?? []).map(a => `[${a.type === "image" ? "Image" : "File"}: ${a.name}]`).join(" ");
+    const savedMessage = [message, filesSummary].filter(Boolean).join("\n");
     await db.execute(sql`
       INSERT INTO agent_messages (user_id, conversation_id, role, content)
-      VALUES (${uid}, ${convId}, 'user', ${message})
+      VALUES (${uid}, ${convId}, 'user', ${savedMessage})
     `);
 
     /* ── Emit conversationId to frontend immediately ── */
@@ -502,9 +517,20 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
             out.push({ role: "user", content: msg.content });
           } else {
             const blocks = msg.content as ABlock[];
-            const trBlocks = blocks.filter(b => b.type === "tool_result");
+            const trBlocks  = blocks.filter(b => b.type === "tool_result");
             const txtBlocks = blocks.filter(b => b.type === "text");
-            if (txtBlocks.length > 0) out.push({ role: "user", content: txtBlocks.map(b => b.text ?? "").join("\n") });
+            const imgBlocks = blocks.filter(b => b.type === "image");
+
+            if (imgBlocks.length > 0 || txtBlocks.length > 0) {
+              /* Build OpenAI multi-modal content array */
+              const oaiContent: object[] = [];
+              for (const img of imgBlocks) {
+                const src = (img as ABlock & { source?: { media_type: string; data: string } }).source;
+                if (src) oaiContent.push({ type: "image_url", image_url: { url: `data:${src.media_type};base64,${src.data}` } });
+              }
+              for (const t of txtBlocks) oaiContent.push({ type: "text", text: t.text ?? "" });
+              out.push({ role: "user", content: oaiContent });
+            }
             for (const tr of trBlocks) out.push({ role: "tool", tool_call_id: tr.tool_use_id ?? "", content: tr.content ?? "" });
           }
         } else {
@@ -542,8 +568,30 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       usage: { input_tokens: number; output_tokens: number };
     };
 
-    const messages: InternalMsg[] = [...history, { role: "user", content: message }];
-    const sessionMessages: InternalMsg[] = [{ role: "user", content: message }];
+    /* ── Build multi-modal user content if attachments present ── */
+    type AnthropicImageBlock = { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+    type AnthropicTextBlock  = { type: "text"; text: string };
+    type ContentBlock = AnthropicImageBlock | AnthropicTextBlock;
+
+    let userContent: string | ContentBlock[];
+    if (attachments && attachments.length > 0) {
+      const blocks: ContentBlock[] = [];
+      for (const att of attachments) {
+        if (att.type === "image") {
+          blocks.push({ type: "image", source: { type: "base64", media_type: att.mimeType, data: att.data } });
+        } else {
+          /* text file — embed content as a text block */
+          blocks.push({ type: "text", text: `<file name="${att.name}">\n${att.data}\n</file>` });
+        }
+      }
+      if (message?.trim()) blocks.push({ type: "text", text: message });
+      userContent = blocks;
+    } else {
+      userContent = message;
+    }
+
+    const messages: InternalMsg[] = [...history, { role: "user", content: userContent as string }];
+    const sessionMessages: InternalMsg[] = [{ role: "user", content: userContent as string }];
 
     let fullText = "";
     let totalInputTokens = 0;
