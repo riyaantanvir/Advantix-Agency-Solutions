@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -10,6 +10,29 @@ import { PageTracker } from "@/components/PageTracker";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 import { EmailCaptureModal } from "@/components/EmailCaptureModal";
 import { StickyCTABar } from "@/components/StickyCTABar";
+
+function GoogleAnalytics() {
+  const { data } = useQuery<{ googleAnalyticsId: string }>({
+    queryKey: ["general-settings"],
+    queryFn: () => fetch("/api/settings/general").then(r => r.ok ? r.json() : null),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  useEffect(() => {
+    const id = data?.googleAnalyticsId?.trim();
+    if (!id || document.getElementById("ga4-script")) return;
+    const s1 = document.createElement("script");
+    s1.id = "ga4-script";
+    s1.src = `https://www.googletagmanager.com/gtag/js?id=${id}`;
+    s1.async = true;
+    document.head.appendChild(s1);
+    const s2 = document.createElement("script");
+    s2.id = "ga4-init";
+    s2.textContent = `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${id}');`;
+    document.head.appendChild(s2);
+  }, [data?.googleAnalyticsId]);
+  return null;
+}
 
 const Home = lazy(() => import("@/pages/Home"));
 const Blog = lazy(() => import("@/pages/Blog"));
@@ -110,6 +133,7 @@ function App() {
         <TooltipProvider>
           <ToolsUserProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <GoogleAnalytics />
               <PageTracker />
               <Router />
               <EmailCaptureModal />

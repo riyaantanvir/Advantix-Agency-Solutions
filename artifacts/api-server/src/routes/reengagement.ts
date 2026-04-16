@@ -304,4 +304,92 @@ router.put("/admin/settings/cta-bar", requireAdmin, async (req, res) => {
   res.json(await getCTASettings());
 });
 
+/* ── General Site Settings ─────────────────────────────── */
+
+const GENERAL_DEFAULTS: Record<string, string> = {
+  site_name:            "Advantix",
+  site_tagline:         "Digital Agency",
+  site_logo:            "",
+  ai_logo:              "",
+  contact_email:        "hello@advantix.digital",
+  contact_phone:        "",
+  contact_address:      "",
+  social_twitter:       "",
+  social_linkedin:      "",
+  social_facebook:      "",
+  social_instagram:     "",
+  meta_description:     "Advantix Digital — a full-service digital agency.",
+  google_analytics_id:  "",
+  maintenance_mode:     "false",
+  maintenance_message:  "We're performing scheduled maintenance. We'll be back shortly.",
+};
+
+async function getGeneralSettings() {
+  const r = await db.execute(sql`
+    SELECT key, value FROM site_settings
+    WHERE key LIKE 'site_%' OR key = 'ai_logo'
+       OR key LIKE 'contact_%' OR key LIKE 'social_%'
+       OR key LIKE 'meta_%' OR key = 'google_analytics_id'
+       OR key LIKE 'maintenance_%'
+  `);
+  const map: Record<string, string> = { ...GENERAL_DEFAULTS };
+  for (const row of r.rows as { key: string; value: string }[]) map[row.key] = row.value;
+  return {
+    siteName:           map.site_name,
+    tagline:            map.site_tagline,
+    logo:               map.site_logo,
+    aiLogo:             map.ai_logo,
+    contactEmail:       map.contact_email,
+    contactPhone:       map.contact_phone,
+    contactAddress:     map.contact_address,
+    twitter:            map.social_twitter,
+    linkedin:           map.social_linkedin,
+    facebook:           map.social_facebook,
+    instagram:          map.social_instagram,
+    metaDescription:    map.meta_description,
+    googleAnalyticsId:  map.google_analytics_id,
+    maintenanceMode:    map.maintenance_mode === "true",
+    maintenanceMessage: map.maintenance_message,
+  };
+}
+
+/* GET /api/settings/general — public */
+router.get("/settings/general", async (_req, res) => {
+  res.json(await getGeneralSettings());
+});
+
+/* PUT /api/admin/settings/general — admin update */
+router.put("/admin/settings/general", requireAdmin, async (req, res) => {
+  const body = req.body as Record<string, string | boolean>;
+  const upsert = async (key: string, value: string) => {
+    await db.execute(sql`
+      INSERT INTO site_settings (key, value) VALUES (${key}, ${value})
+      ON CONFLICT (key) DO UPDATE SET value = ${value}, updated_at = now()
+    `);
+  };
+  const map: Record<string, string> = {
+    siteName:           "site_name",
+    tagline:            "site_tagline",
+    logo:               "site_logo",
+    aiLogo:             "ai_logo",
+    contactEmail:       "contact_email",
+    contactPhone:       "contact_phone",
+    contactAddress:     "contact_address",
+    twitter:            "social_twitter",
+    linkedin:           "social_linkedin",
+    facebook:           "social_facebook",
+    instagram:          "social_instagram",
+    metaDescription:    "meta_description",
+    googleAnalyticsId:  "google_analytics_id",
+    maintenanceMode:    "maintenance_mode",
+    maintenanceMessage: "maintenance_message",
+  };
+  for (const [jsKey, dbKey] of Object.entries(map)) {
+    if (body[jsKey] !== undefined) {
+      await upsert(dbKey, String(body[jsKey]));
+    }
+  }
+  res.json(await getGeneralSettings());
+});
+
 export default router;

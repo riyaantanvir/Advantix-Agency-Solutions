@@ -26,6 +26,15 @@ export function Navbar() {
   });
   const isAdminLoggedIn = isAdmin || adminMe?.authenticated === true;
 
+  const { data: siteSettings } = useQuery<{ siteName: string; logo: string }>({
+    queryKey: ["general-settings"],
+    queryFn: () => fetch("/api/settings/general").then(r => r.ok ? r.json() : null),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const siteName = siteSettings?.siteName || "Advantix";
+  const logoSrc = siteSettings?.logo || `${import.meta.env.BASE_URL}images/logo-icon.svg`;
+
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handleScroll, { passive: true });
@@ -62,14 +71,14 @@ export function Navbar() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 group">
             <motion.img
-              src={`${import.meta.env.BASE_URL}images/logo-icon.svg`}
-              alt="Advantix Logo"
+              src={logoSrc}
+              alt={`${siteName} Logo`}
               className="w-8 h-8 object-contain"
               whileHover={{ rotate: -5, scale: 1.1 }}
               transition={{ type: "spring", stiffness: 300, damping: 15 }}
             />
             <span className="font-display font-bold text-xl tracking-tight group-hover:text-primary transition-colors duration-200">
-              Advantix
+              {siteName}
             </span>
           </Link>
 
