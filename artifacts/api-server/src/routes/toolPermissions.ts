@@ -29,10 +29,18 @@ async function getDefaultToolSlugs(): Promise<string[]> {
 
 export async function getUserToolSlugs(userId: number): Promise<string[]> {
   const r = await db.execute(sql`
-    SELECT tool_slug FROM user_tool_permissions
-    WHERE user_id = ${userId} AND enabled = true
+    SELECT tool_slug, enabled FROM user_tool_permissions WHERE user_id = ${userId}
   `);
-  return (r.rows as { tool_slug: string }[]).map(row => row.tool_slug);
+  const stored = r.rows as { tool_slug: string; enabled: boolean }[];
+  const storedMap = new Map(stored.map(row => [row.tool_slug, row.enabled]));
+
+  // For slugs added after the user registered (no row yet), fall back to defaults
+  const defaults = await getDefaultToolSlugs();
+
+  return ALL_TOOL_SLUGS.filter(slug => {
+    if (storedMap.has(slug)) return storedMap.get(slug) === true;
+    return defaults.includes(slug);
+  });
 }
 
 export async function applyDefaultPermissions(userId: number): Promise<void> {
