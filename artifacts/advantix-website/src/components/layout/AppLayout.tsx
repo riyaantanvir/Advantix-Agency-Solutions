@@ -8,9 +8,12 @@ import { useTrackPageView } from "@workspace/api-client-react";
 import { getOrCreateVisitorId } from "@/lib/tracking";
 
 
+const NO_FOOTER_ROUTES = ["/tools/assistant"];
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const trackMutation = useTrackPageView();
+  const hideFooter = NO_FOOTER_ROUTES.some(r => location.startsWith(r));
 
   useEffect(() => {
     try {
@@ -45,8 +48,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </motion.div>
         </AnimatePresence>
       </main>
-      <Footer />
-      <ChatWidget />
+      {!hideFooter && <Footer />}
+      {!hideFooter && <ChatWidget />}
     </div>
   );
 }
