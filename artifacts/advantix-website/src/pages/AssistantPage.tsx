@@ -47,6 +47,7 @@ type Message = {
   content: string;
   tools?: ToolExecution[];
   streaming?: boolean;
+  statusText?: string;
   error?: string;
 };
 
@@ -60,6 +61,16 @@ type KeyInfo = {
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
 function genId() { return Math.random().toString(36).slice(2); }
+
+function getToolStatus(tool: string, input: Record<string, unknown>): string {
+  if (tool === "run_command") return `$ ${String(input.command ?? "").slice(0, 60)}`;
+  if (tool === "read_file")   return `Reading ${String(input.path ?? "")}`;
+  if (tool === "write_file")  return `Writing ${String(input.path ?? "")}`;
+  if (tool === "list_directory") return `Listing ${String(input.path ?? ".")}`;
+  if (tool === "open_vscode") return `Opening VS Code`;
+  if (tool === "get_cwd")     return `Getting system info`;
+  return tool;
+}
 
 const TOOL_META: Record<string, { icon: React.ComponentType<{ className?: string }>; label: string; color: string }> = {
   run_command:    { icon: Terminal,  label: "Run Command",    color: "text-green-400" },
@@ -173,6 +184,7 @@ const mdComponents = {
 function MessageBubble({ msg, userName }: { msg: Message; userName?: string }) {
   const isUser = msg.role === "user";
   const initial = (userName ?? "U")[0].toUpperCase();
+  const isThinking = msg.streaming && !msg.content && (!msg.tools || msg.tools.every(t => t.status !== "running"));
 
   return (
     <motion.div
@@ -209,13 +221,16 @@ function MessageBubble({ msg, userName }: { msg: Message; userName?: string }) {
                 {msg.content}
               </ReactMarkdown>
             ) : (
-              <span className="flex items-center gap-2 text-muted-foreground">
-                <span className="flex gap-1">
+              <span className="flex items-center gap-2 text-muted-foreground text-xs">
+                <span className="flex gap-1 shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: "0ms" }} />
                   <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: "150ms" }} />
                   <span className="w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: "300ms" }} />
                 </span>
-                Thinking…
+                {msg.statusText
+                  ? <span className="font-mono text-foreground/70 truncate max-w-xs">{msg.statusText}</span>
+                  : <span>Thinking…</span>
+                }
               </span>
             )}
             {msg.streaming && msg.content && (
@@ -747,24 +762,25 @@ export default function AssistantPage() {
           try {
             const event: StreamEvent = JSON.parse(line.slice(6));
             if (event.type === "tool_start") {
+              const status = getToolStatus(event.tool, event.input);
               setMessages(prev => prev.map(m => m.id === assistantId
-                ? { ...m, tools: [...(m.tools ?? []), { id: event.id, tool: event.tool, input: event.input, status: "running" }] }
+                ? { ...m, statusText: status, tools: [...(m.tools ?? []), { id: event.id, tool: event.tool, input: event.input, status: "running" }] }
                 : m));
             } else if (event.type === "tool_done") {
               setMessages(prev => prev.map(m => m.id === assistantId
-                ? { ...m, tools: (m.tools ?? []).map(t => t.id === event.id
+                ? { ...m, statusText: undefined, tools: (m.tools ?? []).map(t => t.id === event.id
                     ? { ...t, status: (event.exitCode === 0 ? "done" : "error") as "done" | "error", stdout: event.stdout, stderr: event.stderr, exitCode: event.exitCode }
                     : t) }
                 : m));
             } else if (event.type === "content") {
               setMessages(prev => prev.map(m => m.id === assistantId
-                ? { ...m, content: m.content + event.delta }
+                ? { ...m, statusText: undefined, content: m.content + event.delta }
                 : m));
             } else if (event.type === "done") {
-              setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streaming: false } : m));
+              setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streaming: false, statusText: undefined } : m));
             } else if (event.type === "error") {
               setMessages(prev => prev.map(m => m.id === assistantId
-                ? { ...m, streaming: false, error: event.message }
+                ? { ...m, streaming: false, statusText: undefined, error: event.message }
                 : m));
             }
           } catch {}
