@@ -107,7 +107,6 @@ const navItems: NavItem[] = [
       { path: "/blog", label: "Blog", icon: BookOpen },
       { path: "/portfolio", label: "Portfolio", icon: Briefcase },
       { path: "/services", label: "Services", icon: Package },
-      { path: "/team", label: "Team", icon: Users },
     ],
   },
   {
@@ -150,6 +149,7 @@ const navItems: NavItem[] = [
     children: [
       { path: "/integrations", label: "Integrations", icon: Plug },
       { path: "/custom-pages", label: "Custom Pages", icon: Globe },
+      { path: "/team", label: "Team", icon: Users },
       { path: "/site-settings", label: "Site Settings", icon: Settings },
       { path: "/notifications", label: "Notification Alerts", icon: Bell },
       { path: "/user-management", label: "User Management", icon: UserCog },
