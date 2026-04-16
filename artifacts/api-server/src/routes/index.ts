@@ -39,6 +39,7 @@ import smmRouter from "./smm.js";
 import contentStudioRouter from "./contentStudio.js";
 import toolPermissionsRouter from "./toolPermissions.js";
 import adminPermissionsRouter, { ensureAdminPermissionsTable } from "./adminPermissions.js";
+import adminToolsStatsRouter from "./adminToolsStats.js";
 
 const router: IRouter = Router();
 
@@ -84,5 +85,6 @@ router.use(smmRouter);
 router.use(contentStudioRouter);
 router.use(toolPermissionsRouter);
 router.use(adminPermissionsRouter);
+router.use(adminToolsStatsRouter);
 
 export default router;
