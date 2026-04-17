@@ -125,33 +125,34 @@ export default function Services() {
               className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
             >
               {activeServices.map((service) => (
-                <motion.div
-                  key={service.id}
-                  variants={card}
-                  whileHover={{ y: -6 }}
-                  transition={{ type: "spring", stiffness: 260, damping: 22 }}
-                  className="group relative bg-card border border-border/50 rounded-2xl p-8 hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5 transition-all duration-300 overflow-hidden"
-                >
-                  {/* Subtle glow on hover */}
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-400 pointer-events-none -translate-y-1/2 translate-x-1/2" />
+                <Link key={service.id} href={`/services/${service.id}`}>
+                  <motion.div
+                    variants={card}
+                    whileHover={{ y: -6 }}
+                    transition={{ type: "spring", stiffness: 260, damping: 22 }}
+                    className="group relative bg-card border border-border/50 rounded-2xl p-8 hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5 transition-all duration-300 overflow-hidden cursor-pointer"
+                  >
+                    {/* Subtle glow on hover */}
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-400 pointer-events-none -translate-y-1/2 translate-x-1/2" />
 
-                  {/* Icon */}
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/15 flex items-center justify-center mb-5 group-hover:bg-primary/20 transition-colors duration-200">
-                    <ServiceIcon name={service.icon} className="w-6 h-6 text-primary" />
-                  </div>
+                    {/* Icon */}
+                    <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/15 flex items-center justify-center mb-5 group-hover:bg-primary/20 transition-colors duration-200">
+                      <ServiceIcon name={service.icon} className="w-6 h-6 text-primary" />
+                    </div>
 
-                  <h3 className="font-display text-xl font-bold text-foreground mb-3 group-hover:text-primary transition-colors duration-200">
-                    {service.name}
-                  </h3>
+                    <h3 className="font-display text-xl font-bold text-foreground mb-3 group-hover:text-primary transition-colors duration-200">
+                      {service.name}
+                    </h3>
 
-                  <p className="text-sm text-muted-foreground leading-relaxed mb-6">
-                    {service.description}
-                  </p>
+                    <p className="text-sm text-muted-foreground leading-relaxed mb-6">
+                      {service.description}
+                    </p>
 
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                    Learn more <ArrowRight className="w-3.5 h-3.5" />
-                  </div>
-                </motion.div>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                      Learn more <ArrowRight className="w-3.5 h-3.5" />
+                    </div>
+                  </motion.div>
+                </Link>
               ))}
             </motion.div>
           )}

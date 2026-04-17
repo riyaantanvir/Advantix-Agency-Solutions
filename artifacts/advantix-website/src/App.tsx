@@ -55,6 +55,7 @@ const Home = lazy(() => import("@/pages/Home"));
 const Blog = lazy(() => import("@/pages/Blog"));
 const BlogPost = lazy(() => import("@/pages/BlogPost"));
 const Services = lazy(() => import("@/pages/Services"));
+const ServiceDetail = lazy(() => import("@/pages/ServiceDetail"));
 const Portfolio = lazy(() => import("@/pages/Portfolio"));
 const Team = lazy(() => import("@/pages/Team"));
 const Contact = lazy(() => import("@/pages/Contact"));
@@ -110,6 +111,7 @@ function Router() {
               <Route path="/" component={Home} />
               <Route path="/blog/:slug" component={BlogPost} />
               <Route path="/blog" component={Blog} />
+              <Route path="/services/:id" component={ServiceDetail} />
               <Route path="/services" component={Services} />
               <Route path="/portfolio" component={Portfolio} />
               <Route path="/team" component={Team} />
