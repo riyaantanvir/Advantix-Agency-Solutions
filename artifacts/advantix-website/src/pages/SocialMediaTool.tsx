@@ -490,9 +490,14 @@ function OverviewTab({ onGoToSettings }: { onGoToSettings?: () => void }) {
 
 // ── Schedule Tab ──────────────────────────────────────────────────────────────
 
+type ScheduleView = "calendar" | "compose";
+
 function ScheduleTab() {
   const qc = useQueryClient();
   const today = new Date();
+  const [schedView, setSchedView] = useState<ScheduleView>("calendar");
+
+  // Calendar state
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [selectedDay, setSelectedDay] = useState<string | null>(toYMD(today));
@@ -531,98 +536,194 @@ function ScheduleTab() {
   const cells = useMemo(() => monthDays(viewYear, viewMonth), [viewYear, viewMonth]);
   const selectedPosts = selectedDay ? (postsByDay.get(selectedDay) ?? []) : [];
   const pendingCount = posts.filter(p => p.status === "pending").length;
+  const thisMonthCount = posts.filter(p => {
+    const d = new Date(p.scheduledAt);
+    return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth();
+  }).length;
 
   function prevMonth() { if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); } else setViewMonth(m => m - 1); }
   function nextMonth() { if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); } else setViewMonth(m => m + 1); }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 min-h-[600px]">
-      {/* Calendar */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <button onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"><ChevronLeft className="w-4 h-4" /></button>
-            <span className="text-sm font-semibold text-foreground w-36 text-center">{MONTHS[viewMonth]} {viewYear}</span>
-            <button onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"><ChevronRight className="w-4 h-4" /></button>
+    <div>
+      {/* Header bar */}
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+        <div className="flex items-center gap-4">
+          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <CalendarDays className="w-4 h-4 text-primary" /> Schedule Post
+          </h2>
+          <div className="hidden sm:flex items-center gap-3 text-xs text-muted-foreground">
+            <span><span className="font-semibold text-foreground">{pendingCount}</span> pending</span>
+            <span className="text-border">|</span>
+            <span><span className="font-semibold text-foreground">{thisMonthCount}</span> this month</span>
           </div>
-          <span className="text-xs text-muted-foreground"><span className="text-foreground font-semibold">{pendingCount}</span> pending</span>
         </div>
-
-        <div className="grid grid-cols-7 gap-px mb-1">
-          {WEEKDAYS.map(d => <div key={d} className="text-center text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider py-1">{d}</div>)}
-        </div>
-        <div className="grid grid-cols-7 gap-px bg-border/20 rounded-xl overflow-hidden border border-border/20">
-          {cells.map((day, i) => {
-            if (!day) return <div key={i} className="aspect-square bg-card/30" />;
-            const ymd = toYMD(day);
-            const dayPosts = postsByDay.get(ymd) ?? [];
-            const isToday = sameDay(day, today);
-            const isSelected = selectedDay === ymd;
-            return (
-              <button key={i} onClick={() => { setSelectedDay(ymd); setComposing(false); }}
-                className={cn("aspect-square flex flex-col items-center justify-start p-1.5 transition-colors text-left bg-card/30 hover:bg-muted/30",
-                  isSelected && "bg-primary/10 hover:bg-primary/15",
-                  day.getMonth() !== viewMonth && "opacity-30")}>
-                <span className={cn("text-[11px] font-medium w-5 h-5 flex items-center justify-center rounded-full",
-                  isToday ? "bg-primary text-primary-foreground" : isSelected ? "text-primary" : "text-foreground")}>
-                  {day.getDate()}
-                </span>
-                {dayPosts.length > 0 && (
-                  <div className="flex flex-wrap gap-px mt-0.5">
-                    {dayPosts.slice(0, 3).map((p, j) => {
-                      const pKeys = p.platforms.split(",") as PlatformKey[];
-                      const cfg = PLATFORMS.find(pl => pl.key === pKeys[0]);
-                      return <div key={j} className={cn("w-1.5 h-1.5 rounded-full", cfg?.dot ?? "bg-primary")} />;
-                    })}
-                  </div>
-                )}
-              </button>
-            );
-          })}
+        {/* View toggle */}
+        <div className="flex items-center gap-1 bg-muted/30 rounded-lg p-0.5 border border-border/30">
+          <button
+            onClick={() => setSchedView("calendar")}
+            className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+              schedView === "calendar" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+            <CalendarDays className="w-3.5 h-3.5" /> Calendar
+          </button>
+          <button
+            onClick={() => setSchedView("compose")}
+            className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+              schedView === "compose" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+            <LayoutList className="w-3.5 h-3.5" /> Compose & Queue
+          </button>
         </div>
       </div>
 
-      {/* Side panel */}
-      <div className="lg:w-80 flex flex-col border border-border/50 rounded-2xl overflow-hidden bg-card/30">
-        {composing ? (
-          <ComposeForm selectedDay={selectedDay} onClose={() => setComposing(false)} onSuccess={() => setComposing(false)} />
-        ) : (
-          <>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border/50 shrink-0">
-              <p className="text-sm font-semibold text-foreground">
-                {selectedDay ? parseLocalDate(selectedDay).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : "Posts"}
-              </p>
-              <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => setComposing(true)}>
+      {/* ── CALENDAR VIEW ── */}
+      {schedView === "calendar" && (
+        <div className="flex flex-col lg:flex-row gap-6 min-h-[560px]">
+          {/* Calendar grid */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <button onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"><ChevronLeft className="w-4 h-4" /></button>
+                <span className="text-sm font-semibold text-foreground w-36 text-center">{MONTHS[viewMonth]} {viewYear}</span>
+                <button onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"><ChevronRight className="w-4 h-4" /></button>
+              </div>
+              <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => setSchedView("compose")}>
                 <Plus className="w-3.5 h-3.5" /> New Post
               </Button>
             </div>
+            <div className="grid grid-cols-7 gap-px mb-1">
+              {WEEKDAYS.map(d => <div key={d} className="text-center text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider py-1">{d}</div>)}
+            </div>
+            <div className="grid grid-cols-7 gap-px bg-border/20 rounded-xl overflow-hidden border border-border/20">
+              {cells.map((day, i) => {
+                if (!day) return <div key={i} className="aspect-square bg-card/30" />;
+                const ymd = toYMD(day);
+                const dayPosts = postsByDay.get(ymd) ?? [];
+                const isToday = sameDay(day, today);
+                const isSelected = selectedDay === ymd;
+                return (
+                  <button key={i} onClick={() => { setSelectedDay(ymd); setComposing(false); }}
+                    className={cn("aspect-square flex flex-col items-center justify-start p-1.5 transition-colors text-left bg-card/30 hover:bg-muted/30",
+                      isSelected && "bg-primary/10 hover:bg-primary/15",
+                      day.getMonth() !== viewMonth && "opacity-30")}>
+                    <span className={cn("text-[11px] font-medium w-5 h-5 flex items-center justify-center rounded-full",
+                      isToday ? "bg-primary text-primary-foreground" : isSelected ? "text-primary" : "text-foreground")}>
+                      {day.getDate()}
+                    </span>
+                    {dayPosts.length > 0 && (
+                      <div className="flex flex-wrap gap-px mt-0.5">
+                        {dayPosts.slice(0, 3).map((p, j) => {
+                          const pKeys = p.platforms.split(",") as PlatformKey[];
+                          const cfg = PLATFORMS.find(pl => pl.key === pKeys[0]);
+                          return <div key={j} className={cn("w-1.5 h-1.5 rounded-full", cfg?.dot ?? "bg-primary")} />;
+                        })}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Day side panel */}
+          <div className="lg:w-72 flex flex-col border border-border/50 rounded-2xl overflow-hidden bg-card/30">
+            {composing ? (
+              <ComposeForm selectedDay={selectedDay} onClose={() => setComposing(false)} onSuccess={() => setComposing(false)} />
+            ) : (
+              <>
+                <div className="flex items-center justify-between px-4 py-3.5 border-b border-border/50 shrink-0">
+                  <p className="text-sm font-semibold text-foreground">
+                    {selectedDay ? parseLocalDate(selectedDay).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : "Posts"}
+                  </p>
+                  <Button size="sm" className="h-7 gap-1 text-xs" onClick={() => setComposing(true)}>
+                    <Plus className="w-3.5 h-3.5" /> New Post
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {isLoading ? (
+                    <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+                  ) : selectedPosts.length === 0 ? (
+                    <div className="text-center py-10">
+                      <CalendarDays className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+                      <p className="text-xs text-muted-foreground">No posts for this day</p>
+                      <button onClick={() => setComposing(true)} className="mt-3 text-xs text-primary hover:underline">+ Schedule a post</button>
+                    </div>
+                  ) : (
+                    selectedPosts.map(post => (
+                      <PostCard key={post.id} post={post} onCancel={id => cancelMutation.mutate(id)} onDelete={id => deleteMutation.mutate(id)} />
+                    ))
+                  )}
+                </div>
+                {posts.length > 0 && selectedPosts.length === 0 && (
+                  <div className="border-t border-border/50 p-3 space-y-2 max-h-60 overflow-y-auto">
+                    <p className="text-[11px] text-muted-foreground/60 uppercase tracking-wide font-semibold px-1 pb-1">All Upcoming</p>
+                    {posts.filter(p => p.status === "pending").slice(0, 10).map(post => (
+                      <PostCard key={post.id} post={post} onCancel={id => cancelMutation.mutate(id)} onDelete={id => deleteMutation.mutate(id)} />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── COMPOSE & QUEUE VIEW ── */}
+      {schedView === "compose" && (
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Compose form (full-height card) */}
+          <div className="flex-1 min-w-0 border border-border/50 rounded-2xl overflow-hidden bg-card/30 flex flex-col">
+            <div className="px-5 py-4 border-b border-border/50 shrink-0">
+              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Plus className="w-4 h-4 text-primary" /> Compose Post
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">Write once, schedule to multiple platforms at once.</p>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <ComposeForm onSuccess={() => { }} />
+            </div>
+          </div>
+
+          {/* Scheduled queue */}
+          <div className="lg:w-96 flex flex-col border border-border/50 rounded-2xl overflow-hidden bg-card/30">
+            <div className="px-5 py-4 border-b border-border/50 shrink-0 flex items-center justify-between">
+              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-400" /> Scheduled Queue
+                <span className="text-xs font-normal text-muted-foreground">({pendingCount} pending)</span>
+              </p>
+            </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2">
               {isLoading ? (
-                <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
-              ) : selectedPosts.length === 0 ? (
-                <div className="text-center py-10">
-                  <CalendarDays className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                  <p className="text-xs text-muted-foreground">No posts for this day</p>
-                  <button onClick={() => setComposing(true)} className="mt-3 text-xs text-primary hover:underline">+ Schedule a post</button>
+                <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+              ) : posts.length === 0 ? (
+                <div className="text-center py-16">
+                  <Clock className="w-10 h-10 text-muted-foreground/20 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground/60 font-medium">No posts scheduled yet</p>
+                  <p className="text-xs text-muted-foreground/40 mt-1">Use the form on the left to schedule your first post.</p>
                 </div>
               ) : (
-                selectedPosts.map(post => (
-                  <PostCard key={post.id} post={post} onCancel={id => cancelMutation.mutate(id)} onDelete={id => deleteMutation.mutate(id)} />
-                ))
+                <>
+                  {posts.filter(p => p.status === "pending").length > 0 && (
+                    <>
+                      <p className="text-[11px] text-muted-foreground/50 uppercase tracking-wide font-semibold px-1 pt-1 pb-0.5">Pending</p>
+                      {posts.filter(p => p.status === "pending").map(post => (
+                        <PostCard key={post.id} post={post} onCancel={id => cancelMutation.mutate(id)} onDelete={id => deleteMutation.mutate(id)} />
+                      ))}
+                    </>
+                  )}
+                  {posts.filter(p => p.status !== "pending").length > 0 && (
+                    <>
+                      <p className="text-[11px] text-muted-foreground/50 uppercase tracking-wide font-semibold px-1 pt-3 pb-0.5">History</p>
+                      {posts.filter(p => p.status !== "pending").slice(0, 20).map(post => (
+                        <PostCard key={post.id} post={post} onCancel={id => cancelMutation.mutate(id)} onDelete={id => deleteMutation.mutate(id)} />
+                      ))}
+                    </>
+                  )}
+                </>
               )}
             </div>
-            {/* All posts list */}
-            {posts.length > 0 && selectedPosts.length === 0 && (
-              <div className="border-t border-border/50 p-3 space-y-2 max-h-64 overflow-y-auto">
-                <p className="text-[11px] text-muted-foreground/60 uppercase tracking-wide font-semibold px-1 pb-1">All Upcoming</p>
-                {posts.filter(p => p.status === "pending").slice(0, 10).map(post => (
-                  <PostCard key={post.id} post={post} onCancel={id => cancelMutation.mutate(id)} onDelete={id => deleteMutation.mutate(id)} />
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
