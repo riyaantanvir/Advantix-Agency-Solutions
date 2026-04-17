@@ -913,6 +913,24 @@ export async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_agent_usage_created_at ON agent_usage (created_at)
   `);
 
+  // ── SMM — per-user API keys (Social Media Manager tool) ───────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS smm_user_keys (
+      id           serial PRIMARY KEY,
+      tool_user_id integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      key_name     text NOT NULL,
+      key_value    text,
+      updated_at   timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (tool_user_id, key_name)
+    )
+  `);
+
+  // Add tool_user_id to scheduled posts so each user sees only their own posts
+  await db.execute(sql`
+    ALTER TABLE smm_scheduled_posts
+      ADD COLUMN IF NOT EXISTS tool_user_id integer REFERENCES tool_users(id) ON DELETE SET NULL
+  `);
+
   logger.info("Migrations applied");
 }
 
