@@ -99,11 +99,11 @@ function StatusChip({ status }: { status: string }) {
   return <span className="text-[10px] text-muted-foreground">{status}</span>;
 }
 
-function PlatformCard({ cfg, data, traffic }: { cfg: typeof PLATFORMS[number]; data: PlatformData; traffic: number }) {
+function PlatformCard({ cfg, data, traffic, onGoToSettings }: { cfg: typeof PLATFORMS[number]; data: PlatformData; traffic: number; onGoToSettings?: () => void }) {
   const { Icon, label, color, textColor } = cfg;
   if (!data.connected) {
     return (
-      <Card className="p-5 flex flex-col gap-3 border-dashed opacity-60">
+      <Card className="p-5 flex flex-col gap-3 border-dashed opacity-70 hover:opacity-90 transition-opacity">
         <div className="flex items-center gap-3">
           <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center opacity-40`}>
             <Icon className="w-[18px] h-[18px] text-white" />
@@ -113,7 +113,11 @@ function PlatformCard({ cfg, data, traffic }: { cfg: typeof PLATFORMS[number]; d
             <p className="text-xs text-muted-foreground">Not connected</p>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">Contact admin to connect {label}.</p>
+        <p className="text-xs text-muted-foreground">
+          Add your API keys in the{" "}
+          <button onClick={onGoToSettings} className="text-primary hover:underline font-medium">Settings tab</button>
+          {" "}to connect {label}.
+        </p>
       </Card>
     );
   }
@@ -335,7 +339,7 @@ function ComposeForm({ selectedDay, onClose, onSuccess }: { selectedDay?: string
 
 // ── Overview Tab ──────────────────────────────────────────────────────────────
 
-function OverviewTab() {
+function OverviewTab({ onGoToSettings }: { onGoToSettings?: () => void }) {
   const { data: platforms, isLoading } = useQuery<PlatformsResponse>({
     queryKey: ["tools-smm-platforms"],
     queryFn: async () => {
@@ -400,7 +404,7 @@ function OverviewTab() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             {PLATFORMS.map(cfg => (
-              <PlatformCard key={cfg.key} cfg={cfg} data={platforms?.[cfg.key] ?? { connected: false }} traffic={traffic?.platforms[cfg.key] ?? 0} />
+              <PlatformCard key={cfg.key} cfg={cfg} data={platforms?.[cfg.key] ?? { connected: false }} traffic={traffic?.platforms[cfg.key] ?? 0} onGoToSettings={onGoToSettings} />
             ))}
           </div>
         )}
@@ -960,7 +964,7 @@ export default function SocialMediaTool() {
         </div>
 
         {/* Tab content */}
-        {tab === "overview" ? <OverviewTab /> : tab === "schedule" ? <ScheduleTab /> : <SettingsTab />}
+        {tab === "overview" ? <OverviewTab onGoToSettings={() => setTab("settings")} /> : tab === "schedule" ? <ScheduleTab /> : <SettingsTab />}
       </div>
     </div>
   );
