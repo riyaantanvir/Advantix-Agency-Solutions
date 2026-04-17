@@ -1,10 +1,10 @@
 import { Router, Request, Response } from "express";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { smmScheduledPostsTable, pageEventsTable } from "@workspace/db/schema";
+import { smmScheduledPostsTable, smmUserKeysTable, pageEventsTable } from "@workspace/db/schema";
 import { requireToolUser } from "../middleware/toolAuth.js";
 import { schedulePost, cancelScheduledPost } from "../lib/smmPublisher.js";
-import { getSmmKeys, fetchAllPlatforms } from "../lib/smmService.js";
+import { fetchAllPlatforms } from "../lib/smmService.js";
 import multer from "multer";
 import { randomUUID } from "crypto";
 import path from "path";
@@ -12,10 +12,20 @@ import path from "path";
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
-// ── image upload helpers ──────────────────────────────────────────────────────
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+function getToolUserId(req: Request): number {
+  return (req.session as any).toolUserId as number;
+}
+
+async function getUserKeys(toolUserId: number): Promise<Record<string, string>> {
+  const rows = await db.select().from(smmUserKeysTable).where(eq(smmUserKeysTable.toolUserId, toolUserId));
+  return Object.fromEntries(rows.filter(r => r.keyValue).map(r => [r.keyName, r.keyValue!]));
+}
+
+// ── image upload ──────────────────────────────────────────────────────────────
 
 function isReplitStorage(): boolean { return !!process.env.PRIVATE_OBJECT_DIR; }
-
 function parseStorageDir(): { bucketName: string; prefix: string } {
   const dir = process.env.PRIVATE_OBJECT_DIR || "";
   const clean = dir.startsWith("gs://") ? dir.slice(5) : dir.replace(/^\//, "");
@@ -23,42 +33,26 @@ function parseStorageDir(): { bucketName: string; prefix: string } {
   if (!parts[0]) throw new Error("Object storage not configured");
   return { bucketName: parts[0], prefix: parts.slice(1).join("/") };
 }
-
 async function getSidecarSignedUrl(objectName: string, method: "GET" | "PUT"): Promise<string> {
   const SIDECAR = "http://127.0.0.1:1106";
   const { bucketName } = parseStorageDir();
   const body = { bucket_name: bucketName, object_name: objectName, method, expires_at: new Date(Date.now() + 3600 * 1000).toISOString() };
-  const res = await fetch(`${SIDECAR}/object-storage/signed-object-url`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(15_000),
-  });
+  const res = await fetch(`${SIDECAR}/object-storage/signed-object-url`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`Sidecar error: ${res.status}`);
   const { signed_url } = await res.json() as { signed_url: string };
   return signed_url;
 }
-
 async function uploadSmmImage(buffer: Buffer, mimetype: string, originalName: string): Promise<string> {
   if (isReplitStorage()) {
     const { prefix } = parseStorageDir();
     const ext = path.extname(originalName) || ".jpg";
     const objectName = [prefix, `smm/${randomUUID()}${ext}`].filter(Boolean).join("/");
     const putUrl = await getSidecarSignedUrl(objectName, "PUT");
-    const uploadRes = await fetch(putUrl, {
-      method: "PUT",
-      headers: { "Content-Type": mimetype },
-      body: buffer,
-      signal: AbortSignal.timeout(60_000),
-    });
+    const uploadRes = await fetch(putUrl, { method: "PUT", headers: { "Content-Type": mimetype }, body: buffer, signal: AbortSignal.timeout(60_000) });
     if (!uploadRes.ok) throw new Error(`GCS upload failed: ${uploadRes.status}`);
     return `/api/gallery-img/${objectName}`;
   } else {
-    const result = await db.execute(sql`
-      INSERT INTO gallery_image_blobs (data, mime_type)
-      VALUES (${buffer}, ${mimetype})
-      RETURNING id
-    `);
+    const result = await db.execute(sql`INSERT INTO gallery_image_blobs (data, mime_type) VALUES (${buffer}, ${mimetype}) RETURNING id`);
     const blobId = (result.rows[0] as Record<string, unknown>).id;
     return `/api/gallery-img/db/${blobId}`;
   }
@@ -77,12 +71,51 @@ router.post("/tools/smm/upload", requireToolUser, upload.single("image"), async 
   }
 });
 
+// ── GET /api/tools/smm/settings ───────────────────────────────────────────────
+
+router.get("/tools/smm/settings", requireToolUser, async (req: Request, res: Response) => {
+  const toolUserId = getToolUserId(req);
+  const rows = await db.select().from(smmUserKeysTable).where(eq(smmUserKeysTable.toolUserId, toolUserId));
+  // Return keys but mask values (except show last 6 chars so user can verify)
+  const settings = Object.fromEntries(rows.map(r => [r.keyName, r.keyValue ? `••••${r.keyValue.slice(-6)}` : ""]));
+  res.json({ settings, connected: rows.filter(r => r.keyValue).map(r => r.keyName) });
+});
+
+// ── PUT /api/tools/smm/settings ───────────────────────────────────────────────
+
+router.put("/tools/smm/settings", requireToolUser, async (req: Request, res: Response) => {
+  const toolUserId = getToolUserId(req);
+  const body = req.body as Record<string, string>;
+  const validKeys = [
+    "SMM_META_ACCESS_TOKEN", "SMM_META_PAGE_ID", "SMM_META_IG_USER_ID",
+    "SMM_TWITTER_BEARER_TOKEN", "SMM_TWITTER_USER_ID",
+    "SMM_LINKEDIN_ACCESS_TOKEN", "SMM_LINKEDIN_ORG_ID",
+    "SMM_YOUTUBE_API_KEY", "SMM_YOUTUBE_CHANNEL_ID",
+    "SMM_PINTEREST_ACCESS_TOKEN",
+  ];
+  for (const [key, value] of Object.entries(body)) {
+    if (!validKeys.includes(key)) continue;
+    // Skip if value looks like our masked value (starts with ••••)
+    if (value.startsWith("••••")) continue;
+    if (value.trim() === "") {
+      // Delete the key
+      await db.delete(smmUserKeysTable).where(and(eq(smmUserKeysTable.toolUserId, toolUserId), eq(smmUserKeysTable.keyName, key)));
+    } else {
+      // Upsert
+      await db.insert(smmUserKeysTable).values({ toolUserId, keyName: key, keyValue: value.trim() })
+        .onConflictDoUpdate({ target: [smmUserKeysTable.toolUserId, smmUserKeysTable.keyName], set: { keyValue: value.trim(), updatedAt: new Date() } });
+    }
+  }
+  res.json({ success: true });
+});
+
 // ── GET /api/tools/smm/platforms ──────────────────────────────────────────────
 
 router.get("/tools/smm/platforms", requireToolUser, async (req: Request, res: Response) => {
   const notConnected = { connected: false as const };
   try {
-    const keys = await getSmmKeys();
+    const toolUserId = getToolUserId(req);
+    const keys = await getUserKeys(toolUserId);
     const platforms = await fetchAllPlatforms(keys);
     res.json(platforms);
   } catch (err) {
@@ -99,16 +132,13 @@ router.get("/tools/smm/traffic", requireToolUser, async (req: Request, res: Resp
     const rows = await db
       .select({ referrer: pageEventsTable.referrer, count: sql<number>`count(*)`.as("count") })
       .from(pageEventsTable)
-      .where(
-        sql.raw(`event_type = 'pageview' AND created_at >= NOW() - INTERVAL '30 days' AND referrer IS NOT NULL
-            AND (referrer ILIKE '%instagram%' OR referrer ILIKE '%facebook%'
-              OR referrer ILIKE '%t.co%' OR referrer ILIKE '%twitter.com%' OR referrer ILIKE '%x.com%'
-              OR referrer ILIKE '%linkedin%' OR referrer ILIKE '%youtube%' OR referrer ILIKE '%pinterest%')`)
-      )
+      .where(sql.raw(`event_type = 'pageview' AND created_at >= NOW() - INTERVAL '30 days' AND referrer IS NOT NULL
+          AND (referrer ILIKE '%instagram%' OR referrer ILIKE '%facebook%'
+            OR referrer ILIKE '%t.co%' OR referrer ILIKE '%twitter.com%' OR referrer ILIKE '%x.com%'
+            OR referrer ILIKE '%linkedin%' OR referrer ILIKE '%youtube%' OR referrer ILIKE '%pinterest%')`))
       .groupBy(pageEventsTable.referrer)
       .orderBy(sql`count(*) DESC`)
       .limit(100);
-
     const platforms: Record<string, number> = { instagram: 0, facebook: 0, twitter: 0, linkedin: 0, youtube: 0, pinterest: 0 };
     for (const row of rows) {
       const ref = (row.referrer ?? "").toLowerCase();
@@ -128,14 +158,16 @@ router.get("/tools/smm/traffic", requireToolUser, async (req: Request, res: Resp
 
 // ── GET /api/tools/smm/scheduled ─────────────────────────────────────────────
 
-router.get("/tools/smm/scheduled", requireToolUser, async (_req: Request, res: Response) => {
+router.get("/tools/smm/scheduled", requireToolUser, async (req: Request, res: Response) => {
+  const toolUserId = getToolUserId(req);
   try {
     const rows = await db.select().from(smmScheduledPostsTable)
+      .where(eq(smmScheduledPostsTable.toolUserId, toolUserId))
       .orderBy(desc(smmScheduledPostsTable.scheduledAt))
-      .limit(100);
+      .limit(200);
     res.json(rows);
   } catch (err) {
-    _req.log.error({ err }, "Tools SMM scheduled posts fetch failed");
+    req.log.error({ err }, "Tools SMM scheduled posts fetch failed");
     res.json([]);
   }
 });
@@ -143,19 +175,18 @@ router.get("/tools/smm/scheduled", requireToolUser, async (_req: Request, res: R
 // ── POST /api/tools/smm/scheduled ────────────────────────────────────────────
 
 router.post("/tools/smm/scheduled", requireToolUser, async (req: Request, res: Response) => {
+  const toolUserId = getToolUserId(req);
   const session = req.session as any;
-  const { platforms, content, imageUrl, scheduledAt } = req.body as {
-    platforms: string[]; content: string; imageUrl?: string; scheduledAt: string;
-  };
+  const { platforms, content, imageUrl, scheduledAt } = req.body as { platforms: string[]; content: string; imageUrl?: string; scheduledAt: string };
   if (!platforms?.length || !content?.trim() || !scheduledAt) {
-    res.status(400).json({ error: "platforms, content, and scheduledAt are required" });
-    return;
+    res.status(400).json({ error: "platforms, content, and scheduledAt are required" }); return;
   }
   const [row] = await db.insert(smmScheduledPostsTable).values({
     platforms: platforms.join(","),
     content: content.trim(),
     imageUrl: imageUrl || null,
     scheduledAt: new Date(scheduledAt),
+    toolUserId,
     createdBy: session.toolUserName ?? session.toolUserEmail ?? "user",
   }).returning();
   schedulePost(row);
@@ -165,20 +196,22 @@ router.post("/tools/smm/scheduled", requireToolUser, async (req: Request, res: R
 // ── DELETE /api/tools/smm/scheduled/:id ──────────────────────────────────────
 
 router.delete("/tools/smm/scheduled/:id", requireToolUser, async (req: Request, res: Response) => {
+  const toolUserId = getToolUserId(req);
   const id = parseInt(req.params.id);
   cancelScheduledPost(id);
-  await db.delete(smmScheduledPostsTable).where(eq(smmScheduledPostsTable.id, id));
+  await db.delete(smmScheduledPostsTable).where(and(eq(smmScheduledPostsTable.id, id), eq(smmScheduledPostsTable.toolUserId, toolUserId)));
   res.json({ success: true });
 });
 
 // ── PATCH /api/tools/smm/scheduled/:id/cancel ────────────────────────────────
 
 router.patch("/tools/smm/scheduled/:id/cancel", requireToolUser, async (req: Request, res: Response) => {
+  const toolUserId = getToolUserId(req);
   const id = parseInt(req.params.id);
   cancelScheduledPost(id);
   const [row] = await db.update(smmScheduledPostsTable)
     .set({ status: "cancelled" })
-    .where(eq(smmScheduledPostsTable.id, id))
+    .where(and(eq(smmScheduledPostsTable.id, id), eq(smmScheduledPostsTable.toolUserId, toolUserId)))
     .returning();
   if (!row) { res.status(404).json({ error: "Not found" }); return; }
   res.json(row);

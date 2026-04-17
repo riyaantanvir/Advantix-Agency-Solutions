@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from "react";
+import React, { useState, useMemo, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
@@ -8,7 +8,7 @@ import {
   Loader2, WifiOff, TrendingUp, Pin, BarChart2, ArrowUpRight,
   ExternalLink, ChevronLeft, ChevronRight, Plus, X, Send, Trash2,
   Clock, CheckCircle2, XCircle, ImageIcon, Type, AlertCircle,
-  Upload, Link2, LayoutList, LogIn,
+  Upload, Link2, LayoutList, LogIn, Save, Eye as EyeIcon, EyeOff, Info,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -623,9 +623,211 @@ function ScheduleTab() {
   );
 }
 
+// ── Settings Tab ──────────────────────────────────────────────────────────────
+
+type PlatformConfig = {
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  description: string;
+  fields: Array<{ key: string; label: string; placeholder: string; helpText?: string }>;
+};
+
+const PLATFORM_SETTINGS: PlatformConfig[] = [
+  {
+    label: "Meta (Facebook & Instagram)",
+    Icon: Facebook,
+    color: "from-blue-600 to-blue-500",
+    description: "One access token covers both Facebook Pages and Instagram Business accounts.",
+    fields: [
+      { key: "SMM_META_ACCESS_TOKEN", label: "Page Access Token", placeholder: "EAAxxxxx…", helpText: "From Meta Business Suite → Settings → Advanced" },
+      { key: "SMM_META_PAGE_ID", label: "Facebook Page ID", placeholder: "123456789", helpText: "Found in your Facebook Page settings" },
+      { key: "SMM_META_IG_USER_ID", label: "Instagram User ID", placeholder: "987654321", helpText: "From the Instagram Graph API explorer" },
+    ],
+  },
+  {
+    label: "X / Twitter",
+    Icon: Twitter,
+    color: "from-sky-400 to-sky-500",
+    description: "Use Bearer Token for reading data. For posting you'll need OAuth 2.0 credentials.",
+    fields: [
+      { key: "SMM_TWITTER_BEARER_TOKEN", label: "Bearer Token", placeholder: "AAAA…", helpText: "From developer.twitter.com → Project → Keys" },
+      { key: "SMM_TWITTER_USER_ID", label: "Twitter User ID (numeric)", placeholder: "1234567890", helpText: "Not your @handle — the numeric ID" },
+    ],
+  },
+  {
+    label: "LinkedIn",
+    Icon: Linkedin,
+    color: "from-blue-700 to-blue-600",
+    description: "LinkedIn API requires an app with Marketing Developer Platform access.",
+    fields: [
+      { key: "SMM_LINKEDIN_ACCESS_TOKEN", label: "Access Token", placeholder: "AQV…", helpText: "OAuth 2.0 access token from LinkedIn Developer" },
+      { key: "SMM_LINKEDIN_ORG_ID", label: "Organization ID (optional)", placeholder: "12345", helpText: "Leave blank for personal profile" },
+    ],
+  },
+  {
+    label: "YouTube",
+    Icon: Youtube,
+    color: "from-red-500 to-red-600",
+    description: "YouTube Data API v3. Create an API key in Google Cloud Console.",
+    fields: [
+      { key: "SMM_YOUTUBE_API_KEY", label: "API Key", placeholder: "AIzaSy…", helpText: "Google Cloud Console → APIs → YouTube Data API v3" },
+      { key: "SMM_YOUTUBE_CHANNEL_ID", label: "Channel ID", placeholder: "UCxxxxxx", helpText: "From your YouTube channel settings" },
+    ],
+  },
+  {
+    label: "Pinterest",
+    Icon: Pin,
+    color: "from-rose-500 to-pink-600",
+    description: "Pinterest API v5. Create an app at developers.pinterest.com.",
+    fields: [
+      { key: "SMM_PINTEREST_ACCESS_TOKEN", label: "Access Token", placeholder: "pina_xxxxx", helpText: "From Pinterest Developer portal → Apps" },
+    ],
+  },
+];
+
+function SettingsField({ fieldKey, label, placeholder, helpText, initialValue, onSave }: {
+  fieldKey: string; label: string; placeholder: string; helpText?: string;
+  initialValue: string; onSave: (key: string, value: string) => void;
+}) {
+  const [value, setValue] = useState(initialValue);
+  const [show, setShow] = useState(false);
+  const isMasked = value.startsWith("••••");
+  const hasValue = initialValue !== "";
+  const isDirty = value !== initialValue;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="text-xs font-medium text-foreground/80">{label}</label>
+        {hasValue && !isDirty && (
+          <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
+            <CheckCircle2 className="w-3 h-3" /> Connected
+          </span>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Input
+            type={show || !isMasked ? "text" : "password"}
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            placeholder={placeholder}
+            className="pr-9 text-sm bg-muted/20 border-border/50 focus:border-primary/50 font-mono"
+          />
+          {value && (
+            <button type="button" onClick={() => setShow(v => !v)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+              {show ? <EyeOff className="w-3.5 h-3.5" /> : <EyeIcon className="w-3.5 h-3.5" />}
+            </button>
+          )}
+        </div>
+        {isDirty && (
+          <Button size="sm" className="h-9 px-3 shrink-0" onClick={() => onSave(fieldKey, value)}>
+            <Save className="w-3.5 h-3.5" />
+          </Button>
+        )}
+        {hasValue && !isDirty && (
+          <Button size="sm" variant="outline" className="h-9 px-3 shrink-0 text-red-400 border-red-400/30 hover:bg-red-400/10 hover:border-red-400/60"
+            onClick={() => { setValue(""); onSave(fieldKey, ""); }}>
+            <X className="w-3.5 h-3.5" />
+          </Button>
+        )}
+      </div>
+      {helpText && (
+        <p className="flex items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground/60">
+          <Info className="w-3 h-3 shrink-0" />{helpText}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SettingsTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const { data, isLoading } = useQuery<{ settings: Record<string, string>; connected: string[] }>({
+    queryKey: ["tools-smm-settings"],
+    queryFn: async () => {
+      const r = await fetch(`${API}/tools/smm/settings`, { credentials: "include" });
+      if (!r.ok) return { settings: {}, connected: [] };
+      return r.json();
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: (body: Record<string, string>) =>
+      fetch(`${API}/tools/smm/settings`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(r => r.json()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tools-smm-settings"] });
+      qc.invalidateQueries({ queryKey: ["tools-smm-platforms"] });
+      toast({ title: "Settings saved!" });
+    },
+    onError: () => toast({ title: "Save failed", variant: "destructive" }),
+  });
+
+  function handleSave(key: string, value: string) {
+    saveMutation.mutate({ [key]: value });
+  }
+
+  if (isLoading) {
+    return <div className="flex justify-center py-20"><Loader2 className="w-7 h-7 animate-spin text-primary" /></div>;
+  }
+
+  const settings = data?.settings ?? {};
+  const connectedCount = data?.connected?.length ?? 0;
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      {/* Info banner */}
+      <div className="flex items-start gap-3 p-4 rounded-xl bg-primary/5 border border-primary/15">
+        <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+        <div className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">Your credentials are private.</span>{" "}
+          Keys are stored securely and only used to fetch data for your account. Other users cannot see your tokens.
+          {connectedCount > 0 && <span className="ml-1 text-emerald-400 font-medium">{connectedCount} platform{connectedCount !== 1 ? "s" : ""} connected.</span>}
+        </div>
+      </div>
+
+      {/* Platform sections */}
+      {PLATFORM_SETTINGS.map(({ label, Icon, color, description, fields }) => (
+        <Card key={label} className="p-5 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center shadow-md shrink-0`}>
+              <Icon className="w-[18px] h-[18px] text-white" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">{label}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+            </div>
+          </div>
+          <div className="space-y-3 pt-1 border-t border-border/30">
+            {fields.map(({ key, label: fieldLabel, placeholder, helpText }) => (
+              <SettingsField
+                key={key}
+                fieldKey={key}
+                label={fieldLabel}
+                placeholder={placeholder}
+                helpText={helpText}
+                initialValue={settings[key] ?? ""}
+                onSave={handleSave}
+              />
+            ))}
+          </div>
+        </Card>
+      ))}
+
+      <p className="text-xs text-muted-foreground/50 pb-6">
+        Changes take effect immediately. Refresh the Overview tab to see updated platform data.
+      </p>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-type Tab = "overview" | "schedule";
+type Tab = "overview" | "schedule" | "settings";
 
 export default function SocialMediaTool() {
   const { user, loading } = useToolsUser();
@@ -680,8 +882,9 @@ export default function SocialMediaTool() {
         {/* Tabs */}
         <div className="flex items-center gap-1 bg-muted/30 rounded-xl p-1 border border-border/30 w-fit mb-8">
           {([
-            { id: "overview", label: "Overview", icon: BarChart2 },
-            { id: "schedule", label: "Schedule Post", icon: CalendarDays },
+            { id: "overview",  label: "Overview",      icon: BarChart2 },
+            { id: "schedule",  label: "Schedule Post", icon: CalendarDays },
+            { id: "settings",  label: "Settings",      icon: Settings2 },
           ] as const).map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => setTab(id)}
               className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
@@ -692,7 +895,7 @@ export default function SocialMediaTool() {
         </div>
 
         {/* Tab content */}
-        {tab === "overview" ? <OverviewTab /> : <ScheduleTab />}
+        {tab === "overview" ? <OverviewTab /> : tab === "schedule" ? <ScheduleTab /> : <SettingsTab />}
       </div>
     </div>
   );
