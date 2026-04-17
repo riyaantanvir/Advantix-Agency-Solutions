@@ -109,6 +109,110 @@ router.put("/tools/smm/settings", requireToolUser, async (req: Request, res: Res
   res.json({ success: true });
 });
 
+// ── POST /api/tools/smm/test ──────────────────────────────────────────────────
+
+router.post("/tools/smm/test", requireToolUser, async (req: Request, res: Response) => {
+  const toolUserId = getToolUserId(req);
+  const { platform } = req.body as { platform: string };
+  if (!platform) { res.status(400).json({ ok: false, message: "platform is required" }); return; }
+
+  const keys = await getUserKeys(toolUserId);
+
+  try {
+    switch (platform) {
+      case "facebook": {
+        if (!keys.SMM_META_ACCESS_TOKEN || !keys.SMM_META_PAGE_ID) {
+          res.json({ ok: false, message: "Missing Page Access Token or Page ID" }); return;
+        }
+        const r = await fetch(
+          `https://graph.facebook.com/v19.0/${keys.SMM_META_PAGE_ID}?fields=name,id&access_token=${keys.SMM_META_ACCESS_TOKEN}`,
+          { signal: AbortSignal.timeout(10000) }
+        );
+        const d = await r.json();
+        if (d.error) { res.json({ ok: false, message: d.error.message }); return; }
+        res.json({ ok: true, message: `Connected as: ${d.name} (ID: ${d.id})` });
+        break;
+      }
+      case "instagram": {
+        if (!keys.SMM_META_ACCESS_TOKEN || !keys.SMM_META_IG_USER_ID) {
+          res.json({ ok: false, message: "Missing Access Token or Instagram User ID" }); return;
+        }
+        const r = await fetch(
+          `https://graph.facebook.com/v19.0/${keys.SMM_META_IG_USER_ID}?fields=username,id&access_token=${keys.SMM_META_ACCESS_TOKEN}`,
+          { signal: AbortSignal.timeout(10000) }
+        );
+        const d = await r.json();
+        if (d.error) { res.json({ ok: false, message: d.error.message }); return; }
+        res.json({ ok: true, message: `Connected as: @${d.username} (ID: ${d.id})` });
+        break;
+      }
+      case "twitter": {
+        if (!keys.SMM_TWITTER_BEARER_TOKEN || !keys.SMM_TWITTER_USER_ID) {
+          res.json({ ok: false, message: "Missing Bearer Token or User ID" }); return;
+        }
+        const r = await fetch(
+          `https://api.twitter.com/2/users/${keys.SMM_TWITTER_USER_ID}?user.fields=username,name`,
+          { headers: { Authorization: `Bearer ${keys.SMM_TWITTER_BEARER_TOKEN}` }, signal: AbortSignal.timeout(10000) }
+        );
+        const d = await r.json();
+        if (d.errors || !d.data) { res.json({ ok: false, message: d.errors?.[0]?.detail ?? "Invalid credentials" }); return; }
+        res.json({ ok: true, message: `Connected as: @${d.data.username} (${d.data.name})` });
+        break;
+      }
+      case "linkedin": {
+        if (!keys.SMM_LINKEDIN_ACCESS_TOKEN) {
+          res.json({ ok: false, message: "Missing Access Token" }); return;
+        }
+        const r = await fetch(
+          keys.SMM_LINKEDIN_ORG_ID
+            ? `https://api.linkedin.com/v2/organizations/${keys.SMM_LINKEDIN_ORG_ID}`
+            : `https://api.linkedin.com/v2/me`,
+          { headers: { Authorization: `Bearer ${keys.SMM_LINKEDIN_ACCESS_TOKEN}` }, signal: AbortSignal.timeout(10000) }
+        );
+        const d = await r.json();
+        if (d.status === 401 || d.status === 403) { res.json({ ok: false, message: "Invalid or expired access token" }); return; }
+        const name = d.localizedName ?? `${d.localizedFirstName ?? ""} ${d.localizedLastName ?? ""}`.trim();
+        res.json({ ok: true, message: `Connected as: ${name || "LinkedIn Profile"}` });
+        break;
+      }
+      case "youtube": {
+        if (!keys.SMM_YOUTUBE_API_KEY || !keys.SMM_YOUTUBE_CHANNEL_ID) {
+          res.json({ ok: false, message: "Missing API Key or Channel ID" }); return;
+        }
+        const r = await fetch(
+          `https://www.googleapis.com/youtube/v3/channels?part=snippet&id=${keys.SMM_YOUTUBE_CHANNEL_ID}&key=${keys.SMM_YOUTUBE_API_KEY}`,
+          { signal: AbortSignal.timeout(10000) }
+        );
+        const d = await r.json();
+        if (d.error) { res.json({ ok: false, message: d.error.message }); return; }
+        const ch = d.items?.[0];
+        if (!ch) { res.json({ ok: false, message: "Channel not found" }); return; }
+        res.json({ ok: true, message: `Connected as: ${ch.snippet?.title}` });
+        break;
+      }
+      case "pinterest": {
+        if (!keys.SMM_PINTEREST_ACCESS_TOKEN) {
+          res.json({ ok: false, message: "Missing Access Token" }); return;
+        }
+        const r = await fetch(
+          "https://api.pinterest.com/v5/user_account",
+          { headers: { Authorization: `Bearer ${keys.SMM_PINTEREST_ACCESS_TOKEN}` }, signal: AbortSignal.timeout(10000) }
+        );
+        const d = await r.json();
+        if (r.status === 401) { res.json({ ok: false, message: "Invalid or expired access token" }); return; }
+        res.json({ ok: true, message: `Connected as: @${d.username}` });
+        break;
+      }
+      default:
+        res.json({ ok: false, message: "Unknown platform" });
+    }
+  } catch (err: any) {
+    if (err?.name === "TimeoutError") { res.json({ ok: false, message: "Request timed out — check your credentials" }); return; }
+    req.log.error({ err }, "SMM test connection failed");
+    res.json({ ok: false, message: "Connection failed — check your credentials" });
+  }
+});
+
 // ── GET /api/tools/smm/platforms ──────────────────────────────────────────────
 
 router.get("/tools/smm/platforms", requireToolUser, async (req: Request, res: Response) => {

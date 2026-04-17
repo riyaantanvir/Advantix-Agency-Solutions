@@ -743,9 +743,12 @@ function SettingsField({ fieldKey, label, placeholder, helpText, initialValue, o
   );
 }
 
+type TestResult = { ok: boolean; message: string };
+
 function SettingsTab() {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [testResults, setTestResults] = useState<Record<string, TestResult | "loading">>({});
 
   const { data, isLoading } = useQuery<{ settings: Record<string, string>; connected: string[] }>({
     queryKey: ["tools-smm-settings"],
@@ -767,6 +770,21 @@ function SettingsTab() {
     onError: () => toast({ title: "Save failed", variant: "destructive" }),
   });
 
+  async function handleTest(platformKey: string) {
+    setTestResults(prev => ({ ...prev, [platformKey]: "loading" }));
+    try {
+      const r = await fetch(`${API}/tools/smm/test`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform: platformKey }),
+      });
+      const result: TestResult = await r.json();
+      setTestResults(prev => ({ ...prev, [platformKey]: result }));
+    } catch {
+      setTestResults(prev => ({ ...prev, [platformKey]: { ok: false, message: "Network error" } }));
+    }
+  }
+
   function handleSave(key: string, value: string) {
     saveMutation.mutate({ [key]: value });
   }
@@ -777,6 +795,15 @@ function SettingsTab() {
 
   const settings = data?.settings ?? {};
   const connectedCount = data?.connected?.length ?? 0;
+
+  // Map PLATFORM_SETTINGS label → test platform key
+  const platformKeyMap: Record<string, string> = {
+    "Meta (Facebook & Instagram)": "facebook",
+    "X / Twitter": "twitter",
+    "LinkedIn": "linkedin",
+    "YouTube": "youtube",
+    "Pinterest": "pinterest",
+  };
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -791,35 +818,73 @@ function SettingsTab() {
       </div>
 
       {/* Platform sections */}
-      {PLATFORM_SETTINGS.map(({ label, Icon, color, description, fields }) => (
-        <Card key={label} className="p-5 space-y-4">
-          <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center shadow-md shrink-0`}>
-              <Icon className="w-[18px] h-[18px] text-white" />
+      {PLATFORM_SETTINGS.map(({ label, Icon, color, description, fields }) => {
+        const platKey = platformKeyMap[label] ?? label.toLowerCase();
+        const testResult = testResults[platKey];
+        const hasAnyKey = fields.some(f => !!(settings[f.key]));
+
+        return (
+          <Card key={label} className="p-5 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${color} flex items-center justify-center shadow-md shrink-0 mt-0.5`}>
+                <Icon className="w-[18px] h-[18px] text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <p className="text-sm font-semibold text-foreground">{label}</p>
+                  {hasAnyKey && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-3 text-xs gap-1.5 border-border/50"
+                      disabled={testResult === "loading"}
+                      onClick={() => handleTest(platKey)}
+                    >
+                      {testResult === "loading" ? (
+                        <><Loader2 className="w-3 h-3 animate-spin" /> Testing…</>
+                      ) : (
+                        <><CheckCircle2 className="w-3 h-3" /> Test Connection</>
+                      )}
+                    </Button>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+
+                {/* Test result */}
+                {testResult && testResult !== "loading" && (
+                  <div className={cn(
+                    "flex items-start gap-2 mt-2.5 p-2.5 rounded-lg text-xs font-medium",
+                    testResult.ok
+                      ? "bg-emerald-400/10 border border-emerald-400/20 text-emerald-400"
+                      : "bg-red-400/10 border border-red-400/20 text-red-400"
+                  )}>
+                    {testResult.ok
+                      ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      : <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
+                    {testResult.message}
+                  </div>
+                )}
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-semibold text-foreground">{label}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+            <div className="space-y-3 pt-1 border-t border-border/30">
+              {fields.map(({ key, label: fieldLabel, placeholder, helpText }) => (
+                <SettingsField
+                  key={key}
+                  fieldKey={key}
+                  label={fieldLabel}
+                  placeholder={placeholder}
+                  helpText={helpText}
+                  initialValue={settings[key] ?? ""}
+                  onSave={handleSave}
+                />
+              ))}
             </div>
-          </div>
-          <div className="space-y-3 pt-1 border-t border-border/30">
-            {fields.map(({ key, label: fieldLabel, placeholder, helpText }) => (
-              <SettingsField
-                key={key}
-                fieldKey={key}
-                label={fieldLabel}
-                placeholder={placeholder}
-                helpText={helpText}
-                initialValue={settings[key] ?? ""}
-                onSave={handleSave}
-              />
-            ))}
-          </div>
-        </Card>
-      ))}
+          </Card>
+        );
+      })}
 
       <p className="text-xs text-muted-foreground/50 pb-6">
-        Changes take effect immediately. Refresh the Overview tab to see updated platform data.
+        After saving keys, click "Test Connection" to verify they work. Then check the Overview tab for live data.
       </p>
     </div>
   );
