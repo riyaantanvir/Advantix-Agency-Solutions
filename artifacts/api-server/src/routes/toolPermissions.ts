@@ -7,11 +7,12 @@ import { requireToolUser } from "../middleware/toolAuth.js";
 const router: IRouter = Router();
 
 export const ALL_TOOLS = [
-  { slug: "url-shortener",        name: "URL Shortener",       description: "Shorten links and track clicks" },
-  { slug: "screen-recorder",      name: "Screen Recorder",     description: "Record your screen in the browser" },
-  { slug: "pdf-audio",            name: "PDF to Audio",         description: "Convert PDFs to audio files" },
-  { slug: "advantix-ai",          name: "Advantix AI",          description: "Multi-model AI chat assistant" },
-  { slug: "advantix-assistant",   name: "Advantix Assistant",   description: "AI agent that controls your local machine" },
+  { slug: "url-shortener",            name: "URL Shortener",              description: "Shorten links and track clicks" },
+  { slug: "screen-recorder",          name: "Screen Recorder",            description: "Record your screen in the browser" },
+  { slug: "pdf-audio",                name: "PDF to Audio",               description: "Convert PDFs to audio files" },
+  { slug: "advantix-ai",              name: "Advantix AI",                description: "Multi-model AI chat assistant" },
+  { slug: "advantix-assistant",       name: "Advantix Assistant",         description: "AI agent that controls your local machine" },
+  { slug: "social-media-manager",     name: "Social Media Manager",       description: "Schedule and manage social media posts" },
 ];
 
 export const ALL_TOOL_SLUGS = ALL_TOOLS.map(t => t.slug);

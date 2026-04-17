@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { Link2, Video, ArrowRight, Zap, Sparkles, Headphones, Lock, Terminal } from "lucide-react";
+import { Link2, Video, ArrowRight, Zap, Sparkles, Headphones, Lock, Terminal, Share2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useToolsUser } from "@/context/ToolsUserContext";
 
@@ -57,6 +57,17 @@ const tools = [
     color: "text-green-400",
     bg: "bg-green-500/10",
     badge: "Beta",
+    external: false,
+  },
+  {
+    slug: "social-media-manager",
+    icon: Share2,
+    name: "Social Media Manager",
+    description: "Schedule posts across Instagram, Facebook, X (Twitter), LinkedIn, YouTube, and Pinterest. View follower stats, engagement, and website traffic from social platforms — all in one place.",
+    href: "/tools/social-media",
+    color: "text-pink-400",
+    bg: "bg-pink-500/10",
+    badge: "New",
     external: false,
   },
 ];

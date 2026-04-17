@@ -74,6 +74,7 @@ const Favorites = lazy(() => import("@/pages/Favorites"));
 const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 const PdfAudio = lazy(() => import("@/pages/PdfAudio"));
 const AssistantPage = lazy(() => import("@/pages/AssistantPage"));
+const SocialMediaTool = lazy(() => import("@/pages/SocialMediaTool"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -123,6 +124,9 @@ function Router() {
               </Route>
               <Route path="/tools/assistant">
                 <ToolGuard slug="advantix-assistant"><AssistantPage /></ToolGuard>
+              </Route>
+              <Route path="/tools/social-media">
+                <ToolGuard slug="social-media-manager"><SocialMediaTool /></ToolGuard>
               </Route>
               <Route path="/tools" component={Tools} />
               <Route path="/tools/dashboard" component={ToolsDashboard} />
