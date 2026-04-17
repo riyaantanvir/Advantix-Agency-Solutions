@@ -449,7 +449,8 @@ function OverviewTab({ onGoToSettings }: { onGoToSettings?: () => void }) {
         {allPosts.length === 0 ? (
           <Card className="p-10 text-center">
             <WifiOff className="w-8 h-8 text-muted-foreground/40 mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">No posts loaded yet. Platforms need to be connected by admin.</p>
+            <p className="text-sm text-muted-foreground">No posts loaded yet.</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">Connect your platforms in the <button onClick={onGoToSettings} className="text-primary hover:underline">Settings tab</button> to see recent posts.</p>
           </Card>
         ) : (
           <Card className="divide-y divide-border/60">
@@ -546,31 +547,25 @@ function ScheduleTab() {
 
   return (
     <div>
-      {/* Header bar */}
+      {/* View toggle + stats */}
       <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
-        <div className="flex items-center gap-4">
-          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <CalendarDays className="w-4 h-4 text-primary" /> Schedule Post
-          </h2>
-          <div className="hidden sm:flex items-center gap-3 text-xs text-muted-foreground">
-            <span><span className="font-semibold text-foreground">{pendingCount}</span> pending</span>
-            <span className="text-border">|</span>
-            <span><span className="font-semibold text-foreground">{thisMonthCount}</span> this month</span>
-          </div>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span><span className="font-semibold text-foreground">{pendingCount}</span> pending</span>
+          <span className="text-border/60">|</span>
+          <span><span className="font-semibold text-foreground">{thisMonthCount}</span> this month</span>
         </div>
-        {/* View toggle */}
-        <div className="flex items-center gap-1 bg-muted/30 rounded-lg p-0.5 border border-border/30">
+        <div className="flex items-center gap-1 bg-muted/30 rounded-xl p-1 border border-border/30">
           <button
             onClick={() => setSchedView("calendar")}
-            className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+            className={cn("flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all",
               schedView === "calendar" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-            <CalendarDays className="w-3.5 h-3.5" /> Calendar
+            <CalendarDays className="w-4 h-4" /> Calendar
           </button>
           <button
             onClick={() => setSchedView("compose")}
-            className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+            className={cn("flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all",
               schedView === "compose" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-            <LayoutList className="w-3.5 h-3.5" /> Compose & Queue
+            <LayoutList className="w-4 h-4" /> Compose & Queue
           </button>
         </div>
       </div>
@@ -669,36 +664,33 @@ function ScheduleTab() {
 
       {/* ── COMPOSE & QUEUE VIEW ── */}
       {schedView === "compose" && (
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Compose form (full-height card) */}
-          <div className="flex-1 min-w-0 border border-border/50 rounded-2xl overflow-hidden bg-card/30 flex flex-col">
-            <div className="px-5 py-4 border-b border-border/50 shrink-0">
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
+          {/* Compose form */}
+          <div className="flex-1 min-w-0 border border-border/50 rounded-2xl overflow-hidden bg-card/30">
+            <div className="px-5 py-4 border-b border-border/50">
               <p className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <Plus className="w-4 h-4 text-primary" /> Compose Post
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">Write once, schedule to multiple platforms at once.</p>
             </div>
-            <div className="flex-1 overflow-y-auto">
-              <ComposeForm onSuccess={() => { }} />
-            </div>
+            <ComposeForm onSuccess={() => { }} />
           </div>
 
           {/* Scheduled queue */}
-          <div className="lg:w-96 flex flex-col border border-border/50 rounded-2xl overflow-hidden bg-card/30">
-            <div className="px-5 py-4 border-b border-border/50 shrink-0 flex items-center justify-between">
-              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Clock className="w-4 h-4 text-amber-400" /> Scheduled Queue
-                <span className="text-xs font-normal text-muted-foreground">({pendingCount} pending)</span>
-              </p>
+          <div className="lg:w-96 w-full border border-border/50 rounded-2xl overflow-hidden bg-card/30">
+            <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-400" />
+              <p className="text-sm font-semibold text-foreground">Scheduled Queue</p>
+              <span className="text-xs font-normal text-muted-foreground ml-auto">({pendingCount} pending)</span>
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            <div className="p-3 space-y-2 max-h-[640px] overflow-y-auto">
               {isLoading ? (
                 <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
               ) : posts.length === 0 ? (
                 <div className="text-center py-16">
                   <Clock className="w-10 h-10 text-muted-foreground/20 mx-auto mb-3" />
                   <p className="text-sm text-muted-foreground/60 font-medium">No posts scheduled yet</p>
-                  <p className="text-xs text-muted-foreground/40 mt-1">Use the form on the left to schedule your first post.</p>
+                  <p className="text-xs text-muted-foreground/40 mt-1">Use the form on the left to get started.</p>
                 </div>
               ) : (
                 <>
@@ -911,7 +903,7 @@ function SettingsTab() {
   };
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-3xl space-y-6">
       {/* Info banner */}
       <div className="flex items-start gap-3 p-4 rounded-xl bg-primary/5 border border-primary/15">
         <Info className="w-4 h-4 text-primary shrink-0 mt-0.5" />
