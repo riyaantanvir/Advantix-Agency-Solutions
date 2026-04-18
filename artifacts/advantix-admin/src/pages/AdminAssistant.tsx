@@ -2,10 +2,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Send, Trash2, Bot, User, ChevronDown, Wrench, CheckCircle2, Loader2, AlertCircle, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { getApiUrl } from "@/lib/api";
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 type ToolStatus = "running" | "done" | "error";
@@ -188,7 +186,7 @@ export default function AdminAssistant() {
 
   const clearHistory = async () => {
     try {
-      await fetch(getApiUrl("admin/assistant/history"), { method: "DELETE", credentials: "include" });
+      await fetch("/api/admin/assistant/history", { method: "DELETE", credentials: "include" });
       setMessages([]);
       toast({ title: "Conversation cleared" });
     } catch {
@@ -209,7 +207,7 @@ export default function AdminAssistant() {
     setStreaming(true);
 
     try {
-      const res = await fetch(getApiUrl("admin/assistant/chat"), {
+      const res = await fetch("/api/admin/assistant/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
