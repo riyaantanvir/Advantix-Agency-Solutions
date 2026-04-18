@@ -1083,7 +1083,6 @@ CRITICAL — Error handling and task persistence:
             body: JSON.stringify({
               model, max_tokens: maxTokens,
               stream: true,
-              stream_options: { include_usage: true },
               messages: [{ role: "system", content: SYSTEM_PROMPT }, ...oaiMsgs],
               tools: allToolsOpenAI,
             }),
@@ -1133,14 +1132,21 @@ CRITICAL — Error handling and task persistence:
               const raw = ssLine.slice(6).trim();
               if (raw === "[DONE]") continue;
               try {
+                type TCDelta = Array<{ index?: number; id?: string; type?: string; function?: { name?: string; arguments?: string } }>;
                 const chunk = JSON.parse(raw) as {
                   id?: string;
                   choices?: Array<{
                     delta?: {
                       content?: string | null;
                       reasoning?: string | null;
-                      tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
-                    };
+                      tool_calls?: TCDelta;
+                    } | null;
+                    /* Some models (GLM, DeepSeek) put complete tool_calls in .message not .delta */
+                    message?: {
+                      content?: string | null;
+                      reasoning?: string | null;
+                      tool_calls?: Array<{ id?: string; type?: string; function?: { name?: string; arguments?: string } }>;
+                    } | null;
                     finish_reason?: string | null;
                   }>;
                   usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -1153,27 +1159,51 @@ CRITICAL — Error handling and task persistence:
                 const choice = chunk.choices?.[0];
                 if (!choice) continue;
                 if (choice.finish_reason) finishReason = choice.finish_reason;
-                const delta = choice.delta;
-                if (!delta) continue;
-                /* Text tokens */
-                if (delta.content) {
-                  accText += delta.content;
-                  sse(res, { type: "content", delta: delta.content });
+
+                /* Use delta if present, otherwise fall back to message (some providers use message in last chunk) */
+                const delta = choice.delta ?? null;
+                const msg   = choice.message ?? null;
+
+                /* Text tokens — check both delta and message */
+                const textContent = delta?.content ?? msg?.content ?? null;
+                if (textContent) {
+                  accText += textContent;
+                  sse(res, { type: "content", delta: textContent });
                 }
                 /* Reasoning tokens (DeepSeek R1, QwQ-32b, etc.) */
-                if (delta.reasoning) {
-                  sse(res, { type: "thinking", delta: delta.reasoning });
+                const reasoningContent = delta?.reasoning ?? msg?.reasoning ?? null;
+                if (reasoningContent) {
+                  sse(res, { type: "thinking", delta: reasoningContent });
                 }
-                /* Tool-call tokens — accumulate partial JSON */
-                if (delta.tool_calls) {
-                  for (const tc of delta.tool_calls) {
-                    const idx = tc.index ?? 0;
-                    if (!accTCs[idx]) accTCs[idx] = { id: tc.id ?? "", name: tc.function?.name ?? "", argsStr: "" };
-                    else {
-                      if (tc.id) accTCs[idx].id = tc.id;
-                      if (tc.function?.name) accTCs[idx].name += tc.function.name;
-                    }
-                    if (tc.function?.arguments) accTCs[idx].argsStr += tc.function.arguments;
+                /* Tool-call tokens — check delta first, then message (for non-streaming tool_calls) */
+                const deltaTCs: TCDelta = delta?.tool_calls ?? [];
+                const msgTCs = msg?.tool_calls ?? [];
+
+                /* Process streaming (delta) tool_calls — have index, accumulate incrementally */
+                for (const tc of deltaTCs) {
+                  const idx = tc.index ?? 0;
+                  if (!accTCs[idx]) {
+                    accTCs[idx] = { id: tc.id ?? "", name: tc.function?.name ?? "", argsStr: "" };
+                  } else {
+                    if (tc.id) accTCs[idx].id = tc.id;
+                    /* Name in streaming comes in first chunk only — don't concatenate if already set */
+                    if (tc.function?.name && !accTCs[idx].name) accTCs[idx].name = tc.function.name;
+                  }
+                  if (tc.function?.arguments) accTCs[idx].argsStr += tc.function.arguments;
+                }
+                /* Process complete (message) tool_calls — have full arguments already */
+                for (let i = 0; i < msgTCs.length; i++) {
+                  const tc = msgTCs[i];
+                  const idx = i; /* message tool_calls don't have index field — use position */
+                  if (!accTCs[idx] || !accTCs[idx].name) {
+                    accTCs[idx] = {
+                      id: tc.id ?? accTCs[idx]?.id ?? crypto.randomUUID(),
+                      name: tc.function?.name ?? accTCs[idx]?.name ?? "",
+                      argsStr: tc.function?.arguments ?? accTCs[idx]?.argsStr ?? "",
+                    };
+                  } else if (tc.function?.arguments && !accTCs[idx].argsStr) {
+                    /* Only override if we didn't get streaming args */
+                    accTCs[idx].argsStr = tc.function.arguments;
                   }
                 }
               } catch { /* malformed chunk — skip */ }
