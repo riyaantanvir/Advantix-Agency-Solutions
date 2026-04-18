@@ -1283,6 +1283,46 @@ export default function AssistantPage() {
               </div>
             )}
 
+            {/* ── Live agent status bar ─────────────────────────────────────────── */}
+            <AnimatePresence>
+              {sending && (() => {
+                const streamingMsg = messages.slice().reverse().find(m => m.role === "assistant" && m.streaming);
+                const runningTool = streamingMsg?.tools?.find(t => t.status === "running");
+                const toolMeta = runningTool ? (TOOL_META[runningTool.tool] ?? { icon: Terminal, label: runningTool.tool, color: "text-slate-400" }) : null;
+                const ToolIcon = toolMeta?.icon;
+                const cmd = runningTool
+                  ? (runningTool.tool === "run_command" ? `$ ${String(runningTool.input.command ?? "")}` :
+                     runningTool.tool === "read_file"   ? `Reading ${String(runningTool.input.path ?? "")}` :
+                     runningTool.tool === "write_file"  ? `Writing ${String(runningTool.input.path ?? "")}` :
+                     runningTool.tool === "list_directory" ? `Listing ${String(runningTool.input.path ?? ".")}` :
+                     runningTool.tool === "open_vscode" ? `Opening VS Code` :
+                     runningTool.tool === "get_cwd"    ? `Getting current directory` :
+                     toolMeta?.label ?? runningTool.tool)
+                  : streamingMsg ? "Thinking…" : null;
+                if (!cmd) return null;
+                return (
+                  <motion.div
+                    key="agent-live-status"
+                    initial={{ opacity: 0, y: 6, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: "auto" }}
+                    exit={{ opacity: 0, y: 6, height: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="overflow-hidden mb-2"
+                  >
+                    <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-mono ${
+                      runningTool
+                        ? "bg-amber-500/8 border-amber-500/25 text-amber-300/80"
+                        : "bg-primary/5 border-primary/20 text-primary/60"
+                    }`}>
+                      <Loader2 className={`w-3 h-3 animate-spin shrink-0 ${runningTool ? "text-amber-400" : "text-primary/50"}`} />
+                      {ToolIcon && <ToolIcon className={`w-3 h-3 shrink-0 ${toolMeta!.color}`} />}
+                      <span className="truncate">{cmd}</span>
+                    </div>
+                  </motion.div>
+                );
+              })()}
+            </AnimatePresence>
+
             {/* Drop zone wrapper */}
             <div
               onDragOver={e => { e.preventDefault(); setIsDragging(true); }}

@@ -621,7 +621,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     let totalOutputTokens = 0;
     let totalToolCalls = 0;
     const MAX_TOOL_ROUNDS = 5;
-    const SYSTEM_PROMPT = `You are Advantix Assistant — an AI agent that controls the user's machine via tools. Be concise and efficient. Only call tools when necessary. ${sysContext}`;
+    const SYSTEM_PROMPT = `You are Advantix Assistant — an AI agent that controls the user's machine via tools. Be concise and efficient. Only call tools when necessary. Never announce task completion — do not say "done", "completed", "finished", "all done", or similar phrases. Just show results directly. ${sysContext}`;
 
     /* ── callAI — unified multi-provider call with unlimited rate-limit retry ── */
     const callAI = async (msgs: InternalMsg[], isToolRound = false): Promise<AIResponse> => {
