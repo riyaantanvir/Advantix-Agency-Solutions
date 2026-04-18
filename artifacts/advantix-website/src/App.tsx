@@ -76,6 +76,7 @@ const PdfAudio = lazy(() => import("@/pages/PdfAudio"));
 const AssistantPage = lazy(() => import("@/pages/AssistantPage"));
 const SocialMediaTool = lazy(() => import("@/pages/SocialMediaTool"));
 const FacebookManager = lazy(() => import("@/pages/FacebookManager"));
+const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -146,6 +147,7 @@ function Router() {
               <Route path="/contests/:id" component={ContestDetail} />
               <Route path="/pages/:slug" component={CustomPage} />
               <Route path="/favorites" component={Favorites} />
+              <Route path="/privacy-policy" component={PrivacyPolicy} />
               <Route component={NotFound} />
             </Switch>
           </Suspense>
