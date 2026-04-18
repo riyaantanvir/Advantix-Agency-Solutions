@@ -1,7 +1,9 @@
 import { Router, type Request, type Response } from "express";
 import { createHash, randomBytes } from "crypto";
 import { db, shortUrlsTable } from "@workspace/db";
-import { sql, eq, desc } from "drizzle-orm";
+import { smmUserKeysTable, smmScheduledPostsTable } from "@workspace/db/schema";
+import { fetchAllPlatforms } from "../lib/smmService.js";
+import { sql, eq, desc, and } from "drizzle-orm";
 import { requireToolUser } from "../middleware/toolAuth.js";
 import { requireAdmin } from "../middleware/auth.js";
 import { getAgentScript } from "../lib/agentScript.js";
@@ -349,6 +351,21 @@ const PLATFORM_TOOLS_DEF = [
     name: "list_short_links",
     description: "List the user's recent short links from Advantix URL shortener.",
     input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_smm_stats",
+    description: "Get Social Media Manager stats: connected platforms, follower counts, and total followers. Use when user asks about followers, platform connections, or social media stats.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_smm_posts",
+    description: "Get recent posts from Social Media Manager — both published posts from connected social accounts and scheduled/upcoming posts. Use when user asks about recent posts, scheduled content, or posting history.",
+    input_schema: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["recent", "scheduled", "all"], description: "Which posts to fetch: 'recent' (from social platforms), 'scheduled' (from queue), or 'all' (default)" },
+      },
+    },
   },
 ];
 
@@ -836,6 +853,93 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
             }).from(shortUrlsTable).where(eq(shortUrlsTable.userId, uid)).orderBy(desc(shortUrlsTable.createdAt)).limit(10);
             const lines = urls.map(u => `• ${serverOrigin}/r/${u.shortCode} → ${u.originalUrl}${u.title ? ` (${u.title})` : ""} [${u.clicks} clicks]`);
             result = { id: toolId, stdout: urls.length ? lines.join("\n") : "No short links yet.", stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "get_smm_stats") {
+          try {
+            /* Get user's SMM keys first, fall back to admin keys */
+            const userKeyRows = await db.select().from(smmUserKeysTable).where(eq(smmUserKeysTable.toolUserId, uid));
+            const keys: Record<string, string> = userKeyRows.length
+              ? Object.fromEntries(userKeyRows.filter(r => r.keyValue).map(r => [r.keyName, r.keyValue!]))
+              : Object.fromEntries(
+                  (await db.execute(sql`SELECT name, value FROM integrations WHERE name LIKE 'SMM_%'`)).rows
+                    .map((r: any) => [r.name, r.value])
+                );
+            const platforms = await fetchAllPlatforms(keys);
+            const connected = Object.entries(platforms).filter(([, v]) => v.connected);
+            const totalFollowers = connected.reduce((s, [, v]) => s + (v.connected ? v.followers : 0), 0);
+            if (connected.length === 0) {
+              result = { id: toolId, stdout: "No social media platforms connected yet.", stderr: "", exitCode: 0 };
+            } else {
+              const lines = [
+                `📊 Social Media Stats`,
+                `Connected platforms: ${connected.length} (${connected.map(([k]) => k).join(", ")})`,
+                `Total followers: ${totalFollowers.toLocaleString()}`,
+                ``,
+                ...connected.map(([platform, v]) => {
+                  if (!v.connected) return "";
+                  return `${platform.charAt(0).toUpperCase() + platform.slice(1)}: ${v.followers.toLocaleString()} followers${v.username ? ` (@${v.username})` : ""}`;
+                }),
+              ];
+              result = { id: toolId, stdout: lines.join("\n"), stderr: "", exitCode: 0 };
+            }
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "get_smm_posts") {
+          try {
+            const fetchType = String(toolInput.type ?? "all");
+            const lines: string[] = [];
+
+            /* Scheduled/queued posts from DB */
+            if (fetchType === "scheduled" || fetchType === "all") {
+              const scheduled = await db.select({
+                content: smmScheduledPostsTable.content,
+                platforms: smmScheduledPostsTable.platforms,
+                scheduledAt: smmScheduledPostsTable.scheduledAt,
+                status: smmScheduledPostsTable.status,
+              }).from(smmScheduledPostsTable)
+                .where(eq(smmScheduledPostsTable.toolUserId, uid))
+                .orderBy(desc(smmScheduledPostsTable.scheduledAt))
+                .limit(10);
+              if (scheduled.length) {
+                lines.push("📅 Scheduled/Recent Queue Posts:");
+                scheduled.forEach(p => {
+                  const date = p.scheduledAt ? new Date(p.scheduledAt).toLocaleDateString() : "?";
+                  const preview = p.content?.slice(0, 80) ?? "(no content)";
+                  lines.push(`  [${p.status ?? "pending"}] ${date} → ${p.platforms} — "${preview}${(p.content?.length ?? 0) > 80 ? "…" : ""}"`);
+                });
+              } else {
+                lines.push("No scheduled posts in queue.");
+              }
+            }
+
+            /* Recent published posts from social platforms */
+            if (fetchType === "recent" || fetchType === "all") {
+              const userKeyRows = await db.select().from(smmUserKeysTable).where(eq(smmUserKeysTable.toolUserId, uid));
+              const keys: Record<string, string> = userKeyRows.length
+                ? Object.fromEntries(userKeyRows.filter(r => r.keyValue).map(r => [r.keyName, r.keyValue!]))
+                : Object.fromEntries(
+                    (await db.execute(sql`SELECT name, value FROM integrations WHERE name LIKE 'SMM_%'`)).rows
+                      .map((r: any) => [r.name, r.value])
+                  );
+              const platforms = await fetchAllPlatforms(keys);
+              const connected = Object.entries(platforms).filter(([, v]) => v.connected);
+              if (connected.length) {
+                lines.push("\n📣 Recent Published Posts:");
+                for (const [platform, v] of connected) {
+                  if (!v.connected || !v.recentPosts?.length) continue;
+                  lines.push(`  ${platform.charAt(0).toUpperCase() + platform.slice(1)}:`);
+                  v.recentPosts.slice(0, 3).forEach(p => {
+                    const preview = p.content?.slice(0, 80) ?? "(no text)";
+                    lines.push(`    • [${p.date}] "${preview}${p.content.length > 80 ? "…" : ""}" — ❤️ ${p.likes} 💬 ${p.comments}`);
+                  });
+                }
+              }
+            }
+
+            result = { id: toolId, stdout: lines.length ? lines.join("\n") : "No posts found.", stderr: "", exitCode: 0 };
           } catch (err) {
             result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
           }

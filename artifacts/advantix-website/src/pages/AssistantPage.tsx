@@ -96,6 +96,8 @@ function getToolStatus(tool: string, input: Record<string, unknown>): string {
   if (tool === "get_cwd")           return `Getting system info`;
   if (tool === "create_short_link") return `Shortening ${String(input.url ?? "").slice(0, 50)}`;
   if (tool === "list_short_links")  return `Loading short links…`;
+  if (tool === "get_smm_stats")     return `Fetching social media stats…`;
+  if (tool === "get_smm_posts")     return `Loading posts…`;
   return tool;
 }
 
@@ -106,8 +108,10 @@ const TOOL_META: Record<string, { icon: React.ComponentType<{ className?: string
   list_directory:    { icon: FolderOpen,label: "List Directory", color: "text-cyan-400" },
   open_vscode:       { icon: Monitor,   label: "Open VS Code",   color: "text-purple-400" },
   get_cwd:           { icon: Info,      label: "Get System Info",color: "text-slate-400" },
-  create_short_link: { icon: Link,      label: "Create Short Link", color: "text-pink-400" },
-  list_short_links:  { icon: List,      label: "List Short Links",  color: "text-pink-300" },
+  create_short_link: { icon: Link,      label: "Create Short Link",   color: "text-pink-400" },
+  list_short_links:  { icon: List,      label: "List Short Links",    color: "text-pink-300" },
+  get_smm_stats:     { icon: BarChart3, label: "SMM Stats",           color: "text-violet-400" },
+  get_smm_posts:     { icon: MessageSquare, label: "SMM Posts",       color: "text-violet-300" },
 };
 
 function ToolCard({ tool }: { tool: ToolExecution }) {
