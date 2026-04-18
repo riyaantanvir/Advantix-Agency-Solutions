@@ -34,7 +34,7 @@ type AgentInfo = {
 };
 
 type ToolStartEvent  = { type: "tool_start"; id: string; tool: string; input: Record<string, unknown> };
-type ToolDoneEvent   = { type: "tool_done"; id: string; tool: string; stdout: string; stderr: string; exitCode: number };
+type ToolDoneEvent   = { type: "tool_done"; id: string; tool: string; stdout: string; stderr: string; exitCode: number; durationMs?: number };
 type ContentEvent    = { type: "content"; delta: string };
 type DoneEvent       = { type: "done"; totalTokens: number };
 type ConvIdEvent     = { type: "conversation_id"; conversationId: number };
@@ -54,6 +54,8 @@ type ToolExecution = {
   id: string; tool: string; input: Record<string, unknown>;
   status: "running" | "done" | "error";
   stdout?: string; stderr?: string; exitCode?: number;
+  durationMs?: number;
+  startedAt?: number;
 };
 
 type AttachedFile = {
@@ -117,21 +119,66 @@ const TOOL_META: Record<string, { icon: React.ComponentType<{ className?: string
 };
 
 function ToolCard({ tool }: { tool: ToolExecution }) {
-  const [open, setOpen] = useState(tool.status === "running");
+  const [open, setOpen] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const meta = TOOL_META[tool.tool] ?? { icon: Terminal, label: tool.tool, color: "text-slate-400" };
   const Icon = meta.icon;
   const isRunning = tool.status === "running";
   const isError = tool.status === "error" || (tool.exitCode !== undefined && tool.exitCode !== 0);
   const isDone = !isRunning && !isError;
 
-  const getCommandDisplay = () => {
-    if (tool.tool === "run_command" && tool.input.command) return `$ ${tool.input.command}`;
-    if (tool.tool === "read_file" && tool.input.path) return String(tool.input.path);
-    if (tool.tool === "write_file" && tool.input.path) return `→ ${tool.input.path}`;
-    if (tool.tool === "list_directory") return String(tool.input.path ?? ".");
-    if (tool.tool === "open_vscode") return String(tool.input.path ?? ".");
-    return JSON.stringify(tool.input).slice(0, 80);
+  /* Live elapsed counter while running */
+  useEffect(() => {
+    if (!isRunning) return;
+    const t0 = tool.startedAt ?? Date.now();
+    const iv = setInterval(() => setElapsed(Date.now() - t0), 100);
+    return () => clearInterval(iv);
+  }, [isRunning, tool.startedAt]);
+
+  const fmtDuration = (ms: number) =>
+    ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+
+  /* Derive rich subtitle from input */
+  const getDetail = (): string => {
+    const cmd = String(tool.input.command ?? "");
+    const path = String(tool.input.path ?? "");
+    if (tool.tool === "run_command") {
+      /* Detect common patterns */
+      if (/grep|rg\b/.test(cmd)) {
+        const m = cmd.match(/(?:grep|rg)\s+(?:-[^\s]+\s+)*["']?([^"'\s]+)["']?\s+(.+)/);
+        if (m) return `search "${m[1]}" in ${m[2].split(" ")[0]}`;
+        return cmd.slice(0, 70);
+      }
+      return cmd.slice(0, 80);
+    }
+    if (tool.tool === "read_file")    return path.split("/").slice(-2).join("/");
+    if (tool.tool === "write_file")   return `→ ${path.split("/").slice(-2).join("/")}`;
+    if (tool.tool === "list_directory") return path || ".";
+    if (tool.tool === "open_vscode")  return path || ".";
+    return JSON.stringify(tool.input).slice(0, 60);
   };
+
+  /* Extra badge: match count for grep, line count for write */
+  const getBadge = (): string | null => {
+    if (!tool.stdout) return null;
+    if (tool.tool === "run_command" && /grep|rg\b/.test(String(tool.input.command ?? ""))) {
+      const lines = tool.stdout.trim().split("\n").filter(Boolean).length;
+      return lines > 0 ? `${lines} match${lines === 1 ? "" : "es"}` : "no matches";
+    }
+    if (tool.tool === "write_file") {
+      const content = String(tool.input.content ?? "");
+      const lines = content.split("\n").length;
+      return `${lines} line${lines === 1 ? "" : "s"}`;
+    }
+    if (tool.tool === "read_file" && tool.stdout) {
+      const lines = tool.stdout.split("\n").length;
+      return `${lines} line${lines === 1 ? "" : "s"}`;
+    }
+    return null;
+  };
+
+  const badge = isDone || isError ? getBadge() : null;
+  const duration = isRunning ? elapsed : (tool.durationMs ?? 0);
 
   return (
     <motion.div
@@ -145,24 +192,27 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
     >
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2.5 w-full px-3 py-2.5 hover:bg-white/[0.03] transition-colors text-left"
+        className="flex items-center gap-2 w-full px-3 py-2 hover:bg-white/[0.03] transition-colors text-left"
       >
-        <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${
+        <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${
           isRunning ? "bg-amber-500/15" : isDone ? "bg-green-500/15" : "bg-red-500/15"
         }`}>
-          <Icon className={`w-3.5 h-3.5 ${meta.color}`} />
+          {isRunning
+            ? <Loader2 className={`w-3 h-3 ${meta.color} animate-spin`} />
+            : <Icon className={`w-3 h-3 ${meta.color}`} />}
         </div>
-        <span className={`font-semibold text-[11px] uppercase tracking-wide shrink-0 ${meta.color}`}>{meta.label}</span>
-        <span className="text-muted-foreground/70 truncate flex-1 text-[11px]">{getCommandDisplay()}</span>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {isRunning && (
-            <span className="flex items-center gap-1 text-amber-400 text-[10px] font-medium">
-              <Loader2 className="w-3 h-3 animate-spin" /> running
-            </span>
+        <span className={`font-semibold text-[10px] uppercase tracking-wider shrink-0 ${meta.color}`}>{meta.label}</span>
+        <span className="text-muted-foreground/60 truncate flex-1 text-[11px] font-normal">{getDetail()}</span>
+        <div className="flex items-center gap-1.5 shrink-0 ml-1">
+          {badge && (
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${isError ? "bg-red-500/15 text-red-400" : "bg-green-500/10 text-green-400/80"}`}>{badge}</span>
           )}
-          {isDone && <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />}
-          {isError && <XCircle className="w-3.5 h-3.5 text-red-400" />}
-          {open ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/50" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50" />}
+          {duration > 0 && (
+            <span className={`text-[10px] tabular-nums ${isRunning ? "text-amber-400/70" : "text-muted-foreground/40"}`}>{fmtDuration(duration)}</span>
+          )}
+          {isDone && !open && <CheckCircle2 className="w-3 h-3 text-green-400/70" />}
+          {isError && <XCircle className="w-3 h-3 text-red-400" />}
+          {(tool.stdout || tool.stderr) && (open ? <ChevronDown className="w-3 h-3 text-muted-foreground/40" /> : <ChevronRight className="w-3 h-3 text-muted-foreground/40" />)}
         </div>
       </button>
       <AnimatePresence>
@@ -1109,12 +1159,12 @@ export default function AssistantPage() {
             } else if (event.type === "tool_start") {
               const status = getToolStatus(event.tool, event.input);
               setMessages(prev => prev.map(m => m.id === assistantId
-                ? { ...m, statusText: status, tools: [...(m.tools ?? []), { id: event.id, tool: event.tool, input: event.input, status: "running" }] }
+                ? { ...m, statusText: status, tools: [...(m.tools ?? []), { id: event.id, tool: event.tool, input: event.input, status: "running", startedAt: Date.now() }] }
                 : m));
             } else if (event.type === "tool_done") {
               setMessages(prev => prev.map(m => m.id === assistantId
                 ? { ...m, statusText: undefined, tools: (m.tools ?? []).map(t => t.id === event.id
-                    ? { ...t, status: (event.exitCode === 0 ? "done" : "error") as "done" | "error", stdout: event.stdout, stderr: event.stderr, exitCode: event.exitCode }
+                    ? { ...t, status: (event.exitCode === 0 ? "done" : "error") as "done" | "error", stdout: event.stdout, stderr: event.stderr, exitCode: event.exitCode, durationMs: event.durationMs }
                     : t) }
                 : m));
             } else if (event.type === "content") {
