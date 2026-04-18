@@ -678,6 +678,18 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     type InternalMsg = { role: "user" | "assistant"; content: string | object[] };
     type ABlock = { type?: string; id?: string; tool_use_id?: string; text?: string; name?: string; input?: object; content?: string };
 
+    /* Strip image blocks from messages when model doesn't support vision */
+    function stripImagesFromMsgs(msgs: InternalMsg[]): InternalMsg[] {
+      return msgs.map(msg => {
+        if (msg.role !== "user" || typeof msg.content === "string") return msg;
+        const blocks = msg.content as ABlock[];
+        if (!blocks.some(b => b.type === "image")) return msg;
+        const nonImgBlocks = blocks.filter(b => b.type !== "image");
+        const note = { type: "text", text: "[User attached an image but the current AI model does not support image input — image removed. Answer based on the text context only.]" } as ABlock;
+        return { ...msg, content: [note, ...nonImgBlocks] };
+      });
+    }
+
     function toOpenAIMessages(msgs: InternalMsg[]): object[] {
       const out: object[] = [];
       for (const msg of msgs) {
@@ -797,13 +809,15 @@ CRITICAL — Error handling and task persistence:
     const SYSTEM_PROMPT = `${basePrompt}${instrSection}\n\n${sysContext}`;
 
     /* ── callAI — unified multi-provider call with unlimited rate-limit retry ── */
-    const callAI = async (msgs: InternalMsg[], isToolRound = false): Promise<AIResponse> => {
+    const callAI = async (msgsArg: InternalMsg[], isToolRound = false): Promise<AIResponse> => {
       /* OpenRouter has strict per-request credit limits — use lower cap */
       const maxTokens = provider === "openrouter"
         ? (isToolRound ? 512 : 1500)
         : (isToolRound ? 768 : 2048);
       const WAIT_STEPS = [10, 20, 30, 60];
       let attempt = 0;
+      let msgs = msgsArg;
+      let visionStripped = false;
 
       while (true) {
         let response: Response;
@@ -885,6 +899,16 @@ CRITICAL — Error handling and task persistence:
           sse(res, { type: "content", delta: `\n\n_Rate limit — waiting ${waitSecs}s…_\n\n` });
           await new Promise(resolve => setTimeout(resolve, waitSecs * 1000));
           attempt++;
+          continue;
+        }
+        /* Vision/image not supported by model — strip images and retry once */
+        const isVisionError = errText.includes("image input") || errText.includes("vision") ||
+          errText.includes("multimodal") || errText.includes("image_url") ||
+          (response.status === 404 && errText.includes("endpoint"));
+        if (isVisionError && !visionStripped) {
+          msgs = stripImagesFromMsgs(msgs);
+          visionStripped = true;
+          sse(res, { type: "content", delta: `_⚠️ এই AI model টি image support করে না — image সরিয়ে retry করছি…_\n\n` });
           continue;
         }
         throw new Error(`AI API error (${provider}): ${errText}`);
