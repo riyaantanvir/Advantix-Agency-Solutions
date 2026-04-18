@@ -11,6 +11,7 @@ import {
 } from "@workspace/db/schema";
 import { eq, desc, asc, and, or, ilike, sql, inArray } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth.js";
+import crypto from "crypto";
 
 const router = Router();
 
@@ -996,115 +997,97 @@ For large operations (bulk delete, mass update), list what you're about to do an
   }));
 
   const MAX_ROUNDS = 8;
-  let round = 0;
 
-  try {
-    while (round < MAX_ROUNDS) {
-      round++;
-      let fullText = "";
-      let toolCalls: { id: string; name: string; input: Record<string, unknown> }[] = [];
-
-      if (provider === "anthropic") {
-        const body = {
+  /* ── callAI — single non-streaming round-trip ── */
+  async function callAI(messages: Msg[]): Promise<{
+    text: string;
+    toolCalls: { id: string; name: string; input: Record<string, unknown> }[];
+    contentBlocks: object[];
+  }> {
+    if (provider === "anthropic") {
+      const r = await fetch(URLS.anthropic, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
           model, max_tokens: 2048,
           system: systemPrompt,
           tools: ADMIN_TOOLS_DEF.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
-          messages: hist,
-          stream: true,
-        };
-        const r = await fetch(URLS.anthropic, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-          body: JSON.stringify(body),
-        });
+          messages,
+        }),
+      });
+      if (!r.ok) {
+        const errText = await r.text();
+        throw new Error(`Anthropic API error (${r.status}): ${errText.slice(0, 200)}`);
+      }
+      const d = await r.json() as {
+        content: Array<{ type: string; text?: string; id?: string; name?: string; input?: object }>;
+      };
+      const contentBlocks: object[] = d.content;
+      const text = d.content.filter(b => b.type === "text").map(b => (b as any).text ?? "").join("");
+      const toolCalls = d.content
+        .filter(b => b.type === "tool_use")
+        .map(b => ({
+          id: (b as any).id ?? crypto.randomUUID(),
+          name: (b as any).name ?? "",
+          input: (b as any).input ?? {},
+        }));
+      return { text, toolCalls, contentBlocks };
+    } else {
+      /* OpenAI / OpenRouter — non-streaming */
+      const oaiMsgs = [
+        { role: "system" as const, content: systemPrompt },
+        ...messages.map(m => ({
+          role: m.role as "user" | "assistant",
+          content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+        })),
+      ];
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      };
+      if (provider === "openrouter") headers["HTTP-Referer"] = "https://advantix.digital";
+      const r = await fetch(URLS[provider], {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model, max_tokens: 2048, messages: oaiMsgs, tools: toOAI(ADMIN_TOOLS_DEF) }),
+      });
+      if (!r.ok) {
+        const errText = await r.text();
+        throw new Error(`AI API error (${provider} ${r.status}): ${errText.slice(0, 200)}`);
+      }
+      const d = await r.json() as {
+        choices: Array<{ message: { content?: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> } }>;
+      };
+      const choice = d.choices?.[0];
+      const text = choice?.message?.content ?? "";
+      const toolCalls = (choice?.message?.tool_calls ?? []).map(tc => ({
+        id: tc.id,
+        name: tc.function.name,
+        input: (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })(),
+      }));
+      return { text, toolCalls, contentBlocks: [] };
+    }
+  }
 
-        /* Stream SSE from Anthropic */
-        let currentToolId = "";
-        let currentToolName = "";
-        let currentToolInputStr = "";
-        let contentBlocks: object[] = [];
+  try {
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const { text, toolCalls, contentBlocks } = await callAI(getHist(aid));
 
-        for await (const chunk of r.body as any) {
-          const lines = Buffer.from(chunk).toString().split("\n");
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const raw = line.slice(6).trim();
-            if (raw === "[DONE]" || !raw) continue;
-            try {
-              const ev = JSON.parse(raw);
-              if (ev.type === "content_block_start") {
-                if (ev.content_block?.type === "text") {
-                  contentBlocks.push({ type: "text", text: "" });
-                } else if (ev.content_block?.type === "tool_use") {
-                  currentToolId = ev.content_block.id;
-                  currentToolName = ev.content_block.name;
-                  currentToolInputStr = "";
-                  contentBlocks.push({ type: "tool_use", id: currentToolId, name: currentToolName, input: {} });
-                  sse(res, { type: "tool_start", tool: currentToolName });
-                }
-              } else if (ev.type === "content_block_delta") {
-                if (ev.delta?.type === "text_delta") {
-                  fullText += ev.delta.text;
-                  sse(res, { type: "text_delta", text: ev.delta.text });
-                  const lastBlock = contentBlocks[contentBlocks.length - 1] as any;
-                  if (lastBlock?.type === "text") lastBlock.text += ev.delta.text;
-                } else if (ev.delta?.type === "input_json_delta") {
-                  currentToolInputStr += ev.delta.partial_json;
-                }
-              } else if (ev.type === "content_block_stop") {
-                if (currentToolName) {
-                  let parsedInput: Record<string, unknown> = {};
-                  try { parsedInput = JSON.parse(currentToolInputStr); } catch { /**/ }
-                  const lastBlock = contentBlocks[contentBlocks.length - 1] as any;
-                  if (lastBlock?.type === "tool_use") lastBlock.input = parsedInput;
-                  toolCalls.push({ id: currentToolId, name: currentToolName, input: parsedInput });
-                  currentToolName = ""; currentToolId = ""; currentToolInputStr = "";
-                }
-              } else if (ev.type === "message_stop") {
-                break;
-              }
-            } catch { /**/ }
-          }
-        }
+      /* Stream text to client */
+      if (text) {
+        sse(res, { type: "text_delta", text });
+      }
 
-        if (toolCalls.length > 0) {
-          pushHist(aid, { role: "assistant", content: contentBlocks });
-        } else {
-          pushHist(aid, { role: "assistant", content: fullText });
-        }
+      /* Notify tool calls start */
+      for (const tc of toolCalls) {
+        sse(res, { type: "tool_start", tool: tc.name });
+      }
 
+      /* Save assistant turn to history */
+      if (provider === "anthropic" && contentBlocks.length > 0) {
+        pushHist(aid, { role: "assistant", content: contentBlocks });
       } else {
-        /* OpenAI / OpenRouter */
-        const msgs = [
-          { role: "system" as const, content: systemPrompt },
-          ...hist.map(m => ({
-            role: m.role as "user" | "assistant",
-            content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
-          })),
-        ];
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        };
-        if (provider === "openrouter") headers["HTTP-Referer"] = "https://advantix.digital";
-        const body = { model, max_tokens: 2048, messages: msgs, tools: toOAI(ADMIN_TOOLS_DEF), stream: true };
-        const r = await fetch(URLS[provider], { method: "POST", headers, body: JSON.stringify(body) });
-        const rawBody = await r.json() as any;
-        const choice = rawBody.choices?.[0];
-        fullText = choice?.message?.content ?? "";
-        if (fullText) sse(res, { type: "text_delta", text: fullText });
-        const rawCalls = choice?.message?.tool_calls ?? [];
-        for (const tc of rawCalls) {
-          let parsedInput: Record<string, unknown> = {};
-          try { parsedInput = JSON.parse(tc.function?.arguments ?? "{}"); } catch { /**/ }
-          toolCalls.push({ id: tc.id ?? `tc_${Date.now()}`, name: tc.function?.name ?? "", input: parsedInput });
-          sse(res, { type: "tool_start", tool: tc.function?.name ?? "" });
-        }
-        if (toolCalls.length > 0) {
-          pushHist(aid, { role: "assistant", content: choice?.message?.content ?? null });
-        } else if (fullText) {
-          pushHist(aid, { role: "assistant", content: fullText });
-        }
+        pushHist(aid, { role: "assistant", content: text });
       }
 
       /* No tool calls — done */
