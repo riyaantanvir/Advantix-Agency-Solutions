@@ -5,6 +5,7 @@ import { logger } from "./lib/logger.js";
 import { seedAdmin, ensureSessionTable, runMigrations, seedServices, seedTelegramDefaults } from "./seed.js";
 import { startSmmScheduler } from "./lib/smmPublisher.js";
 import { startTelegramBot } from "./lib/telegramBot.js";
+import { startFacebookScheduler } from "./lib/facebookScheduler.js";
 import { handleAgentWebSocket } from "./routes/advantixAssistant.js";
 
 const rawPort = process.env["PORT"];
@@ -54,6 +55,7 @@ async function start(): Promise<void> {
     logger.info("Agent WebSocket endpoint: ws://host/api/agent/ws?key=API_KEY");
 
     startSmmScheduler().catch(e => logger.error({ err: e }, "SMM scheduler init failed"));
+    startFacebookScheduler();
     startTelegramBot().catch(e => logger.error({ err: e }, "Telegram bot init failed"));
   });
 }

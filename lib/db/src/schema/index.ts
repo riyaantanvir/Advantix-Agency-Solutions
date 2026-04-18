@@ -38,3 +38,6 @@ export * from "./taskComments";
 export * from "./toolPdfBooks";
 export * from "./smmScheduledPosts";
 export * from "./smmUserKeys";
+export * from "./facebookPages";
+export * from "./facebookMessages";
+export * from "./facebookAutoReplyRules";

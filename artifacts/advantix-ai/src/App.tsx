@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 import ChatPage from "@/pages/ChatPage";
 import AuthPage from "@/pages/AuthPage";
 import LandingPageBuilder from "@/pages/LandingPageBuilder";
+import FacebookManager from "@/pages/FacebookManager";
 import { UserProvider, useUser } from "@/context/UserContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 
@@ -25,6 +26,7 @@ function AppRouter() {
       <Route path="/" component={user ? ChatPage : AuthPage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/landing" component={LandingPageBuilder} />
+      <Route path="/facebook" component={user ? FacebookManager : AuthPage} />
       <Route component={user ? ChatPage : AuthPage} />
     </Switch>
   );

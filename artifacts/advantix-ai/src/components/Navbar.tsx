@@ -1,4 +1,4 @@
-import { Home, Wrench, LayoutDashboard } from "lucide-react";
+import { Home, Wrench, LayoutDashboard, Facebook } from "lucide-react";
 
 export function Navbar() {
   return (
@@ -27,6 +27,13 @@ export function Navbar() {
           >
             <Wrench className="w-3.5 h-3.5" />
             Tools
+          </a>
+          <a
+            href="/facebook"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+          >
+            <Facebook className="w-3.5 h-3.5" />
+            Facebook
           </a>
           <a
             href="/admin/"
