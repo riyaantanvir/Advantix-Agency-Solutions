@@ -6,12 +6,26 @@ import {
   FolderOpen, FileText, Edit3, Monitor, Zap, AlertTriangle, Info,
   Bot, User, Settings, X, Shield, Clock, Calendar, MessageSquare,
   Wrench, BarChart3, Activity, Sparkles, ChevronLeft, PenSquare, Menu,
-  Paperclip, Link, List, Globe,
+  Paperclip, Link, List, Globe, Search,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useToolsUser } from "@/context/ToolsUserContext";
 import { useLocation } from "wouter";
+import Prism from "prismjs";
+import "prismjs/components/prism-typescript";
+import "prismjs/components/prism-javascript";
+import "prismjs/components/prism-jsx";
+import "prismjs/components/prism-tsx";
+import "prismjs/components/prism-python";
+import "prismjs/components/prism-bash";
+import "prismjs/components/prism-json";
+import "prismjs/components/prism-css";
+import "prismjs/components/prism-sql";
+import "prismjs/components/prism-yaml";
+import "prismjs/components/prism-markdown";
+import "prismjs/components/prism-rust";
+import "prismjs/components/prism-go";
 
 type UsageStats = {
   messagesSent: number;
@@ -101,21 +115,25 @@ function getToolStatus(tool: string, input: Record<string, unknown>): string {
   if (tool === "get_smm_stats")     return `Fetching social media stats…`;
   if (tool === "get_smm_posts")     return `Loading posts…`;
   if (tool === "get_site_info")     return `Fetching site info…`;
+  if (tool === "patch_file")        return `Patching ${String(input.path ?? "file")}…`;
+  if (tool === "search_in_files")   return `Searching for "${String(input.pattern ?? "…")}"…`;
   return tool;
 }
 
 const TOOL_META: Record<string, { icon: React.ComponentType<{ className?: string }>; label: string; color: string }> = {
-  run_command:       { icon: Terminal,  label: "Run Command",    color: "text-green-400" },
-  read_file:         { icon: FileText,  label: "Read File",      color: "text-blue-400" },
-  write_file:        { icon: Edit3,     label: "Write File",     color: "text-amber-400" },
-  list_directory:    { icon: FolderOpen,label: "List Directory", color: "text-cyan-400" },
-  open_vscode:       { icon: Monitor,   label: "Open VS Code",   color: "text-purple-400" },
-  get_cwd:           { icon: Info,      label: "Get System Info",color: "text-slate-400" },
-  create_short_link: { icon: Link,      label: "Create Short Link",   color: "text-pink-400" },
-  list_short_links:  { icon: List,      label: "List Short Links",    color: "text-pink-300" },
-  get_smm_stats:     { icon: BarChart3, label: "SMM Stats",           color: "text-violet-400" },
-  get_smm_posts:     { icon: MessageSquare, label: "SMM Posts",       color: "text-violet-300" },
-  get_site_info:     { icon: Globe,     label: "Site Info",           color: "text-teal-400" },
+  run_command:       { icon: Terminal,     label: "Run Command",      color: "text-green-400" },
+  read_file:         { icon: FileText,     label: "Read File",        color: "text-blue-400" },
+  write_file:        { icon: Edit3,        label: "Write File",       color: "text-amber-400" },
+  patch_file:        { icon: Edit3,        label: "Patch File",       color: "text-orange-400" },
+  search_in_files:   { icon: Search,       label: "Search Files",     color: "text-cyan-400" },
+  list_directory:    { icon: FolderOpen,   label: "List Directory",   color: "text-cyan-300" },
+  open_vscode:       { icon: Monitor,      label: "Open VS Code",     color: "text-purple-400" },
+  get_cwd:           { icon: Info,         label: "Get System Info",  color: "text-slate-400" },
+  create_short_link: { icon: Link,         label: "Create Short Link",color: "text-pink-400" },
+  list_short_links:  { icon: List,         label: "List Short Links", color: "text-pink-300" },
+  get_smm_stats:     { icon: BarChart3,    label: "SMM Stats",        color: "text-violet-400" },
+  get_smm_posts:     { icon: MessageSquare,label: "SMM Posts",        color: "text-violet-300" },
+  get_site_info:     { icon: Globe,        label: "Site Info",        color: "text-teal-400" },
 };
 
 function ToolCard({ tool }: { tool: ToolExecution }) {
@@ -153,22 +171,35 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
     }
     if (tool.tool === "read_file")    return path.split("/").slice(-2).join("/");
     if (tool.tool === "write_file")   return `→ ${path.split("/").slice(-2).join("/")}`;
+    if (tool.tool === "patch_file")   return `lines ${tool.input.start_line}–${tool.input.end_line} in ${path.split("/").slice(-2).join("/")}`;
+    if (tool.tool === "search_in_files") {
+      const fp = tool.input.file_pattern ? ` [${tool.input.file_pattern}]` : "";
+      return `"${String(tool.input.pattern ?? "").slice(0, 40)}"${fp}`;
+    }
     if (tool.tool === "list_directory") return path || ".";
     if (tool.tool === "open_vscode")  return path || ".";
     return JSON.stringify(tool.input).slice(0, 60);
   };
 
-  /* Extra badge: match count for grep, line count for write */
+  /* Extra badge: match count for grep, line count for write/read */
   const getBadge = (): string | null => {
-    if (!tool.stdout) return null;
+    if (!tool.stdout && tool.tool !== "patch_file") return null;
+    if (tool.tool === "search_in_files") {
+      const lines = (tool.stdout ?? "").trim().split("\n").filter(Boolean).length;
+      return lines > 0 ? `${lines} match${lines === 1 ? "" : "es"}` : "no matches";
+    }
     if (tool.tool === "run_command" && /grep|rg\b/.test(String(tool.input.command ?? ""))) {
-      const lines = tool.stdout.trim().split("\n").filter(Boolean).length;
+      const lines = (tool.stdout ?? "").trim().split("\n").filter(Boolean).length;
       return lines > 0 ? `${lines} match${lines === 1 ? "" : "es"}` : "no matches";
     }
     if (tool.tool === "write_file") {
       const content = String(tool.input.content ?? "");
       const lines = content.split("\n").length;
       return `${lines} line${lines === 1 ? "" : "s"}`;
+    }
+    if (tool.tool === "patch_file" && tool.status === "done") {
+      const n = Number(tool.input.end_line ?? 0) - Number(tool.input.start_line ?? 0) + 1;
+      return `${n} line${n === 1 ? "" : "s"} replaced`;
     }
     if (tool.tool === "read_file" && tool.stdout) {
       const lines = tool.stdout.split("\n").length;
@@ -243,6 +274,16 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
 }
 
 /* ── Code block with language badge + copy button ─────────────────────── */
+/* Normalize lang aliases */
+const normalizeLang = (l: string) => {
+  const map: Record<string, string> = {
+    js: "javascript", ts: "typescript", py: "python", sh: "bash",
+    shell: "bash", zsh: "bash", yml: "yaml", md: "markdown",
+    rs: "rust", golang: "go", jsx: "jsx", tsx: "tsx",
+  };
+  return map[l.toLowerCase()] ?? l.toLowerCase();
+};
+
 function CodeBlock({ children, lang }: { children: React.ReactNode; lang: string }) {
   const [copied, setCopied] = useState(false);
   const codeStr = (() => {
@@ -250,20 +291,27 @@ function CodeBlock({ children, lang }: { children: React.ReactNode; lang: string
     if (Array.isArray(children)) return children.map(c => (typeof c === "string" ? c : "")).join("");
     return "";
   })();
+
+  const normalized = normalizeLang(lang);
+  const grammar = Prism.languages[normalized];
+  const highlighted = grammar ? Prism.highlight(codeStr.trim(), grammar, normalized) : null;
+
   return (
-    <div className="my-2.5 rounded-xl overflow-hidden border border-white/10 bg-black/50 shadow-sm">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-white/5 border-b border-white/8">
-        <span className="text-[10px] font-mono text-green-400/60 uppercase tracking-widest">{lang || "code"}</span>
+    <div className="my-2.5 rounded-xl overflow-hidden border border-white/10 bg-[#1a1b26] shadow-md">
+      <div className="flex items-center justify-between px-3.5 py-1.5 bg-white/[0.04] border-b border-white/[0.07]">
+        <span className="text-[10px] font-mono text-primary/50 uppercase tracking-widest">{normalized || "code"}</span>
         <button
           onClick={() => { navigator.clipboard.writeText(codeStr.trim()); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
           className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground flex items-center gap-1.5 transition-colors"
         >
-          {copied ? <CheckCircle2 className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-          <span>{copied ? "Copied!" : "Copy"}</span>
+          {copied ? <><CheckCircle2 className="w-3 h-3 text-green-400" /><span className="text-green-400">Copied!</span></> : <><Copy className="w-3 h-3" /><span>Copy</span></>}
         </button>
       </div>
-      <pre className="px-3.5 py-3 overflow-x-auto text-[11.5px] text-green-300 font-mono leading-relaxed">
-        <code>{children}</code>
+      <pre className="px-4 py-3.5 overflow-x-auto text-[12px] font-mono leading-[1.65] prism-code">
+        {highlighted
+          ? <code dangerouslySetInnerHTML={{ __html: highlighted }} />
+          : <code className="text-[#a9b1d6]">{codeStr}</code>
+        }
       </pre>
     </div>
   );

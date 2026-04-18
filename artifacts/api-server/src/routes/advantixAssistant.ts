@@ -477,6 +477,35 @@ const TOOLS_DEF = [
     description: "Get the current working directory and basic system info from the agent.",
     input_schema: { type: "object", properties: {} },
   },
+  {
+    name: "patch_file",
+    description: "Replace a specific range of lines in an existing file without rewriting the whole file. PREFER this over write_file for large files when you only need to change a few lines. Use read_file first to know the exact line numbers.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path:        { type: "string", description: "Absolute or relative file path" },
+        start_line:  { type: "number", description: "First line to replace (1-indexed, inclusive)" },
+        end_line:    { type: "number", description: "Last line to replace (1-indexed, inclusive)" },
+        new_content: { type: "string", description: "New content to insert in place of the replaced lines" },
+      },
+      required: ["path", "start_line", "end_line", "new_content"],
+    },
+  },
+  {
+    name: "search_in_files",
+    description: "Search for a text pattern across files on the user's machine. Returns matching lines with file paths and line numbers. Use this before reading files to find which file contains what you need.",
+    input_schema: {
+      type: "object",
+      properties: {
+        pattern:        { type: "string",  description: "Search pattern (regex or literal string)" },
+        path:           { type: "string",  description: "Directory or file to search in (default: CWD)" },
+        file_pattern:   { type: "string",  description: "File glob filter e.g. '*.ts', '*.py' (optional)" },
+        case_sensitive: { type: "boolean", description: "Case sensitive search (default true)" },
+        max_results:    { type: "number",  description: "Maximum result lines to return (default 100)" },
+      },
+      required: ["pattern"],
+    },
+  },
 ];
 
 /* ── Platform tools — server-side, no local agent needed ──────────────── */
@@ -861,6 +890,15 @@ TASK SUMMARY — Important:
   ---
   **সম্পন্ন:** [1-4 bullet points of what was changed/fixed, in the user's language]
 - Keep each bullet short (one line). Do NOT add this summary for simple questions, explanations, or conversations — only for actual tool-based tasks.
+
+CODING BEST PRACTICES — Follow these when working on code:
+- ALWAYS use search_in_files before reading files to locate the exact function/line you need.
+- ALWAYS read a file (with max_lines=80 around the target area) before editing it — never edit blind.
+- Prefer patch_file over write_file for files larger than 100 lines — only rewrite the changed portion.
+- After editing code, verify with a quick compile/lint (e.g. tsc --noEmit, eslint, python -m py_compile) if applicable.
+- When adding a feature: search for existing patterns first, then follow the same conventions.
+- For TypeScript/JS: always import before using. For Python: check imports at top.
+- Return errors with exact file:line references so the user can jump directly.
 
 CRITICAL — Error handling and task persistence:
 - NEVER stop mid-task because a tool returned an error. Always analyze the error and attempt to fix it automatically before giving up.
@@ -1293,6 +1331,63 @@ CRITICAL — Error handling and task persistence:
             }
 
             result = { id: toolId, stdout: parts.join("\n\n"), stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "patch_file") {
+          /* Composite: read → patch lines → write */
+          try {
+            const filePath = String(toolInput.path ?? "");
+            const startLine = Math.max(1, Number(toolInput.start_line));
+            const endLine   = Math.max(startLine, Number(toolInput.end_line));
+            const newContent = String(toolInput.new_content ?? "");
+            if (!filePath) throw new Error("path is required");
+
+            /* Step 1 — read file */
+            const readResult = await sendToolCall(uid, crypto.randomUUID(), "read_file", { path: filePath }, 30_000);
+            if (readResult.exitCode !== 0) throw new Error(`Could not read file: ${readResult.error ?? readResult.stderr}`);
+
+            const lines = (readResult.stdout ?? "").split("\n");
+            const before = lines.slice(0, startLine - 1);
+            const after  = lines.slice(endLine);          /* endLine is 1-indexed inclusive */
+            const patched = [...before, newContent, ...after].join("\n");
+
+            /* Step 2 — write file */
+            const writeResult = await sendToolCall(uid, crypto.randomUUID(), "write_file", { path: filePath, content: patched }, 30_000);
+            if (writeResult.exitCode !== 0) throw new Error(`Could not write file: ${writeResult.error ?? writeResult.stderr}`);
+
+            const replaced = endLine - startLine + 1;
+            const added    = newContent.split("\n").length;
+            result = {
+              id: toolId,
+              stdout: `✓ Patched ${filePath}\n  Replaced lines ${startLine}–${endLine} (${replaced} line${replaced===1?"":"s"}) with ${added} line${added===1?"":"s"}\n  Total lines now: ${patched.split("\n").length}`,
+              stderr: "", exitCode: 0,
+            };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "search_in_files") {
+          /* Translate to a grep/rg run_command on agent */
+          try {
+            const pattern      = String(toolInput.pattern ?? "");
+            const searchPath   = String(toolInput.path ?? ".");
+            const filePat      = toolInput.file_pattern ? String(toolInput.file_pattern) : null;
+            const caseSens     = toolInput.case_sensitive !== false;
+            const maxResults   = Math.min(500, Number(toolInput.max_results ?? 100));
+            if (!pattern) throw new Error("pattern is required");
+
+            const includeFlag  = filePat ? `--include="${filePat}"` : "";
+            const caseFlag     = caseSens ? "" : "-i";
+            const cmd = `grep -rn ${caseFlag} ${includeFlag} ${JSON.stringify(pattern)} ${JSON.stringify(searchPath)} 2>/dev/null | head -${maxResults}`;
+
+            const grepResult = await sendToolCall(uid, crypto.randomUUID(), "run_command", { command: cmd }, 30_000);
+            const output = (grepResult.stdout ?? "").trim();
+            result = {
+              id: toolId,
+              stdout: output || "(no matches found)",
+              stderr: grepResult.stderr ?? "",
+              exitCode: 0,
+            };
           } catch (err) {
             result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
           }
