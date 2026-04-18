@@ -764,6 +764,7 @@ export default function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [showSetup, setShowSetup] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -979,6 +980,10 @@ export default function AssistantPage() {
     if (files.length > 0) handleFiles(files);
   }, [handleFiles]);
 
+  const stopGeneration = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
+
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if ((!text && attachedFiles.length === 0) || sending) return;
@@ -996,11 +1001,15 @@ export default function AssistantPage() {
 
     let currentConvId = conversationId;
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const res = await fetch("/api/tools/assistant/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
+        signal: controller.signal,
         body: JSON.stringify({
           message: text,
           conversationId: currentConvId,
@@ -1055,9 +1064,13 @@ export default function AssistantPage() {
         }
       }
     } catch (err) {
+      const isAbort = (err as Error).name === "AbortError";
       setMessages(prev => prev.map(m => m.id === assistantId
-        ? { ...m, streaming: false, error: (err as Error).message }
+        ? { ...m, streaming: false, statusText: undefined, ...(isAbort ? { content: m.content || "_(stopped by user)_" } : { error: (err as Error).message }) }
         : m));
+      if (!isAbort) console.error("Chat error:", err);
+    } finally {
+      abortControllerRef.current = null;
     }
 
     setSending(false);
@@ -1424,13 +1437,23 @@ export default function AssistantPage() {
                   }}
                   disabled={sending}
                 />
-                <button
-                  onClick={sendMessage}
-                  disabled={(!input.trim() && attachedFiles.length === 0) || sending}
-                  className="shrink-0 w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                </button>
+                {sending ? (
+                  <button
+                    onClick={stopGeneration}
+                    title="Stop generation"
+                    className="shrink-0 w-8 h-8 rounded-xl bg-red-500/15 border border-red-500/40 text-red-400 flex items-center justify-center hover:bg-red-500/25 active:scale-95 transition-all"
+                  >
+                    <span className="w-3 h-3 rounded-sm bg-red-400 block" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={sendMessage}
+                    disabled={!input.trim() && attachedFiles.length === 0}
+                    className="shrink-0 w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             </div>
 
