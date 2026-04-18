@@ -129,23 +129,77 @@ function hashKey(raw: string): string {
 
 /* Cost per 1M tokens [input, output] in USD */
 const TOKEN_PRICING: Record<string, [number, number]> = {
+  /* Anthropic */
   "claude-sonnet-4-5":           [3.0,   15.0],
   "claude-3-5-sonnet-20241022":  [3.0,   15.0],
   "claude-3-5-haiku-20241022":   [0.8,    4.0],
   "claude-opus-4-5":             [15.0,  75.0],
+  "claude-3-haiku-20240307":     [0.25,   1.25],
+  /* OpenAI */
   "gpt-4o":                      [2.5,   10.0],
   "gpt-4o-mini":                 [0.15,   0.60],
+  "gpt-4-turbo":                 [10.0,  30.0],
   "o1-mini":                     [1.1,    4.4],
+  "o3-mini":                     [1.1,    4.4],
+  /* Gemini */
   "gemini-2.0-flash":            [0.075,  0.30],
   "gemini-2.0-flash-exp":        [0.075,  0.30],
   "gemini-1.5-flash":            [0.075,  0.30],
+  "gemini-1.5-flash-8b":         [0.0375, 0.15],
   "gemini-1.5-pro":              [1.25,   5.0],
+  /* GLM (THUDM via OpenRouter) */
+  "glm-4-flash":                 [0.04,   0.04],
+  "glm-4-flash-250414":          [0.04,   0.04],
+  "glm-4-air":                   [0.14,   0.14],
+  "glm-4-air-0111":              [0.14,   0.14],
+  "glm-4.5-air":                 [0.14,   0.14],
+  "glm-4":                       [0.50,   0.50],
+  "glm-z1-air":                  [0.14,   0.14],
+  "glm-z1-airx":                 [0.14,   0.14],
+  "glm-z1-flash":                [0.07,   0.07],
+  "glm-z1-rumination-r1":        [0.14,   0.14],
+  /* Mistral */
+  "mistral-7b-instruct":         [0.07,   0.07],
+  "mixtral-8x7b-instruct":       [0.27,   0.27],
+  "mistral-small":               [0.60,   1.80],
+  /* DeepSeek */
+  "deepseek-chat":               [0.14,   0.28],
+  "deepseek-r1":                 [0.55,   2.19],
+  "deepseek-r1-distill-llama-70b": [0.10, 0.40],
+  /* Meta */
+  "llama-3.1-8b-instruct":       [0.06,   0.06],
+  "llama-3.1-70b-instruct":      [0.52,   0.75],
+  "llama-3.1-405b-instruct":     [2.70,   2.70],
+  "llama-3.3-70b-instruct":      [0.52,   0.75],
 };
 
 function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
   const shortModel = model.includes("/") ? model.split("/").pop()! : model;
-  const [ip, op] = TOKEN_PRICING[shortModel] ?? TOKEN_PRICING[model] ?? [3.0, 15.0];
+  /* Try exact match first, then partial model name match, then generic fallback */
+  const pricing =
+    TOKEN_PRICING[shortModel] ??
+    TOKEN_PRICING[model] ??
+    Object.entries(TOKEN_PRICING).find(([k]) => shortModel.toLowerCase().startsWith(k.toLowerCase()))?.[1] ??
+    [0.50, 1.50]; /* conservative fallback — cheaper than Claude to avoid over-counting */
+  const [ip, op] = pricing;
   return (inputTokens * ip + outputTokens * op) / 1_000_000;
+}
+
+/* For OpenRouter: fetch the actual billed cost via generation ID */
+async function fetchOpenRouterGenCost(generationId: string, apiKey: string): Promise<number | null> {
+  try {
+    /* OpenRouter may need a brief delay before the generation record is available */
+    await new Promise(r => setTimeout(r, 500));
+    const r = await fetch(`https://openrouter.ai/api/v1/generation?id=${encodeURIComponent(generationId)}`, {
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    });
+    if (!r.ok) return null;
+    const data = await r.json() as { data?: { total_cost?: number } };
+    const cost = data?.data?.total_cost;
+    return typeof cost === "number" ? cost : null;
+  } catch {
+    return null;
+  }
 }
 
 function userId(req: Request): number {
@@ -754,6 +808,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       toolCalls: Array<{ id: string; name: string; input: object }>;
       stopReason: string;
       usage: { input_tokens: number; output_tokens: number };
+      generationId?: string; /* OpenRouter only — used to fetch exact cost */
     };
 
     /* ── Build multi-modal user content if attachments present ── */
@@ -791,6 +846,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let totalToolCalls = 0;
+    const openRouterGenIds: string[] = []; /* collect per-round generation IDs for real cost */
     const MAX_TOOL_ROUNDS = 25;
     const basePrompt = `You are Advantix Assistant — an AI agent that controls the user's machine via tools. Be concise and efficient. Only call tools when necessary. Never announce task completion — do not say "done", "completed", "finished", "all done", or similar phrases. Just show results directly.
 
@@ -875,6 +931,7 @@ CRITICAL — Error handling and task persistence:
             };
           } else {
             const d = await response.json() as {
+              id?: string;
               choices: Array<{ message: { content?: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }; finish_reason?: string }>;
               usage?: { prompt_tokens: number; completion_tokens: number };
             };
@@ -887,6 +944,7 @@ CRITICAL — Error handling and task persistence:
               })),
               stopReason: choice.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
               usage: { input_tokens: d.usage?.prompt_tokens ?? 0, output_tokens: d.usage?.completion_tokens ?? 0 },
+              generationId: d.id,
             };
           }
         }
@@ -924,11 +982,12 @@ CRITICAL — Error handling and task persistence:
     /* ══ Agentic loop ══════════════════════════════════════════════════════ */
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const hasTools = true; /* platform tools always available */
-      const { text, toolCalls, stopReason, usage } = await callAI(
+      const { text, toolCalls, stopReason, usage, generationId } = await callAI(
         round === 0 ? messages : sessionMessages,
         hasTools && round < MAX_TOOL_ROUNDS,
       );
 
+      if (generationId && provider === "openrouter") openRouterGenIds.push(generationId);
       totalInputTokens += usage.input_tokens;
       totalOutputTokens += usage.output_tokens;
 
@@ -1271,7 +1330,19 @@ CRITICAL — Error handling and task persistence:
 
     /* ── Save usage record ── */
     const totalTokens = totalInputTokens + totalOutputTokens;
-    const costUsd = estimateCostUsd(model, totalInputTokens, totalOutputTokens);
+    /* For OpenRouter: try to get exact cost from their API (fire-and-await for last gen ID) */
+    let costUsd: number;
+    if (provider === "openrouter" && openRouterGenIds.length > 0) {
+      /* Fetch real costs for all generation IDs and sum them */
+      const realCosts = await Promise.all(
+        openRouterGenIds.map(id => fetchOpenRouterGenCost(id, apiKey))
+      );
+      const totalRealCost = realCosts.reduce<number>((sum, c) => sum + (c ?? 0), 0);
+      /* If we got a valid cost (even 0 is fine for free models), use it; else fall back to estimate */
+      costUsd = realCosts.some(c => c !== null) ? totalRealCost : estimateCostUsd(model, totalInputTokens, totalOutputTokens);
+    } else {
+      costUsd = estimateCostUsd(model, totalInputTokens, totalOutputTokens);
+    }
     try {
       await db.execute(sql`
         INSERT INTO agent_usage
