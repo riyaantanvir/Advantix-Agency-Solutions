@@ -44,7 +44,7 @@ export default function CustomPageEditor() {
   const [form, setForm] = useState({
     title: "", slug: "", type: "gallery" as "gallery" | "content",
     description: "", content: "", password: "", clearPassword: false,
-    isPublished: false, metaTitle: "", metaDescription: "",
+    isPublished: false, isPublic: false, metaTitle: "", metaDescription: "",
   });
   const [slugEdited, setSlugEdited] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -72,7 +72,7 @@ export default function CustomPageEditor() {
       setForm({
         title: page.title, slug: page.slug, type: page.type,
         description: page.description ?? "", content: page.content ?? "",
-        password: "", clearPassword: false, isPublished: page.is_published,
+        password: "", clearPassword: false, isPublished: page.is_published, isPublic: (page as CustomPage & { is_public?: boolean }).is_public ?? false,
         metaTitle: page.meta_title ?? "", metaDescription: page.meta_description ?? "",
       });
       setFolders(page.folders ?? []);
@@ -359,6 +359,16 @@ export default function CustomPageEditor() {
             >
               {form.isPublished ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
               <span className="font-medium">{form.isPublished ? "Published" : "Draft (not visible)"}</span>
+            </button>
+
+            <button
+              onClick={() => updateForm("isPublic", !form.isPublic)}
+              className={`flex items-center gap-3 w-full p-3 rounded-xl border-2 text-sm transition-all ${
+                form.isPublic ? "border-blue-500 bg-blue-500/5 text-blue-500" : "border-border text-muted-foreground hover:border-muted-foreground"
+              }`}
+            >
+              <Globe className="w-4 h-4" />
+              <span className="font-medium">{form.isPublic ? "Public (no login needed)" : "Members only (login required)"}</span>
             </button>
 
             {!showPasswordField && !page?.hasPassword && (

@@ -76,7 +76,6 @@ const PdfAudio = lazy(() => import("@/pages/PdfAudio"));
 const AssistantPage = lazy(() => import("@/pages/AssistantPage"));
 const SocialMediaTool = lazy(() => import("@/pages/SocialMediaTool"));
 const FacebookManager = lazy(() => import("@/pages/FacebookManager"));
-const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -96,6 +95,12 @@ function PageLoader() {
       <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
     </div>
   );
+}
+
+function PrivacyPolicyRedirect() {
+  const [, navigate] = useLocation();
+  useEffect(() => { navigate("/pages/privacy-policy", { replace: true }); }, [navigate]);
+  return null;
 }
 
 function Router() {
@@ -147,7 +152,7 @@ function Router() {
               <Route path="/contests/:id" component={ContestDetail} />
               <Route path="/pages/:slug" component={CustomPage} />
               <Route path="/favorites" component={Favorites} />
-              <Route path="/privacy-policy" component={PrivacyPolicy} />
+              <Route path="/privacy-policy" component={PrivacyPolicyRedirect} />
               <Route component={NotFound} />
             </Switch>
           </Suspense>

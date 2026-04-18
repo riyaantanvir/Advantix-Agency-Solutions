@@ -77,7 +77,10 @@ export function Footer() {
 
         <div className="pt-6 border-t border-border/30 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground/50">
           <p>© {new Date().getFullYear()} Advantix Digital. All rights reserved.</p>
-          <Link href="/contact" className="hover:text-primary transition-colors">hello@advantix.digital</Link>
+          <div className="flex items-center gap-4">
+            <Link href="/privacy-policy" className="hover:text-primary transition-colors">Privacy Policy</Link>
+            <Link href="/contact" className="hover:text-primary transition-colors">hello@advantix.digital</Link>
+          </div>
         </div>
       </div>
     </footer>

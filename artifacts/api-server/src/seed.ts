@@ -743,12 +743,15 @@ export async function runMigrations(): Promise<void> {
       content TEXT DEFAULT '',
       password_hash TEXT,
       is_published BOOLEAN NOT NULL DEFAULT false,
+      is_public BOOLEAN NOT NULL DEFAULT false,
       meta_title TEXT,
       meta_description TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
       updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
     )
   `);
+  await db.execute(sql`ALTER TABLE custom_pages ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false`);
+
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS gallery_folders (
       id SERIAL PRIMARY KEY,
@@ -1142,6 +1145,206 @@ const TELEGRAM_DEFAULTS = [
   { name: "TELEGRAM_NOTIFY_TASK_STATUS",        label: "Task Status Changed",              value: "true", category: "Notifications" },
   { name: "TELEGRAM_NOTIFY_TASK_COMMENT",       label: "Task Comment",                     value: "true", category: "Notifications" },
 ];
+
+export async function seedPrivacyPolicy(): Promise<void> {
+  const content = `
+<style>
+  .pp-wrap { font-family: inherit; color: inherit; max-width: 780px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+  .pp-hero { text-align: center; margin-bottom: 2.5rem; }
+  .pp-hero h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: .75rem; }
+  .pp-hero p { color: #9ca3af; font-size: 1.05rem; max-width: 520px; margin: 0 auto; }
+  .pp-scope { background: rgba(99,102,241,.07); border: 1px solid rgba(99,102,241,.2); border-radius: 14px; padding: 1.1rem 1.4rem; margin-bottom: 2.5rem; font-size: .9rem; color: #9ca3af; text-align:center; line-height:1.6; }
+  .pp-scope strong { color: #e5e7eb; }
+  .pp-section { border: 1px solid rgba(255,255,255,.08); border-radius: 16px; overflow: hidden; margin-bottom: 1.5rem; }
+  .pp-section-header { display: flex; align-items: center; gap: .75rem; padding: 1rem 1.4rem; background: rgba(255,255,255,.03); border-bottom: 1px solid rgba(255,255,255,.07); }
+  .pp-section-header h2 { font-size: 1.05rem; font-weight: 600; margin: 0; }
+  .pp-section-body { padding: 1.4rem 1.6rem; }
+  .pp-block { margin-bottom: 1.4rem; }
+  .pp-block:last-child { margin-bottom: 0; }
+  .pp-block h3 { font-size: .88rem; font-weight: 600; margin: 0 0 .6rem; color: #e5e7eb; }
+  .pp-block ul { list-style: none; padding: 0; margin: 0; }
+  .pp-block ul li { display: flex; gap: .6rem; align-items: flex-start; font-size: .875rem; color: #9ca3af; margin-bottom: .45rem; line-height: 1.55; }
+  .pp-block ul li::before { content: "›"; color: #6366f1; flex-shrink: 0; margin-top: 1px; font-weight: 700; }
+  .pp-contact { border: 1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 2rem; text-align: center; margin-top: 1.5rem; }
+  .pp-contact h2 { font-size: 1.2rem; font-weight: 600; margin: .75rem 0 .5rem; }
+  .pp-contact p { color: #9ca3af; font-size: .875rem; margin-bottom: 1.1rem; }
+  .pp-contact a { color: #818cf8; text-decoration: none; font-weight: 500; }
+  .pp-contact a:hover { text-decoration: underline; }
+  .pp-footer { text-align: center; font-size: .75rem; color: #6b7280; margin-top: 2rem; }
+</style>
+<div class="pp-wrap">
+  <div class="pp-hero">
+    <h1>Privacy Policy</h1>
+    <p>At Advantix Digital, your privacy matters. This policy explains what information we collect, how we use it, and how we protect it.</p>
+  </div>
+  <div class="pp-scope">
+    This Privacy Policy applies to <strong>advantix.digital</strong> and all associated services, tools, and platforms operated by <strong>Advantix Digital</strong>, including our Facebook Auto-Reply tool, Social Media Scheduler, AI Assistant, URL Shortener, and all client services.
+  </div>
+
+  <div class="pp-section">
+    <div class="pp-section-header"><h2>1. Information We Collect</h2></div>
+    <div class="pp-section-body">
+      <div class="pp-block">
+        <h3>Information You Provide</h3>
+        <ul>
+          <li>Name, email, phone number, and message when you submit our contact form or request a service.</li>
+          <li>Account credentials (username and password) when you register for our Tools platform.</li>
+          <li>Business information such as company name, website URL, and service requirements.</li>
+          <li>Payment details — processed securely through third-party gateways; we do not store card numbers.</li>
+        </ul>
+      </div>
+      <div class="pp-block">
+        <h3>Information Collected Automatically</h3>
+        <ul>
+          <li>IP address, browser type, operating system, and device information when you visit our website.</li>
+          <li>Pages visited, time spent, and clickstream data via analytics tools (e.g., Google Analytics).</li>
+          <li>Cookies and similar tracking technologies to enhance user experience and remember preferences.</li>
+          <li>Usage data from our Tools platform (URL shortener, Facebook auto-reply, AI assistant, social media scheduler).</li>
+        </ul>
+      </div>
+      <div class="pp-block">
+        <h3>Third-Party Integrations</h3>
+        <ul>
+          <li>When you connect a Facebook Page through our Facebook Auto-Reply tool, we store your Facebook access token and page data securely to enable automated messaging.</li>
+          <li>When you use our AI Assistant or Social Media tools, queries may be processed through third-party AI providers (OpenAI, Anthropic, or Google) under their respective privacy policies.</li>
+          <li>When you use our Social Media Management service, we may access your social media accounts solely to manage and schedule content on your behalf.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="pp-section">
+    <div class="pp-section-header"><h2>2. How We Use Your Information</h2></div>
+    <div class="pp-section-body">
+      <div class="pp-block">
+        <h3>Service Delivery</h3>
+        <ul>
+          <li>To provide our services including website development, CRM integration, Facebook marketing, social media management, graphics & branding, Python bot automation, ecommerce solutions, virtual assistant services, data entry, and lead generation.</li>
+          <li>To set up and manage your account on our Tools platform.</li>
+          <li>To process and respond to your service inquiries and project requests.</li>
+          <li>To send project updates, delivery confirmations, and invoices related to your orders.</li>
+        </ul>
+      </div>
+      <div class="pp-block">
+        <h3>Platform Operations</h3>
+        <ul>
+          <li>To operate the Facebook Auto-Reply tool and send automated responses on your behalf to your page visitors.</li>
+          <li>To generate shortened URLs and track click analytics through our URL Shortener tool.</li>
+          <li>To schedule and publish social media posts through our Social Media Scheduler.</li>
+          <li>To power AI-assisted features within our Tools platform.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="pp-section">
+    <div class="pp-section-header"><h2>3. Information Sharing &amp; Disclosure</h2></div>
+    <div class="pp-section-body">
+      <div class="pp-block">
+        <h3>We Do Not Sell Your Data</h3>
+        <ul>
+          <li>Advantix Digital does not sell, rent, or trade your personal information to third parties for marketing purposes.</li>
+        </ul>
+      </div>
+      <div class="pp-block">
+        <h3>When We May Share Data</h3>
+        <ul>
+          <li>With trusted service providers who assist in operating our platform (e.g., cloud hosting, email delivery, payment processors) under strict confidentiality agreements.</li>
+          <li>With AI service providers (OpenAI, Anthropic, Google) solely to process your requests — they do not retain your data for training purposes.</li>
+          <li>With Facebook's API when you use our Facebook Auto-Reply tool, governed by Facebook's Data Policy.</li>
+          <li>When required by law, court order, or government authority.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="pp-section">
+    <div class="pp-section-header"><h2>4. Data Security</h2></div>
+    <div class="pp-section-body">
+      <div class="pp-block">
+        <h3>Security Measures</h3>
+        <ul>
+          <li>All data is transmitted over HTTPS with TLS encryption.</li>
+          <li>Passwords are hashed using industry-standard bcrypt algorithms — we never store plain-text passwords.</li>
+          <li>Facebook access tokens and sensitive API credentials are stored in encrypted form in our database.</li>
+          <li>Access to user data is restricted to authorized team members on a need-to-know basis.</li>
+        </ul>
+      </div>
+      <div class="pp-block">
+        <h3>Data Retention</h3>
+        <ul>
+          <li>We retain your account data for as long as your account is active or as needed to provide services.</li>
+          <li>Deleted accounts are purged from our systems within 30 days, except where retention is required by law.</li>
+          <li>Facebook messages and auto-reply logs are retained for up to 90 days to support your account history.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="pp-section">
+    <div class="pp-section-header"><h2>5. Your Rights &amp; Choices</h2></div>
+    <div class="pp-section-body">
+      <div class="pp-block">
+        <h3>Your Rights</h3>
+        <ul>
+          <li>Access: You may request a copy of the personal data we hold about you.</li>
+          <li>Correction: You may request correction of inaccurate or incomplete data.</li>
+          <li>Deletion: You may request deletion of your account and associated data.</li>
+          <li>Portability: You may request your data in a portable format.</li>
+          <li>Withdraw Consent: Where processing is based on consent, you may withdraw it at any time.</li>
+        </ul>
+      </div>
+      <div class="pp-block">
+        <h3>Cookies &amp; Tracking</h3>
+        <ul>
+          <li>You can control cookie preferences through your browser settings.</li>
+          <li>You can opt out of Google Analytics tracking by using the Google Analytics Opt-out Browser Add-on.</li>
+          <li>Disabling cookies may affect certain functionality of our website and tools.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="pp-section">
+    <div class="pp-section-header"><h2>6. Changes to This Policy</h2></div>
+    <div class="pp-section-body">
+      <div class="pp-block">
+        <ul>
+          <li>We may update this Privacy Policy from time to time to reflect changes in our services or legal requirements.</li>
+          <li>Significant changes will be notified via email or a prominent notice on our website.</li>
+          <li>Continued use of our services after changes take effect constitutes your acceptance of the updated policy.</li>
+          <li>We encourage you to review this page periodically.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="pp-contact">
+    <h2>Questions or Requests?</h2>
+    <p>If you have any questions about this Privacy Policy, wish to exercise your data rights, or need to report a privacy concern, please contact us.</p>
+    <p><strong>Advantix Digital</strong> &nbsp;|&nbsp; <a href="https://advantix.digital">advantix.digital</a> &nbsp;|&nbsp; <a href="mailto:hello@advantix.digital">hello@advantix.digital</a></p>
+  </div>
+  <p class="pp-footer">© ${new Date().getFullYear()} Advantix Digital. All rights reserved.</p>
+</div>
+`;
+  await db.execute(sql`
+    INSERT INTO custom_pages (slug, title, type, description, content, is_published, is_public, meta_title, meta_description)
+    VALUES (
+      'privacy-policy',
+      'Privacy Policy',
+      'content',
+      'Privacy Policy for Advantix Digital',
+      ${content},
+      true,
+      true,
+      'Privacy Policy — Advantix Digital',
+      'Learn how Advantix Digital collects, uses, and protects your personal information.'
+    )
+    ON CONFLICT (slug) DO NOTHING
+  `);
+  await db.execute(sql`UPDATE custom_pages SET is_public = true WHERE slug = 'privacy-policy'`);
+  logger.info("Privacy policy page ensured");
+}
 
 export async function seedTelegramDefaults(): Promise<void> {
   for (const row of TELEGRAM_DEFAULTS) {

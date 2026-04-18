@@ -112,14 +112,16 @@ router.get("/pages/:slug", async (req: Request, res: Response) => {
   const isAdmin = !!session?.adminId;
   const userId = session?.toolUserId ?? null;
 
-  // Must be logged in (or admin) to view any custom page
+  // Check if page is public (no login required)
   if (!isAdmin && !userId) {
-    // Return minimal page info so the frontend can show the login gate with the page title
-    const peek = await db.execute(sql`SELECT title, slug FROM custom_pages WHERE slug = ${slug} AND is_published = true LIMIT 1`);
+    const peek = await db.execute(sql`SELECT title, slug, is_public FROM custom_pages WHERE slug = ${slug} AND is_published = true LIMIT 1`);
     const p = peek.rows[0] as Record<string, unknown> | undefined;
     if (!p) { res.status(404).json({ error: "Page not found" }); return; }
-    res.status(401).json({ requiresLogin: true, title: p.title, slug: p.slug });
-    return;
+    if (!p.is_public) {
+      res.status(401).json({ requiresLogin: true, title: p.title, slug: p.slug });
+      return;
+    }
+    // Public page — fall through to serve it
   }
 
   const rows = await db.execute(
@@ -203,10 +205,10 @@ router.get("/admin/custom-pages", requireAdmin, async (_req, res) => {
 });
 
 router.post("/admin/custom-pages", requireAdmin, async (req, res) => {
-  const { title, slug, type, description, content, password, isPublished, metaTitle, metaDescription } =
+  const { title, slug, type, description, content, password, isPublished, isPublic, metaTitle, metaDescription } =
     req.body as {
       title: string; slug: string; type: string; description?: string; content?: string;
-      password?: string; isPublished?: boolean; metaTitle?: string; metaDescription?: string;
+      password?: string; isPublished?: boolean; isPublic?: boolean; metaTitle?: string; metaDescription?: string;
     };
 
   if (!title || !slug) { res.status(400).json({ error: "Title and slug required" }); return; }
@@ -215,8 +217,8 @@ router.post("/admin/custom-pages", requireAdmin, async (req, res) => {
   const passwordHash = password ? await bcrypt.hash(password, 10) : null;
 
   const rows = await db.execute(sql`
-    INSERT INTO custom_pages (slug, title, type, description, content, password_hash, is_published, meta_title, meta_description)
-    VALUES (${cleanSlug}, ${title}, ${type || "content"}, ${description || null}, ${content || ""}, ${passwordHash}, ${isPublished ?? false}, ${metaTitle || null}, ${metaDescription || null})
+    INSERT INTO custom_pages (slug, title, type, description, content, password_hash, is_published, is_public, meta_title, meta_description)
+    VALUES (${cleanSlug}, ${title}, ${type || "content"}, ${description || null}, ${content || ""}, ${passwordHash}, ${isPublished ?? false}, ${isPublic ?? false}, ${metaTitle || null}, ${metaDescription || null})
     RETURNING *
   `);
   res.status(201).json(rows.rows[0]);
@@ -240,10 +242,10 @@ router.get("/admin/custom-pages/:id", requireAdmin, async (req, res) => {
 
 router.put("/admin/custom-pages/:id", requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id as string, 10);
-  const { title, slug, type, description, content, password, clearPassword, isPublished, metaTitle, metaDescription } =
+  const { title, slug, type, description, content, password, clearPassword, isPublished, isPublic, metaTitle, metaDescription } =
     req.body as {
       title?: string; slug?: string; type?: string; description?: string; content?: string;
-      password?: string; clearPassword?: boolean; isPublished?: boolean; metaTitle?: string; metaDescription?: string;
+      password?: string; clearPassword?: boolean; isPublished?: boolean; isPublic?: boolean; metaTitle?: string; metaDescription?: string;
     };
 
   const cleanSlug = slug ? slug.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") : undefined;
@@ -263,6 +265,7 @@ router.put("/admin/custom-pages/:id", requireAdmin, async (req, res) => {
       description = COALESCE(${description !== undefined ? description : null}, description),
       content = COALESCE(${content !== undefined ? content : null}, content),
       is_published = COALESCE(${isPublished !== undefined ? isPublished : null}, is_published),
+      is_public = COALESCE(${isPublic !== undefined ? isPublic : null}, is_public),
       meta_title = COALESCE(${metaTitle || null}, meta_title),
       meta_description = COALESCE(${metaDescription || null}, meta_description),
       updated_at = NOW()
