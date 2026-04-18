@@ -90,6 +90,7 @@ type Message = {
   statusText?: string;
   error?: string;
   attachments?: AttachedFile[];
+  interrupted?: boolean;
 };
 
 type KeyInfo = {
@@ -918,6 +919,8 @@ export default function AssistantPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const streamBufferRef    = useRef<string>("");
+  const rafRef             = useRef<number | null>(null);
   const [showSetup, setShowSetup] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -1005,6 +1008,11 @@ export default function AssistantPage() {
         if (!textContent && tools.length === 0) continue;
         loaded.push({ id: genId(), role: "assistant", content: textContent, tools });
       }
+    }
+    /* Detect interrupted task — last assistant message has tools but no text */
+    const lastMsg = loaded[loaded.length - 1];
+    if (lastMsg && lastMsg.role === "assistant" && (lastMsg.tools ?? []).length > 0 && !lastMsg.content.trim()) {
+      lastMsg.interrupted = true;
     }
     return loaded;
   }, []);
@@ -1162,10 +1170,10 @@ export default function AssistantPage() {
     abortControllerRef.current?.abort();
   }, []);
 
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
+  const sendMessage = useCallback(async (forceText?: string) => {
+    const text = (forceText ?? input).trim();
     if ((!text && attachedFiles.length === 0) || sending) return;
-    setInput("");
+    if (!forceText) setInput("");
     setSending(true);
 
     const currentAttachments = [...attachedFiles];
@@ -1227,11 +1235,27 @@ export default function AssistantPage() {
                     : t) }
                 : m));
             } else if (event.type === "content") {
-              setMessages(prev => prev.map(m => m.id === assistantId
-                ? { ...m, statusText: undefined, content: m.content + event.delta }
-                : m));
+              streamBufferRef.current += event.delta;
+              if (rafRef.current === null) {
+                const snapId = assistantId;
+                rafRef.current = requestAnimationFrame(() => {
+                  rafRef.current = null;
+                  const chunk = streamBufferRef.current;
+                  if (!chunk) return;
+                  streamBufferRef.current = "";
+                  setMessages(prev => prev.map(m => m.id === snapId
+                    ? { ...m, statusText: undefined, content: m.content + chunk }
+                    : m));
+                });
+              }
             } else if (event.type === "done") {
-              setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, streaming: false, statusText: undefined } : m));
+              /* Flush any remaining buffered content before marking done */
+              if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+              const remaining = streamBufferRef.current;
+              streamBufferRef.current = "";
+              setMessages(prev => prev.map(m => m.id === assistantId
+                ? { ...m, streaming: false, statusText: undefined, content: m.content + remaining }
+                : m));
               fetchConversations();
             } else if (event.type === "error") {
               setMessages(prev => prev.map(m => m.id === assistantId
@@ -1242,9 +1266,15 @@ export default function AssistantPage() {
         }
       }
     } catch (err) {
+      /* Cancel any pending RAF and flush buffered content */
+      if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      const remaining = streamBufferRef.current;
+      streamBufferRef.current = "";
       const isAbort = (err as Error).name === "AbortError";
       setMessages(prev => prev.map(m => m.id === assistantId
-        ? { ...m, streaming: false, statusText: undefined, ...(isAbort ? { content: m.content || "_(stopped by user)_" } : { error: (err as Error).message }) }
+        ? { ...m, streaming: false, statusText: undefined,
+            content: m.content + remaining,
+            ...(isAbort ? {} : { error: (err as Error).message }) }
         : m));
       if (!isAbort) console.error("Chat error:", err);
     } finally {
@@ -1509,7 +1539,29 @@ export default function AssistantPage() {
               </div>
             )}
             <AnimatePresence initial={false}>
-              {messages.map(msg => <MessageBubble key={msg.id} msg={msg} userName={user?.name ?? user?.email} />)}
+              {messages.map(msg => (
+                <React.Fragment key={msg.id}>
+                  <MessageBubble msg={msg} userName={user?.name ?? user?.email} />
+                  {msg.interrupted && !sending && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex justify-start pl-10"
+                    >
+                      <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-amber-500/8 border border-amber-500/20 text-xs">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span className="text-amber-300/80">Task was interrupted</span>
+                        <button
+                          onClick={() => sendMessage("আগের কাজটা continue করো — tool calls শেষ হয়েছে, এখন বাকি কাজ সম্পন্ন করো।")}
+                          className="ml-1 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-semibold transition-colors"
+                        >
+                          Resume →
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </React.Fragment>
+              ))}
             </AnimatePresence>
             <div ref={messagesEndRef} />
           </div>
