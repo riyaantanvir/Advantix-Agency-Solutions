@@ -47,6 +47,7 @@ const AssignedCommentsPage = lazy(() => import("./pages/AssignedCommentsPage"));
 const SocialMedia = lazy(() => import("./pages/SocialMedia"));
 const SocialMediaSchedule = lazy(() => import("./pages/SocialMediaSchedule"));
 const SocialMediaSettings = lazy(() => import("./pages/SocialMediaSettings"));
+const FacebookSettings = lazy(() => import("./pages/FacebookSettings"));
 const CustomPages = lazy(() => import("./pages/CustomPages"));
 const CustomPageEditor = lazy(() => import("./pages/CustomPageEditor"));
 const InvoiceGenerator = lazy(() => import("./pages/InvoiceGenerator"));
@@ -257,6 +258,10 @@ function Router() {
 
       <Route path="/social-media/settings">
         <ProtectedLayout><SocialMediaSettings /></ProtectedLayout>
+      </Route>
+
+      <Route path="/facebook-settings">
+        <ProtectedLayout><FacebookSettings /></ProtectedLayout>
       </Route>
 
       <Route path="/social-media">

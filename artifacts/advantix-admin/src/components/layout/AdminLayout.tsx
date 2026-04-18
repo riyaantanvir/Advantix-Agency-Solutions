@@ -46,6 +46,7 @@ import {
   Wrench,
   ShieldCheck,
   BotMessageSquare,
+  Facebook,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -116,6 +117,7 @@ const navItems: NavItem[] = [
       { path: "/social-media", label: "Overview", icon: Share2 },
       { path: "/social-media/schedule", label: "Schedule Post", icon: CalendarDays },
       { path: "/social-media/settings", label: "AD SMM Settings", icon: Settings2 },
+      { path: "/facebook-settings", label: "FB Auto-Reply Settings", icon: Facebook },
     ],
   },
   { path: "/admin-assistant", label: "Admin Assistant", icon: BotMessageSquare },

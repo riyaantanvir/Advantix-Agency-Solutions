@@ -6,9 +6,11 @@ import { Router, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import {
   facebookPagesTable, facebookMessagesTable, facebookAutoReplyRulesTable,
+  integrationsTable,
 } from "@workspace/db/schema";
 import { eq, desc, and, count, sql, isNull } from "drizzle-orm";
 import { requireToolUser } from "../middleware/toolAuth.js";
+import { requireAdmin } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -17,9 +19,60 @@ function toolUserId(req: Request): number {
   return (req.session as { toolUserId?: number }).toolUserId!;
 }
 
-function getAppId(): string  { return process.env.FACEBOOK_APP_ID ?? ""; }
-function getAppSecret(): string { return process.env.FACEBOOK_APP_SECRET ?? ""; }
-function getVerifyToken(): string { return process.env.FACEBOOK_WEBHOOK_VERIFY_TOKEN ?? "advantix_fb_verify_2025"; }
+async function getDbKey(name: string): Promise<string | null> {
+  try {
+    const [row] = await db.select().from(integrationsTable).where(eq(integrationsTable.name, name));
+    return row?.value || null;
+  } catch { return null; }
+}
+
+async function getAppId(): Promise<string> {
+  return (await getDbKey("FACEBOOK_APP_ID")) ?? process.env.FACEBOOK_APP_ID ?? "";
+}
+async function getAppSecret(): Promise<string> {
+  return (await getDbKey("FACEBOOK_APP_SECRET")) ?? process.env.FACEBOOK_APP_SECRET ?? "";
+}
+async function getVerifyToken(): Promise<string> {
+  return (await getDbKey("FACEBOOK_WEBHOOK_VERIFY_TOKEN"))
+    ?? process.env.FACEBOOK_WEBHOOK_VERIFY_TOKEN
+    ?? "advantix_fb_verify_2025";
+}
+
+/* ── Admin: GET/PUT Facebook App Settings ───────────────────────────────── */
+router.get("/admin/facebook/settings", requireAdmin, async (_req: Request, res: Response) => {
+  const keys = ["FACEBOOK_APP_ID", "FACEBOOK_APP_SECRET", "FACEBOOK_WEBHOOK_VERIFY_TOKEN"];
+  const result: Record<string, string> = {};
+  for (const k of keys) {
+    const [row] = await db.select().from(integrationsTable).where(eq(integrationsTable.name, k));
+    result[k] = row?.value
+      ? (k === "FACEBOOK_APP_SECRET" ? "••••••••" + row.value.slice(-4) : row.value)
+      : "";
+  }
+  res.json(result);
+});
+
+router.put("/admin/facebook/settings", requireAdmin, async (req: Request, res: Response) => {
+  const allowed = ["FACEBOOK_APP_ID", "FACEBOOK_APP_SECRET", "FACEBOOK_WEBHOOK_VERIFY_TOKEN"];
+  const body = req.body as Record<string, string>;
+  for (const key of allowed) {
+    if (body[key] === undefined) continue;
+    const value = body[key].trim();
+    if (!value) continue;
+    const [existing] = await db.select().from(integrationsTable).where(eq(integrationsTable.name, key));
+    if (existing) {
+      await db.update(integrationsTable).set({ value, updatedAt: new Date() }).where(eq(integrationsTable.name, key));
+    } else {
+      await db.insert(integrationsTable).values({
+        name: key,
+        label: key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
+        value,
+        category: "facebook",
+        description: `Facebook Auto-Reply: ${key}`,
+      });
+    }
+  }
+  res.json({ success: true });
+});
 
 function getWebhookBase(): string {
   return process.env.FACEBOOK_WEBHOOK_BASE_URL
@@ -130,11 +183,11 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
 /* ── Webhook ─────────────────────────────────────────────────────────────── */
 
 /* GET — Facebook verification handshake */
-router.get("/facebook/webhook", (req: Request, res: Response) => {
+router.get("/facebook/webhook", async (req: Request, res: Response) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-  if (mode === "subscribe" && token === getVerifyToken()) {
+  if (mode === "subscribe" && token === await getVerifyToken()) {
     console.log("[FB Webhook] Verified");
     res.status(200).send(challenge);
   } else {
@@ -197,9 +250,9 @@ router.post("/facebook/webhook", async (req: Request, res: Response) => {
 /* ── OAuth Flow ──────────────────────────────────────────────────────────── */
 
 /* Step 1: Get Facebook OAuth URL */
-router.get("/facebook/auth-url", requireToolUser, (req: Request, res: Response) => {
-  const appId = getAppId();
-  if (!appId) { res.status(500).json({ error: "FACEBOOK_APP_ID not configured" }); return; }
+router.get("/facebook/auth-url", requireToolUser, async (req: Request, res: Response) => {
+  const appId = await getAppId();
+  if (!appId) { res.status(500).json({ error: "FACEBOOK_APP_ID not configured. Go to Admin → Facebook Settings." }); return; }
   const redirectUri = encodeURIComponent(`${getWebhookBase()}/api/facebook/callback`);
   const scope = "pages_manage_metadata,pages_messaging,pages_read_engagement,pages_show_list";
   const state = Buffer.from(JSON.stringify({ uid: toolUserId(req), ts: Date.now() })).toString("base64");
@@ -217,8 +270,8 @@ router.get("/facebook/callback", async (req: Request, res: Response) => {
     uid = JSON.parse(Buffer.from(state, "base64").toString()).uid;
   } catch { res.status(400).send("Invalid state"); return; }
 
-  const appId = getAppId();
-  const appSecret = getAppSecret();
+  const appId = await getAppId();
+  const appSecret = await getAppSecret();
   const redirectUri = `${getWebhookBase()}/api/facebook/callback`;
 
   try {
@@ -285,9 +338,10 @@ router.post("/facebook/connect-page", requireToolUser, async (req: Request, res:
     if (!page) { res.status(404).json({ error: "Page not found in OAuth session" }); return; }
 
     /* Subscribe webhook to this page */
-    const appId = getAppId();
+    const appId = await getAppId();
+    const appSecret = await getAppSecret();
     const appToken = await fetch(
-      `https://graph.facebook.com/v21.0/oauth/access_token?client_id=${appId}&client_secret=${getAppSecret()}&grant_type=client_credentials`
+      `https://graph.facebook.com/v21.0/oauth/access_token?client_id=${appId}&client_secret=${appSecret}&grant_type=client_credentials`
     ).then(r => r.json() as Promise<{ access_token?: string }>).then(d => d.access_token ?? "");
 
     await fbPost(`/${pageId}/subscribed_apps`, page.access_token, {
@@ -564,10 +618,10 @@ router.post("/facebook/check-now", requireToolUser, async (req: Request, res: Re
 });
 
 /* ── Webhook URL info ─────────────────────────────────────────────────────── */
-router.get("/facebook/webhook-info", requireToolUser, (_req: Request, res: Response) => {
+router.get("/facebook/webhook-info", requireToolUser, async (_req: Request, res: Response) => {
   res.json({
     webhookUrl: `${getWebhookBase()}/api/facebook/webhook`,
-    verifyToken: getVerifyToken(),
+    verifyToken: await getVerifyToken(),
     callbackFields: "messages,messaging_postbacks",
   });
 });
