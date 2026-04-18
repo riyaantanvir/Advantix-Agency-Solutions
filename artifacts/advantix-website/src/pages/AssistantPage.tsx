@@ -192,6 +192,33 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
   );
 }
 
+/* ── Code block with language badge + copy button ─────────────────────── */
+function CodeBlock({ children, lang }: { children: React.ReactNode; lang: string }) {
+  const [copied, setCopied] = useState(false);
+  const codeStr = (() => {
+    if (typeof children === "string") return children;
+    if (Array.isArray(children)) return children.map(c => (typeof c === "string" ? c : "")).join("");
+    return "";
+  })();
+  return (
+    <div className="my-2.5 rounded-xl overflow-hidden border border-white/10 bg-black/50 shadow-sm">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-white/5 border-b border-white/8">
+        <span className="text-[10px] font-mono text-green-400/60 uppercase tracking-widest">{lang || "code"}</span>
+        <button
+          onClick={() => { navigator.clipboard.writeText(codeStr.trim()); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+          className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground flex items-center gap-1.5 transition-colors"
+        >
+          {copied ? <CheckCircle2 className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+          <span>{copied ? "Copied!" : "Copy"}</span>
+        </button>
+      </div>
+      <pre className="px-3.5 py-3 overflow-x-auto text-[11.5px] text-green-300 font-mono leading-relaxed">
+        <code>{children}</code>
+      </pre>
+    </div>
+  );
+}
+
 const mdComponents = {
   p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
   ul: ({ children }: React.HTMLAttributes<HTMLUListElement>) => <ul className="mb-2 space-y-1 pl-5 list-disc marker:text-primary/50">{children}</ul>,
@@ -200,13 +227,10 @@ const mdComponents = {
   strong: ({ children }: React.HTMLAttributes<HTMLElement>) => <strong className="font-semibold text-foreground">{children}</strong>,
   em: ({ children }: React.HTMLAttributes<HTMLElement>) => <em className="italic opacity-90">{children}</em>,
   code: ({ children, className }: React.HTMLAttributes<HTMLElement>) => {
-    const isBlock = className?.includes("language-");
-    if (isBlock) return (
-      <pre className="my-2 bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 overflow-x-auto text-[11px] text-green-300 font-mono leading-relaxed">
-        <code>{children}</code>
-      </pre>
-    );
-    return <code className="px-1.5 py-0.5 rounded bg-black/30 text-green-300 text-[12px] font-mono border border-white/10">{children}</code>;
+    const lang = className?.replace("language-", "") ?? "";
+    const isBlock = !!className?.includes("language-");
+    if (isBlock) return <CodeBlock lang={lang}>{children}</CodeBlock>;
+    return <code className="px-1.5 py-0.5 rounded-md bg-black/40 text-green-300 text-[11.5px] font-mono border border-white/10">{children}</code>;
   },
   h1: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h1 className="text-base font-bold text-foreground mt-2 mb-1">{children}</h1>,
   h2: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h2 className="text-sm font-bold text-foreground mt-2 mb-1">{children}</h2>,
@@ -220,6 +244,13 @@ function MessageBubble({ msg, userName }: { msg: Message; userName?: string }) {
   const isUser = msg.role === "user";
   const initial = (userName ?? "U")[0].toUpperCase();
   const isThinking = msg.streaming && !msg.content && (!msg.tools || msg.tools.every(t => t.status !== "running"));
+  const [msgCopied, setMsgCopied] = useState(false);
+  const copyMsg = () => {
+    if (!msg.content) return;
+    navigator.clipboard.writeText(msg.content);
+    setMsgCopied(true);
+    setTimeout(() => setMsgCopied(false), 2000);
+  };
 
   return (
     <motion.div
@@ -300,6 +331,19 @@ function MessageBubble({ msg, userName }: { msg: Message; userName?: string }) {
           <div className="px-4 py-3 rounded-2xl rounded-bl-md text-sm bg-red-500/8 text-red-400 border border-red-500/20 flex items-start gap-2.5 max-w-full">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <span className="text-xs leading-relaxed break-words">{msg.error}</span>
+          </div>
+        )}
+
+        {/* Copy button — only for assistant, show on group hover */}
+        {!isUser && msg.content && !msg.streaming && (
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center gap-1 self-start">
+            <button
+              onClick={copyMsg}
+              title="Copy message"
+              className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] text-muted-foreground/50 hover:text-muted-foreground hover:bg-secondary/50 transition-all"
+            >
+              {msgCopied ? <><CheckCircle2 className="w-3 h-3 text-green-400" /><span className="text-green-400">Copied</span></> : <><Copy className="w-3 h-3" /><span>Copy</span></>}
+            </button>
           </div>
         )}
       </div>
@@ -781,8 +825,12 @@ export default function AssistantPage() {
   const [isDragging, setIsDragging] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [hasNewMsg, setHasNewMsg] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) navigate("/login");
@@ -791,8 +839,29 @@ export default function AssistantPage() {
   const serverBase = window.location.origin;
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (isAtBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      setHasNewMsg(false);
+    } else {
+      setHasNewMsg(true);
+    }
   }, [messages]);
+
+  const handleScrollContainer = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    isAtBottomRef.current = atBottom;
+    setShowScrollBtn(!atBottom);
+    if (atBottom) setHasNewMsg(false);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    isAtBottomRef.current = true;
+    setShowScrollBtn(false);
+    setHasNewMsg(false);
+  }, []);
 
   useEffect(() => {
     fetch("/api/tools/assistant/key", { credentials: "include" })
@@ -1230,7 +1299,24 @@ export default function AssistantPage() {
         )}
 
         {/* ── Messages ─────────────────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto relative" ref={scrollContainerRef} onScroll={handleScrollContainer}>
+          {/* Scroll-to-bottom floating button */}
+          <AnimatePresence>
+            {showScrollBtn && (
+              <motion.button
+                key="scroll-btn"
+                initial={{ opacity: 0, y: 8, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.9 }}
+                transition={{ duration: 0.15 }}
+                onClick={scrollToBottom}
+                className="fixed bottom-28 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-card border border-border/60 shadow-lg text-xs text-foreground/80 hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-all backdrop-blur-sm"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+                {hasNewMsg ? <span className="text-primary font-semibold">New message</span> : <span>Scroll to bottom</span>}
+              </motion.button>
+            )}
+          </AnimatePresence>
           <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center min-h-[50vh] text-center gap-6 pb-4">
