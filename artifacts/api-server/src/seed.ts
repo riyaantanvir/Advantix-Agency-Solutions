@@ -850,6 +850,10 @@ export async function runMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS is_online boolean NOT NULL DEFAULT false
   `);
+  /* Add user_instructions column for persistent system prompt memory */
+  await db.execute(sql`
+    ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS user_instructions text
+  `);
   /* On every server start, reset all agents to offline (they must reconnect) */
   await db.execute(sql`UPDATE agent_sessions SET is_online = false`);
 

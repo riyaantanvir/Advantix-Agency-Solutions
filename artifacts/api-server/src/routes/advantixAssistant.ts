@@ -676,12 +676,22 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     const messages: InternalMsg[] = [...history, { role: "user", content: userContent as string }];
     const sessionMessages: InternalMsg[] = [{ role: "user", content: userContent as string }];
 
+    /* ── Load user's persistent instructions ── */
+    const instrRow = await db.execute(sql`
+      SELECT user_instructions FROM agent_sessions WHERE user_id = ${uid}
+    `);
+    const userInstructions = (instrRow.rows[0] as { user_instructions: string | null } | undefined)?.user_instructions ?? "";
+
     let fullText = "";
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let totalToolCalls = 0;
     const MAX_TOOL_ROUNDS = 5;
-    const SYSTEM_PROMPT = `You are Advantix Assistant — an AI agent that controls the user's machine via tools. Be concise and efficient. Only call tools when necessary. Never announce task completion — do not say "done", "completed", "finished", "all done", or similar phrases. Just show results directly. ${sysContext}`;
+    const basePrompt = `You are Advantix Assistant — an AI agent that controls the user's machine via tools. Be concise and efficient. Only call tools when necessary. Never announce task completion — do not say "done", "completed", "finished", "all done", or similar phrases. Just show results directly.`;
+    const instrSection = userInstructions.trim()
+      ? `\n\n--- USER INSTRUCTIONS (always follow these) ---\n${userInstructions.trim()}\n--- END OF USER INSTRUCTIONS ---`
+      : "";
+    const SYSTEM_PROMPT = `${basePrompt}${instrSection}\n\n${sysContext}`;
 
     /* ── callAI — unified multi-provider call with unlimited rate-limit retry ── */
     const callAI = async (msgs: InternalMsg[], isToolRound = false): Promise<AIResponse> => {
@@ -1150,6 +1160,34 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
   }
 
   res.end();
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/*  User Instructions (persistent system prompt memory)                       */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/* GET /api/tools/assistant/instructions */
+router.get("/tools/assistant/instructions", requireToolUser, async (req: Request, res: Response) => {
+  const uid = userId(req);
+  const r = await db.execute(sql`
+    SELECT user_instructions FROM agent_sessions WHERE user_id = ${uid}
+  `);
+  const row = r.rows[0] as { user_instructions: string | null } | undefined;
+  res.json({ instructions: row?.user_instructions ?? "" });
+});
+
+/* PUT /api/tools/assistant/instructions */
+router.put("/tools/assistant/instructions", requireToolUser, async (req: Request, res: Response) => {
+  const uid = userId(req);
+  const { instructions } = req.body as { instructions: string };
+  if (typeof instructions !== "string") return res.status(400).json({ error: "instructions must be a string" });
+  const trimmed = instructions.slice(0, 4000);
+  await db.execute(sql`
+    INSERT INTO agent_sessions (user_id, api_key_hash, api_key_preview, user_instructions)
+    VALUES (${uid}, ${'nokey-' + uid}, 'No key yet', ${trimmed || null})
+    ON CONFLICT (user_id) DO UPDATE SET user_instructions = EXCLUDED.user_instructions
+  `);
+  res.json({ ok: true });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */

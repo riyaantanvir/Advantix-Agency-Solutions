@@ -337,16 +337,34 @@ function SettingsModal({
   const [revokeConfirm, setRevokeConfirm] = useState(false);
   const [stats, setStats] = useState<UsageStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
+  const [instructions, setInstructions] = useState("");
+  const [instrSaving, setInstrSaving] = useState(false);
+  const [instrSaved, setInstrSaved] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setStatsLoading(true);
-    fetch("/api/tools/assistant/stats", { credentials: "include" })
-      .then(r => r.json())
-      .then(setStats)
-      .catch(() => {})
-      .finally(() => setStatsLoading(false));
+    Promise.all([
+      fetch("/api/tools/assistant/stats", { credentials: "include" }).then(r => r.json()).then(setStats).catch(() => {}),
+      fetch("/api/tools/assistant/instructions", { credentials: "include" }).then(r => r.ok ? r.json() : { instructions: "" }).then(d => setInstructions(d.instructions ?? "")).catch(() => {}),
+    ]).finally(() => setStatsLoading(false));
   }, [open]);
+
+  const saveInstructions = async () => {
+    setInstrSaving(true);
+    try {
+      await fetch("/api/tools/assistant/instructions", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instructions }),
+      });
+      setInstrSaved(true);
+      setTimeout(() => setInstrSaved(false), 2500);
+    } finally {
+      setInstrSaving(false);
+    }
+  };
 
   const serverBase = window.location.origin;
 
@@ -500,6 +518,44 @@ function SettingsModal({
                   )}
                 </p>
               )}
+            </div>
+
+            {/* ── Persistent Instructions ── */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" /> Persistent Instructions
+                </h3>
+                <span className="text-[10px] text-muted-foreground">{instructions.length}/4000</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Write instructions the assistant should always follow — like your project structure, preferences, or ongoing tasks. These are added to every conversation automatically.
+              </p>
+              <textarea
+                value={instructions}
+                onChange={e => setInstructions(e.target.value)}
+                maxLength={4000}
+                rows={5}
+                placeholder={"e.g. My main project is at ~/project/my-app\nAlways use pnpm, not npm\nI'm building a trading bot in Python\nDefault working directory: /Users/tanvir/work"}
+                className="w-full px-3 py-2.5 text-xs bg-background border border-border/50 rounded-xl outline-none focus:ring-1 focus:ring-primary/50 resize-none font-mono text-foreground placeholder:text-muted-foreground/50 leading-relaxed"
+              />
+              <button
+                onClick={saveInstructions}
+                disabled={instrSaving}
+                className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                  instrSaved
+                    ? "bg-green-500/10 text-green-400 border border-green-500/30"
+                    : "bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+                } disabled:opacity-60`}
+              >
+                {instrSaving ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
+                ) : instrSaved ? (
+                  <><CheckCircle2 className="w-3.5 h-3.5" /> Saved!</>
+                ) : (
+                  "Save Instructions"
+                )}
+              </button>
             </div>
 
             {/* ── New key revealed ── */}
