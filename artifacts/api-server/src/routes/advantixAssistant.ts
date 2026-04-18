@@ -15,6 +15,99 @@ import {
 import type WebSocket from "ws";
 import type { IncomingMessage } from "http";
 
+/* ══════════════════════════════════════════════════════════════════════════ */
+/*  Auto-memory extraction — runs fire-and-forget after each chat turn        */
+/* ══════════════════════════════════════════════════════════════════════════ */
+async function autoExtractMemory(
+  uid: number,
+  userMsg: string,
+  assistantReply: string,
+  existingInstructions: string,
+  opts: {
+    provider: string;
+    model: string;
+    apiKey: string;
+    anthropicUrl: string;
+    openaiUrl: string;
+  },
+): Promise<void> {
+  try {
+    const existingSnippet = existingInstructions.trim().slice(0, 1500);
+    const existingSection = existingSnippet
+      ? `\n\nAlready remembered:\n${existingSnippet}`
+      : "";
+
+    const extractionPrompt = `You are a memory extractor for an AI coding assistant. Read the conversation turn below and extract ONLY new, reusable facts about the user's projects, environment, preferences, or decisions — things that would save time if known in a future session.
+
+Return ONLY a bullet list of new facts (e.g. "- Project path: ~/Desktop/app\n- Stack: Next.js + Drizzle ORM") — OR return exactly "NOTHING" if there is nothing new to remember. Max 5 bullets. Be very concise.
+
+Do NOT include:
+- Generic conversation chit-chat
+- Facts already in "Already remembered"
+- Temporary task results (use paths, error messages, etc.)${existingSection}
+
+Conversation turn:
+USER: ${userMsg.slice(0, 600)}
+ASSISTANT: ${assistantReply.slice(0, 1200)}`;
+
+    let responseText = "";
+
+    if (opts.provider === "anthropic") {
+      const r = await fetch(opts.anthropicUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": opts.apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: opts.model,
+          max_tokens: 256,
+          system: "You are a concise memory extractor.",
+          messages: [{ role: "user", content: extractionPrompt }],
+        }),
+      });
+      const j = await r.json() as { content?: { text?: string }[] };
+      responseText = j.content?.[0]?.text ?? "";
+    } else {
+      /* OpenAI-compatible: OpenRouter, OpenAI, Gemini */
+      const r = await fetch(opts.openaiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${opts.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: opts.model,
+          max_tokens: 256,
+          messages: [
+            { role: "system", content: "You are a concise memory extractor." },
+            { role: "user", content: extractionPrompt },
+          ],
+        }),
+      });
+      const j = await r.json() as { choices?: { message?: { content?: string } }[] };
+      responseText = j.choices?.[0]?.message?.content ?? "";
+    }
+
+    const trimmed = responseText.trim();
+    if (!trimmed || trimmed.toUpperCase() === "NOTHING" || trimmed.length < 5) return;
+
+    /* Merge: append new facts, keep under 4000 chars */
+    const newFacts = trimmed.startsWith("-") ? trimmed : `- ${trimmed}`;
+    const separator = existingInstructions.trim() ? "\n" : "";
+    const merged = (existingInstructions.trim() + separator + newFacts).slice(0, 4000);
+
+    await db.execute(sql`
+      INSERT INTO agent_sessions (user_id, api_key_hash, api_key_preview, user_instructions)
+      VALUES (${uid}, ${'nokey-' + uid}, 'No key yet', ${merged})
+      ON CONFLICT (user_id) DO UPDATE SET user_instructions = EXCLUDED.user_instructions
+    `);
+  } catch {
+    /* non-fatal — never block main response */
+  }
+}
+
 const router = Router();
 
 /* GET /agent.mjs — download the local agent script */
@@ -1155,6 +1248,16 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     } catch { /* non-fatal — don't block the response */ }
 
     sse(res, { type: "done", totalTokens, inputTokens: totalInputTokens, outputTokens: totalOutputTokens, estimatedCostUsd: costUsd });
+
+    /* ── Auto-extract memory (fire-and-forget after response) ── */
+    const _msgText = typeof message === "string" ? message : "";
+    if (_msgText && fullText) {
+      void autoExtractMemory(uid, _msgText, fullText, userInstructions, {
+        provider, model, apiKey,
+        anthropicUrl: PROVIDER_URLS.anthropic,
+        openaiUrl: PROVIDER_URLS[provider],
+      });
+    }
   } catch (err) {
     sse(res, { type: "error", message: (err as Error).message ?? "Unknown error" });
   }
