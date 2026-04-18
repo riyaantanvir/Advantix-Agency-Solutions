@@ -39,6 +39,8 @@ onlyBuiltDependencies:
   - '@swc/core'
   - esbuild
   - msw
+  - protobufjs
+  - tesseract.js
   - unrs-resolver
 
 overrides:
