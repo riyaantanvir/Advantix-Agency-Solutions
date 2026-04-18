@@ -53,6 +53,7 @@ const InvoiceGenerator = lazy(() => import("./pages/InvoiceGenerator"));
 const PostComposer  = lazy(() => import("./pages/PostComposer"));
 const ImageStudio   = lazy(() => import("./pages/ImageStudio"));
 const AssistantUsage = lazy(() => import("./pages/AssistantUsage"));
+const AdminAssistant = lazy(() => import("./pages/AdminAssistant"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -327,6 +328,10 @@ function Router() {
 
       <Route path="/pm/assigned-comments">
         <ProtectedLayout><AssignedCommentsPage /></ProtectedLayout>
+      </Route>
+
+      <Route path="/admin-assistant">
+        <ProtectedLayout><AdminAssistant /></ProtectedLayout>
       </Route>
 
       <Route path="/finance/invoice-generator">

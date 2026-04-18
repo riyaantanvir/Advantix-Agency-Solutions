@@ -45,6 +45,7 @@ import {
   ImagePlay,
   Wrench,
   ShieldCheck,
+  BotMessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -117,6 +118,7 @@ const navItems: NavItem[] = [
       { path: "/social-media/settings", label: "AD SMM Settings", icon: Settings2 },
     ],
   },
+  { path: "/admin-assistant", label: "Admin Assistant", icon: BotMessageSquare },
   { path: "/website-analytics", label: "Website Analytics", icon: BarChart2 },
   {
     label: "Generate Content",

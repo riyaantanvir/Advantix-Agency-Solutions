@@ -43,6 +43,7 @@ import adminPermissionsRouter, { ensureAdminPermissionsTable } from "./adminPerm
 import adminToolsStatsRouter from "./adminToolsStats.js";
 import adminOverviewStatsRouter from "./adminOverviewStats.js";
 import advantixAssistantRouter from "./advantixAssistant.js";
+import adminAssistantRouter from "./adminAssistant.js";
 
 const router: IRouter = Router();
 
@@ -92,5 +93,6 @@ router.use(adminPermissionsRouter);
 router.use(adminToolsStatsRouter);
 router.use(adminOverviewStatsRouter);
 router.use(advantixAssistantRouter);
+router.use(adminAssistantRouter);
 
 export default router;
