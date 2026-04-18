@@ -931,6 +931,57 @@ export async function runMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS tool_user_id integer REFERENCES tool_users(id) ON DELETE SET NULL
   `);
 
+  // ── Facebook Auto-Reply ───────────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS facebook_pages (
+      id               serial PRIMARY KEY,
+      tool_user_id     integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      page_id          text NOT NULL,
+      page_name        text NOT NULL,
+      page_access_token text NOT NULL,
+      user_access_token text,
+      is_active        boolean NOT NULL DEFAULT true,
+      connected_at     timestamptz NOT NULL DEFAULT now(),
+      last_checked_at  timestamptz
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS facebook_messages (
+      id               serial PRIMARY KEY,
+      facebook_page_id integer NOT NULL REFERENCES facebook_pages(id) ON DELETE CASCADE,
+      message_id       text NOT NULL UNIQUE,
+      sender_id        text NOT NULL,
+      sender_name      text,
+      message_text     text NOT NULL,
+      received_at      timestamptz NOT NULL,
+      is_replied       boolean NOT NULL DEFAULT false,
+      reply_text       text,
+      replied_at       timestamptz,
+      reply_type       text,
+      rule_id          integer,
+      error            text,
+      created_at       timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS facebook_auto_reply_rules (
+      id               serial PRIMARY KEY,
+      facebook_page_id integer NOT NULL REFERENCES facebook_pages(id) ON DELETE CASCADE,
+      rule_name        text NOT NULL,
+      trigger_type     text NOT NULL DEFAULT 'all',
+      trigger_keywords text,
+      reply_mode       text NOT NULL DEFAULT 'template',
+      reply_template   text,
+      ai_instructions  text,
+      priority         integer NOT NULL DEFAULT 0,
+      is_active        boolean NOT NULL DEFAULT true,
+      created_at       timestamptz NOT NULL DEFAULT now(),
+      updated_at       timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
   logger.info("Migrations applied");
 }
 
