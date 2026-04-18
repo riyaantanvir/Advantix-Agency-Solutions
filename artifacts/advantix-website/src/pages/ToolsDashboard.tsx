@@ -43,6 +43,7 @@ interface AssistantStats {
 interface FavoriteItem { image_id: number; url: string; caption: string | null; page_slug: string; folder_name: string; }
 
 const TOOLS = [
+  { label: "Advantix Assistant", desc: "AI coding & task agent", icon: Bot, color: "text-emerald-400", bg: "bg-emerald-500/10", border: "hover:border-emerald-500/40 hover:bg-emerald-500/5", href: "/tools/assistant", external: false },
   { label: "Advantix AI", desc: "GPT, Claude, Gemini", icon: Sparkles, color: "text-violet-400", bg: "bg-violet-500/10", border: "hover:border-violet-500/40 hover:bg-violet-500/5", href: "/ai/", external: true },
   { label: "Facebook Auto-Reply", desc: "Auto-reply comments & DMs", icon: Facebook, color: "text-blue-400", bg: "bg-blue-500/10", border: "hover:border-blue-500/40 hover:bg-blue-500/5", href: "/tools/facebook", external: false },
   { label: "URL Shortener", desc: "Create & manage short links", icon: Link2, color: "text-indigo-400", bg: "bg-indigo-500/10", border: "hover:border-indigo-500/40 hover:bg-indigo-500/5", href: "/tools/url-shortener", external: false },
@@ -244,7 +245,7 @@ export default function ToolsDashboard() {
           <motion.div {...fade(0.12)} className="sm:col-span-2 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="font-bold text-base flex items-center gap-2">
-                <Bot className="w-4 h-4 text-emerald-400" /> Assistant Uses
+                <Bot className="w-4 h-4 text-emerald-400" /> Advantix Assistant
               </h2>
               <Link href="/tools/assistant">
                 <button className="text-xs text-emerald-400 hover:underline flex items-center gap-1">
@@ -253,7 +254,7 @@ export default function ToolsDashboard() {
               </Link>
             </div>
 
-            <div className="rounded-xl border border-border/50 bg-card p-4 flex flex-col justify-between min-h-[160px] gap-3">
+            <div className="rounded-xl border border-emerald-500/20 bg-card p-4 flex flex-col justify-between min-h-[160px] gap-3">
               {loadingAssistant ? (
                 <div className="space-y-2 animate-pulse flex-1">
                   <div className="h-7 w-28 bg-muted/40 rounded" />
@@ -287,21 +288,19 @@ export default function ToolsDashboard() {
                   )}
                 </div>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center py-3">
-                  <Bot className="w-8 h-8 text-muted-foreground/20" />
-                  <p className="text-xs text-muted-foreground">No assistant usage yet</p>
-                  <Link href="/tools/assistant">
-                    <button className="text-xs text-emerald-400 hover:underline">Try the Assistant →</button>
-                  </Link>
+                <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center py-2">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                    <Bot className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">Coding, Flutter, tasks — সব কিছু করুন</p>
                 </div>
               )}
 
-              <button
-                onClick={openChat}
-                className="w-full flex items-center justify-center gap-2 text-xs text-muted-foreground hover:text-foreground border border-border/50 rounded-lg py-2 hover:border-border transition-colors"
-              >
-                <MessageSquare className="w-3.5 h-3.5" /> Chat with Support
-              </button>
+              <Link href="/tools/assistant">
+                <button className="w-full flex items-center justify-center gap-2 text-sm font-semibold text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 rounded-lg py-2.5 transition-colors">
+                  <Bot className="w-4 h-4" /> Open Assistant
+                </button>
+              </Link>
             </div>
           </motion.div>
         </div>
