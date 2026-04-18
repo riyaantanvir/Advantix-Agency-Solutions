@@ -158,8 +158,6 @@ const sections = [
 ];
 
 export default function PrivacyPolicy() {
-  const lastUpdated = "April 18, 2025";
-
   return (
     <div className="min-h-screen bg-background pt-28 pb-24">
       <SEO
@@ -186,10 +184,6 @@ export default function PrivacyPolicy() {
             At Advantix Digital, your privacy matters. This policy explains what information we collect,
             how we use it, and how we protect it.
           </p>
-          <div className="mt-6 inline-flex items-center gap-2 text-sm text-muted-foreground bg-muted/40 rounded-full px-4 py-2">
-            <RefreshCw className="w-3.5 h-3.5" />
-            Last updated: {lastUpdated}
-          </div>
         </motion.div>
 
         {/* Applies To Banner */}
