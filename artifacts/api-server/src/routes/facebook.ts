@@ -40,7 +40,7 @@ async function getVerifyToken(): Promise<string> {
 
 /* ── Admin: GET/PUT Facebook App Settings ───────────────────────────────── */
 router.get("/admin/facebook/settings", requireAdmin, async (_req: Request, res: Response) => {
-  const keys = ["FACEBOOK_APP_ID", "FACEBOOK_APP_SECRET", "FACEBOOK_WEBHOOK_VERIFY_TOKEN"];
+  const keys = ["FACEBOOK_APP_ID", "FACEBOOK_APP_SECRET", "FACEBOOK_WEBHOOK_VERIFY_TOKEN", "FACEBOOK_WEBHOOK_BASE_URL"];
   const result: Record<string, string> = {};
   for (const k of keys) {
     const [row] = await db.select().from(integrationsTable).where(eq(integrationsTable.name, k));
@@ -52,7 +52,7 @@ router.get("/admin/facebook/settings", requireAdmin, async (_req: Request, res: 
 });
 
 router.put("/admin/facebook/settings", requireAdmin, async (req: Request, res: Response) => {
-  const allowed = ["FACEBOOK_APP_ID", "FACEBOOK_APP_SECRET", "FACEBOOK_WEBHOOK_VERIFY_TOKEN"];
+  const allowed = ["FACEBOOK_APP_ID", "FACEBOOK_APP_SECRET", "FACEBOOK_WEBHOOK_VERIFY_TOKEN", "FACEBOOK_WEBHOOK_BASE_URL"];
   const body = req.body as Record<string, string>;
   for (const key of allowed) {
     if (body[key] === undefined) continue;
@@ -74,8 +74,10 @@ router.put("/admin/facebook/settings", requireAdmin, async (req: Request, res: R
   res.json({ success: true });
 });
 
-function getWebhookBase(): string {
-  return process.env.FACEBOOK_WEBHOOK_BASE_URL
+async function getWebhookBase(): Promise<string> {
+  const fromDb = await getDbKey("FACEBOOK_WEBHOOK_BASE_URL");
+  return fromDb
+    ?? process.env.FACEBOOK_WEBHOOK_BASE_URL
     ?? `https://${process.env.REPLIT_DEV_DOMAIN ?? "localhost"}`;
 }
 
@@ -253,7 +255,7 @@ router.post("/facebook/webhook", async (req: Request, res: Response) => {
 router.get("/facebook/auth-url", requireToolUser, async (req: Request, res: Response) => {
   const appId = await getAppId();
   if (!appId) { res.status(500).json({ error: "FACEBOOK_APP_ID not configured. Go to Admin → Facebook Settings." }); return; }
-  const redirectUri = encodeURIComponent(`${getWebhookBase()}/api/facebook/callback`);
+  const redirectUri = encodeURIComponent(`${await getWebhookBase()}/api/facebook/callback`);
   const scope = "pages_manage_metadata,pages_messaging,pages_read_engagement,pages_show_list";
   const state = Buffer.from(JSON.stringify({ uid: toolUserId(req), ts: Date.now() })).toString("base64");
   const url = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}&response_type=code`;
@@ -272,7 +274,7 @@ router.get("/facebook/callback", async (req: Request, res: Response) => {
 
   const appId = await getAppId();
   const appSecret = await getAppSecret();
-  const redirectUri = `${getWebhookBase()}/api/facebook/callback`;
+  const redirectUri = `${await getWebhookBase()}/api/facebook/callback`;
 
   try {
     /* Exchange code → short-lived token */
@@ -662,7 +664,7 @@ router.post("/facebook/data-deletion", async (req: Request, res: Response) => {
 
 router.get("/facebook/webhook-info", requireToolUser, async (_req: Request, res: Response) => {
   res.json({
-    webhookUrl: `${getWebhookBase()}/api/facebook/webhook`,
+    webhookUrl: `${await getWebhookBase()}/api/facebook/webhook`,
     verifyToken: await getVerifyToken(),
     callbackFields: "messages,messaging_postbacks",
   });

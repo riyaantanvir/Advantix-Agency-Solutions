@@ -17,6 +17,7 @@ interface FbSettings {
   FACEBOOK_APP_ID: string;
   FACEBOOK_APP_SECRET: string;
   FACEBOOK_WEBHOOK_VERIFY_TOKEN: string;
+  FACEBOOK_WEBHOOK_BASE_URL: string;
 }
 
 async function apiFetch(path: string, opts?: RequestInit) {
@@ -41,6 +42,7 @@ export default function FacebookSettings() {
     FACEBOOK_APP_ID: "",
     FACEBOOK_APP_SECRET: "",
     FACEBOOK_WEBHOOK_VERIFY_TOKEN: "",
+    FACEBOOK_WEBHOOK_BASE_URL: "",
   });
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
 
@@ -184,6 +186,22 @@ export default function FacebookSettings() {
               </div>
               <p className="text-xs text-muted-foreground">
                 Default: <code className="bg-muted/40 px-1 rounded">advantix_fb_verify_2025</code> — Facebook Webhook setup-এ এটা paste করো।
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                <ExternalLink className="w-3 h-3" />
+                App Base URL (Production Domain)
+              </Label>
+              <Input
+                placeholder="https://advantix.digital"
+                value={form.FACEBOOK_WEBHOOK_BASE_URL}
+                onChange={e => set("FACEBOOK_WEBHOOK_BASE_URL", e.target.value)}
+                className={dirty.FACEBOOK_WEBHOOK_BASE_URL ? "border-blue-500/50" : ""}
+              />
+              <p className="text-xs text-muted-foreground">
+                OAuth callback এবং webhook URL এই domain দিয়ে তৈরি হবে। Default: <code className="bg-muted/40 px-1 rounded">https://advantix.digital</code>
               </p>
             </div>
 

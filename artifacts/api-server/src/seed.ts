@@ -985,6 +985,13 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  // Seed Facebook webhook base URL default
+  await db.execute(sql`
+    INSERT INTO integrations (name, label, value, category)
+    VALUES ('FACEBOOK_WEBHOOK_BASE_URL', 'App Base URL', 'https://advantix.digital', 'Facebook')
+    ON CONFLICT (name) DO NOTHING
+  `);
+
   logger.info("Migrations applied");
 }
 
