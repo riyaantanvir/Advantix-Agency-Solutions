@@ -1050,6 +1050,13 @@ export async function seedAdmin(): Promise<void> {
     await db.update(adminsTable).set({ passwordHash, isSuperAdmin: true }).where(eq(adminsTable.username, username));
     logger.info({ username }, "Admin password synced from ADMIN_PASSWORD env var");
   }
+
+  /* Ensure admin tool_users row (id=1) always exists — required for assistant/tools FK */
+  await db.execute(sql`
+    INSERT INTO tool_users (id, name, email, email_verified)
+    VALUES (1, 'Admin', 'admin@advantix.digital', true)
+    ON CONFLICT (id) DO NOTHING
+  `);
 }
 
 const initialServices = [
