@@ -4,8 +4,8 @@ import { Link } from "wouter";
 import { motion } from "framer-motion";
 import {
   Facebook, Plus, Trash2, CheckCircle2, XCircle, RefreshCw,
-  MessageCircle, BarChart2, Settings2, Webhook, Loader2, ExternalLink,
-  Zap, Brain, ChevronRight, AlertCircle, LogIn, Copy, Check,
+  MessageCircle, BarChart2, Settings2, Loader2, ExternalLink,
+  Zap, Brain, ChevronRight, AlertCircle, LogIn,
   ToggleLeft, ToggleRight, ArrowLeft, Eye, EyeOff,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 const API = "/api";
 const expo = [0.16, 1, 0.3, 1] as const;
 
-type Tab = "pages" | "rules" | "messages" | "stats" | "webhook";
+type Tab = "pages" | "rules" | "messages" | "stats";
 
 interface FbPage {
   id: number;
@@ -86,7 +86,6 @@ export default function FacebookManager() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("pages");
   const [selectedPageId, setSelectedPageId] = useState<number | null>(null);
-  const [copiedWebhook, setCopiedWebhook] = useState(false);
 
   const { data: pages = [], isLoading: loadingPages } = useQuery<FbPage[]>({
     queryKey: ["fb-pages"],
@@ -112,11 +111,6 @@ export default function FacebookManager() {
     enabled: !!user && tab === "messages",
   });
 
-  const { data: webhookInfo } = useQuery({
-    queryKey: ["fb-webhook-info"],
-    queryFn: () => apiFetch("/facebook/webhook-info"),
-    enabled: !!user && tab === "webhook",
-  });
 
   const disconnectPage = useMutation({
     mutationFn: (id: number) => apiFetch(`/facebook/pages/${id}`, { method: "DELETE" }),
@@ -157,13 +151,6 @@ export default function FacebookManager() {
       .catch((e) => toast({ title: "Error", description: e.message, variant: "destructive" }));
   }, [toast]);
 
-  const copyWebhook = (url: string) => {
-    navigator.clipboard.writeText(url).then(() => {
-      setCopiedWebhook(true);
-      setTimeout(() => setCopiedWebhook(false), 2000);
-    });
-  };
-
   if (!user) {
     return (
       <div className="pt-28 pb-24 min-h-screen bg-background">
@@ -184,7 +171,6 @@ export default function FacebookManager() {
     { id: "rules",   label: "Rules",    icon: Zap },
     { id: "messages",label: "Messages", icon: MessageCircle },
     { id: "stats",   label: "Stats",    icon: BarChart2 },
-    { id: "webhook", label: "Webhook",  icon: Webhook },
   ];
 
   return (
@@ -491,82 +477,6 @@ export default function FacebookManager() {
           </motion.div>
         )}
 
-        {/* ── WEBHOOK TAB ─────────────────────────────────────────────────── */}
-        {tab === "webhook" && (
-          <motion.div key="webhook" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: expo }}
-            className="space-y-6">
-            <h2 className="font-semibold">Webhook Configuration</h2>
-
-            <Card className="p-5 border-border/40 space-y-4">
-              <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
-                  <Webhook className="w-4 h-4 text-blue-400" />
-                </div>
-                <div>
-                  <p className="font-semibold text-sm">Facebook Webhook URL</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Add this URL in your Facebook App's Messenger/Webhooks settings.</p>
-                </div>
-              </div>
-
-              {webhookInfo ? (
-                <>
-                  <div>
-                    <Label className="text-xs text-muted-foreground mb-1.5 block">Webhook Callback URL</Label>
-                    <div className="flex items-center gap-2">
-                      <Input value={webhookInfo.webhookUrl} readOnly className="text-xs font-mono bg-muted/30" />
-                      <Button size="icon" variant="outline" onClick={() => copyWebhook(webhookInfo.webhookUrl)} className="shrink-0">
-                        {copiedWebhook ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      </Button>
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground mb-1.5 block">Verify Token</Label>
-                    <Input value={webhookInfo.verifyToken} readOnly className="text-xs font-mono bg-muted/30" />
-                  </div>
-                  <div>
-                    <Label className="text-xs text-muted-foreground mb-1.5 block">Subscribe to these fields</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {(webhookInfo.subscribeFields ?? ["messages", "messaging_postbacks", "feed"]).map((f: string) => (
-                        <Badge key={f} variant="outline" className="text-xs">{f}</Badge>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center justify-center h-20">
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                </div>
-              )}
-            </Card>
-
-            <Card className="p-5 border-border/40 space-y-3">
-              <p className="font-semibold text-sm flex items-center gap-2">
-                <Settings2 className="w-4 h-4 text-muted-foreground" />
-                Setup Instructions
-              </p>
-              {[
-                "Go to developers.facebook.com and create (or open) your app.",
-                "Add the \"Messenger\" or \"Facebook Login\" product.",
-                "In Webhooks settings, add the Callback URL above and paste the Verify Token.",
-                "Subscribe to: messages, messaging_postbacks, feed.",
-                "Connect your Facebook Page using the \"Pages\" tab above.",
-                "Create auto-reply rules in the \"Rules\" tab.",
-              ].map((step, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <span className="w-5 h-5 rounded-full bg-blue-500/15 text-blue-400 text-xs flex items-center justify-center shrink-0 font-bold mt-0.5">
-                    {i + 1}
-                  </span>
-                  <p className="text-sm text-muted-foreground">{step}</p>
-                </div>
-              ))}
-              <a href="https://developers.facebook.com" target="_blank" rel="noreferrer">
-                <Button variant="outline" size="sm" className="mt-2">
-                  <ExternalLink className="w-3.5 h-3.5 mr-1.5" />Open Facebook Developers
-                </Button>
-              </a>
-            </Card>
-          </motion.div>
-        )}
       </div>
     </div>
   );
