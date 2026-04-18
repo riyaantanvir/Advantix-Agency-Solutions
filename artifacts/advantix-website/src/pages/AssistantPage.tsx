@@ -6,7 +6,7 @@ import {
   FolderOpen, FileText, Edit3, Monitor, Zap, AlertTriangle, Info,
   Bot, User, Settings, X, Shield, Clock, Calendar, MessageSquare,
   Wrench, BarChart3, Activity, Sparkles, ChevronLeft, PenSquare, Menu,
-  Paperclip,
+  Paperclip, Link, List,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -92,18 +92,22 @@ function getToolStatus(tool: string, input: Record<string, unknown>): string {
   if (tool === "read_file")   return `Reading ${String(input.path ?? "")}`;
   if (tool === "write_file")  return `Writing ${String(input.path ?? "")}`;
   if (tool === "list_directory") return `Listing ${String(input.path ?? ".")}`;
-  if (tool === "open_vscode") return `Opening VS Code`;
-  if (tool === "get_cwd")     return `Getting system info`;
+  if (tool === "open_vscode")       return `Opening VS Code`;
+  if (tool === "get_cwd")           return `Getting system info`;
+  if (tool === "create_short_link") return `Shortening ${String(input.url ?? "").slice(0, 50)}`;
+  if (tool === "list_short_links")  return `Loading short links…`;
   return tool;
 }
 
 const TOOL_META: Record<string, { icon: React.ComponentType<{ className?: string }>; label: string; color: string }> = {
-  run_command:    { icon: Terminal,  label: "Run Command",    color: "text-green-400" },
-  read_file:      { icon: FileText,  label: "Read File",      color: "text-blue-400" },
-  write_file:     { icon: Edit3,     label: "Write File",     color: "text-amber-400" },
-  list_directory: { icon: FolderOpen,label: "List Directory", color: "text-cyan-400" },
-  open_vscode:    { icon: Monitor,   label: "Open VS Code",   color: "text-purple-400" },
-  get_cwd:        { icon: Info,      label: "Get System Info",color: "text-slate-400" },
+  run_command:       { icon: Terminal,  label: "Run Command",    color: "text-green-400" },
+  read_file:         { icon: FileText,  label: "Read File",      color: "text-blue-400" },
+  write_file:        { icon: Edit3,     label: "Write File",     color: "text-amber-400" },
+  list_directory:    { icon: FolderOpen,label: "List Directory", color: "text-cyan-400" },
+  open_vscode:       { icon: Monitor,   label: "Open VS Code",   color: "text-purple-400" },
+  get_cwd:           { icon: Info,      label: "Get System Info",color: "text-slate-400" },
+  create_short_link: { icon: Link,      label: "Create Short Link", color: "text-pink-400" },
+  list_short_links:  { icon: List,      label: "List Short Links",  color: "text-pink-300" },
 };
 
 function ToolCard({ tool }: { tool: ToolExecution }) {

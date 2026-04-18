@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { createHash, randomBytes } from "crypto";
-import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { db, shortUrlsTable } from "@workspace/db";
+import { sql, eq, desc } from "drizzle-orm";
 import { requireToolUser } from "../middleware/toolAuth.js";
 import { requireAdmin } from "../middleware/auth.js";
 import { getAgentScript } from "../lib/agentScript.js";
@@ -330,6 +330,28 @@ const TOOLS_DEF = [
   },
 ];
 
+/* ── Platform tools — server-side, no local agent needed ──────────────── */
+const PLATFORM_TOOLS_DEF = [
+  {
+    name: "create_short_link",
+    description: "Create a short URL using Advantix URL shortener. Returns the short link. Use when the user asks to shorten a URL or create a short link.",
+    input_schema: {
+      type: "object",
+      properties: {
+        url:   { type: "string", description: "The long URL to shorten" },
+        title: { type: "string", description: "Optional title/label for the link" },
+        slug:  { type: "string", description: "Optional custom alias (e.g. 'my-link'). Leave empty for auto-generated." },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "list_short_links",
+    description: "List the user's recent short links from Advantix URL shortener.",
+    input_schema: { type: "object", properties: {} },
+  },
+];
+
 async function getApiKey(name: string): Promise<string | null> {
   try {
     const r = await db.execute(sql`SELECT value FROM integrations WHERE name = ${name} LIMIT 1`);
@@ -582,6 +604,13 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       type: "function" as const,
       function: { name: t.name, description: t.description, parameters: t.input_schema },
     }));
+    const PLATFORM_TOOLS_OPENAI = PLATFORM_TOOLS_DEF.map(t => ({
+      type: "function" as const,
+      function: { name: t.name, description: t.description, parameters: t.input_schema },
+    }));
+    /* All tools to send: platform tools always + agent tools when connected */
+    const allToolsOpenAI = [...PLATFORM_TOOLS_OPENAI, ...(agentConnected ? TOOLS_DEF_OPENAI : [])];
+    const allToolsAnthropic = [...PLATFORM_TOOLS_DEF, ...(agentConnected ? TOOLS_DEF : [])];
 
     /* ── Unified AI response type ── */
     type AIResponse = {
@@ -638,9 +667,10 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
         if (provider === "anthropic") {
           /* Use prompt caching — system prompt + tools are cached after first call.
              Cached input tokens are billed at 10% of normal rate → big cost saving. */
-          const cachedTools = agentConnected ? [
-            ...TOOLS_DEF.slice(0, -1),
-            { ...TOOLS_DEF[TOOLS_DEF.length - 1], cache_control: { type: "ephemeral" } },
+          /* Add cache_control to last tool so entire tool list is cached */
+          const cachedTools = allToolsAnthropic.length > 0 ? [
+            ...allToolsAnthropic.slice(0, -1),
+            { ...allToolsAnthropic[allToolsAnthropic.length - 1], cache_control: { type: "ephemeral" } },
           ] : [];
           response = await fetch(PROVIDER_URLS.anthropic, {
             method: "POST",
@@ -667,7 +697,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
             body: JSON.stringify({
               model, max_tokens: maxTokens,
               messages: [{ role: "system", content: SYSTEM_PROMPT }, ...oaiMsgs],
-              ...(agentConnected ? { tools: TOOLS_DEF_OPENAI } : {}),
+              tools: allToolsOpenAI,
             }),
           });
         }
@@ -719,7 +749,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
 
     /* ══ Agentic loop ══════════════════════════════════════════════════════ */
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const hasTools = agentConnected && TOOLS_DEF.length > 0;
+      const hasTools = true; /* platform tools always available */
       const { text, toolCalls, stopReason, usage } = await callAI(
         round === 0 ? messages : sessionMessages,
         hasTools && round < MAX_TOOL_ROUNDS - 1,
@@ -767,11 +797,51 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
 
         sse(res, { type: "tool_start", id: toolId, tool: toolName, input: toolInput });
 
+        /* ── Platform tools — handled server-side, no agent needed ── */
         let result: ToolResult;
-        try {
-          result = await sendToolCall(uid, toolId, toolName, toolInput, 60_000);
-        } catch (err) {
-          result = { id: toolId, stdout: "", stderr: String(err), exitCode: -1, error: String(err) };
+        if (toolName === "create_short_link") {
+          try {
+            const rawUrl = String(toolInput.url ?? "").trim();
+            const title  = toolInput.title ? String(toolInput.title).trim() : null;
+            const customSlug = toolInput.slug ? String(toolInput.slug).trim().toLowerCase().replace(/[^a-z0-9-_]/g, "-").slice(0, 50) : null;
+            if (!rawUrl) throw new Error("url is required");
+            const normalized = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+            let shortCode = customSlug ?? randomBytes(3).toString("hex");
+            if (customSlug) {
+              const [existing] = await db.select({ id: shortUrlsTable.id }).from(shortUrlsTable).where(eq(shortUrlsTable.shortCode, customSlug)).limit(1);
+              if (existing) throw new Error(`Slug "${customSlug}" is already taken`);
+            }
+            const serverOrigin = process.env.NODE_ENV === "production" ? "https://advantix.digital" : "http://localhost:8080";
+            await db.insert(shortUrlsTable).values({
+              userId: uid, shortCode, originalUrl: normalized, title, clicks: 0,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any);
+            const shortLink = `${serverOrigin}/r/${shortCode}`;
+            result = { id: toolId, stdout: `Short link created!\nShort URL: ${shortLink}\nOriginal: ${normalized}\nCode: ${shortCode}`, stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "list_short_links") {
+          try {
+            const urls = await db.select({
+              shortCode: shortUrlsTable.shortCode,
+              originalUrl: shortUrlsTable.originalUrl,
+              title: shortUrlsTable.title,
+              clicks: shortUrlsTable.clicks,
+            }).from(shortUrlsTable).where(eq(shortUrlsTable.userId, uid)).orderBy(desc(shortUrlsTable.createdAt)).limit(10);
+            const serverOrigin = process.env.NODE_ENV === "production" ? "https://advantix.digital" : "http://localhost:8080";
+            const lines = urls.map(u => `• ${serverOrigin}/r/${u.shortCode} → ${u.originalUrl}${u.title ? ` (${u.title})` : ""} [${u.clicks} clicks]`);
+            result = { id: toolId, stdout: urls.length ? lines.join("\n") : "No short links yet.", stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else {
+          /* Agent tools — forward to local machine */
+          try {
+            result = await sendToolCall(uid, toolId, toolName, toolInput, 60_000);
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: -1, error: String(err) };
+          }
         }
 
         const rawOutput = result.error
