@@ -149,7 +149,11 @@ export default function FacebookManager() {
 
   const startOAuth = useCallback(() => {
     apiFetch("/facebook/auth-url")
-      .then((d) => { window.location.href = d.authUrl; })
+      .then((d) => {
+        const target = d.url ?? d.authUrl;
+        if (!target) throw new Error("Facebook App ID is not configured. Ask your admin to add it in Admin → Integrations.");
+        window.location.href = target;
+      })
       .catch((e) => toast({ title: "Error", description: e.message, variant: "destructive" }));
   }, [toast]);
 
