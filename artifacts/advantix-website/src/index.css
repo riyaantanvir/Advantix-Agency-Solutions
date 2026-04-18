@@ -118,13 +118,41 @@
     @apply border-border;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
     @apply font-bold tracking-tight text-foreground;
+  }
+
+  /* Thin, clean scrollbar */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(220 15% 22%);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(220 15% 30%);
+  }
+
+  /* Smooth transitions for interactive elements */
+  a, button {
+    @apply transition-colors duration-200;
   }
 }
 

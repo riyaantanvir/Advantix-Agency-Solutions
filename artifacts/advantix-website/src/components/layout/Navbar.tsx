@@ -83,7 +83,7 @@ export function Navbar() {
           </Link>
 
           {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-6">
+          <nav className="hidden md:flex items-center gap-5">
             {navLinks.map((link) => {
               const isActive = link.href === "/tools"
                 ? location.startsWith("/tools")
@@ -93,7 +93,7 @@ export function Navbar() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`relative flex items-center gap-1 text-sm font-medium transition-colors duration-200 hover:text-primary ${
+                  className={`relative flex items-center gap-1 text-sm font-medium hover:text-primary ${
                     isActive ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
@@ -110,74 +110,51 @@ export function Navbar() {
               );
             })}
 
-            {/* Conditional: admin / logged-in user / login button */}
+            {/* Divider */}
+            <div className="w-px h-4 bg-border/60" />
+
+            {/* Auth actions */}
             {isAdminLoggedIn ? (
-              <div className="flex items-center gap-2">
-                <a
-                  href="/tools/dashboard"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-semibold transition-colors duration-200 hover:text-primary hover:bg-primary/5 text-muted-foreground"
-                >
-                  <LayoutDashboard className="w-4 h-4" />
-                  Tools Dashboard
+              <div className="flex items-center gap-1">
+                <a href="/tools/dashboard" target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-primary hover:bg-primary/5">
+                  <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
                 </a>
-                <a href="/admin/" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-semibold text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors duration-200">
-                  <Shield className="w-4 h-4" />
-                  Admin Panel
+                <a href="/admin/"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-amber-400 hover:text-amber-300 hover:bg-amber-500/10">
+                  <Shield className="w-3.5 h-3.5" /> Admin
                 </a>
               </div>
             ) : user ? (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <Link href="/tools/dashboard">
-                  <div className={`relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-sm font-semibold transition-colors duration-200 hover:text-primary hover:bg-primary/5 ${location === "/tools/dashboard" ? "text-primary bg-primary/5" : "text-muted-foreground"}`}>
-                    <LayoutDashboard className="w-4 h-4" />
-                    Dashboard
-                    {location === "/tools/dashboard" && (
-                      <motion.span
-                        layoutId="nav-underline"
-                        className="absolute -bottom-1 left-2 right-2 h-0.5 bg-primary rounded-full"
-                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                      />
-                    )}
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium hover:text-primary hover:bg-primary/5 ${location === "/tools/dashboard" ? "text-primary bg-primary/5" : "text-muted-foreground"}`}>
+                    <LayoutDashboard className="w-3.5 h-3.5" /> Dashboard
                   </div>
                 </Link>
-                <button
-                  onClick={logout}
-                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
-                  title={`Sign out (${user.name})`}
-                >
-                  <LogOut className="w-4 h-4" />
+                <button onClick={logout} title={`Sign out (${user.name})`}
+                  className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/40">
+                  <LogOut className="w-3.5 h-3.5" />
                 </button>
               </div>
             ) : (
-              <Button variant="ghost" size="sm" className="font-semibold gap-1.5 text-muted-foreground hover:text-foreground"
+              <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground hover:text-foreground h-8 px-3 text-sm"
                 onClick={() => setLoginOpen(true)}>
-                <LogIn className="w-4 h-4" /> Login
+                <LogIn className="w-3.5 h-3.5" /> Login
               </Button>
             )}
 
-            {/* Report Bugs */}
-            <button
-              onClick={() => setBugReportOpen(true)}
-              className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-red-400 transition-colors duration-200"
-              title="Report a Bug"
-            >
+            {/* Report Bug — icon only */}
+            <button onClick={() => setBugReportOpen(true)} title="Report a Bug"
+              className="p-1.5 rounded-lg text-muted-foreground/50 hover:text-red-400 hover:bg-red-400/10">
               <Bug className="w-3.5 h-3.5" />
-              Report Bug
             </button>
 
             {!user && !isAdmin && (
               <Link href="/contact">
-                <motion.div
-                  whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.97 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                >
-                  <Button size="sm" className="font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-md shadow-primary/20">
-                    Get Started
-                  </Button>
-                </motion.div>
+                <Button size="sm" className="h-8 px-4 text-sm font-semibold bg-primary hover:bg-primary/90 shadow-sm shadow-primary/20">
+                  Get Started
+                </Button>
               </Link>
             )}
           </nav>
