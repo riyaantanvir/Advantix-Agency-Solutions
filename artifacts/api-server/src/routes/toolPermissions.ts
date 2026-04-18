@@ -13,6 +13,7 @@ export const ALL_TOOLS = [
   { slug: "advantix-ai",              name: "Advantix AI",                description: "Multi-model AI chat assistant" },
   { slug: "advantix-assistant",       name: "Advantix Assistant",         description: "AI agent that controls your local machine" },
   { slug: "social-media-manager",     name: "Social Media Manager",       description: "Schedule and manage social media posts" },
+  { slug: "facebook-auto-reply",      name: "Facebook Auto-Reply",        description: "Auto-reply to Facebook comments and DMs" },
 ];
 
 export const ALL_TOOL_SLUGS = ALL_TOOLS.map(t => t.slug);

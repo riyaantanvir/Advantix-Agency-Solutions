@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link, useLocation } from "wouter";
-import { Link2, BarChart2, Copy, CheckCircle, MessageSquare, ArrowRight, LogOut, Settings, Plus, Zap, Video, Clock, Sparkles, Brain, Heart, Headphones } from "lucide-react";
+import { Link2, BarChart2, Copy, CheckCircle, MessageSquare, ArrowRight, LogOut, Settings, Plus, Zap, Video, Clock, Sparkles, Brain, Heart, Headphones, Facebook } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toolsApi, type ShortUrl } from "@/lib/toolsApi";
@@ -331,6 +331,21 @@ export default function ToolsDashboard() {
                 </div>
               </Card>
             </a>
+
+            <Link href="/tools/facebook">
+              <Card className="p-4 border-border/40 bg-card hover:border-blue-500/30 hover:bg-blue-500/5 transition-all cursor-pointer group">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
+                    <Facebook className="w-5 h-5 text-blue-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold">Facebook Auto-Reply</p>
+                    <p className="text-xs text-muted-foreground">Auto-reply comments & DMs</p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-blue-400 transition-colors" />
+                </div>
+              </Card>
+            </Link>
 
             <Link href="/tools/url-shortener">
               <Card className="p-4 border-border/40 bg-card hover:border-primary/30 hover:bg-primary/5 transition-all cursor-pointer group">
