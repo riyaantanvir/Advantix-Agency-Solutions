@@ -409,7 +409,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     const historyRows = await db.execute(sql`
       SELECT role, content, tool_name, tool_input, tool_result
       FROM agent_messages WHERE user_id = ${uid} AND conversation_id = ${convId}
-      ORDER BY created_at DESC LIMIT 11
+      ORDER BY created_at DESC LIMIT 8
     `);
     /* Reverse so oldest-first */
     (historyRows.rows as unknown[]).reverse();
@@ -435,7 +435,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
         const last = flat[flat.length - 1];
         const lastIsToolResultBatch = last?.role === "user" && Array.isArray(last.content) &&
           (last.content as Block[]).some(b => b.type === "tool_result");
-        const HIST_MAX = 800;
+        const HIST_MAX = 400;
         const resultContent = (r.tool_result ?? "").length > HIST_MAX
           ? (r.tool_result ?? "").slice(0, HIST_MAX) + "\n...(truncated)"
           : (r.tool_result ?? "");
@@ -620,12 +620,12 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let totalToolCalls = 0;
-    const MAX_TOOL_ROUNDS = 8;
-    const SYSTEM_PROMPT = `You are Advantix Assistant — an AI agent that controls the user's machine via tools. Be concise. ${sysContext}`;
+    const MAX_TOOL_ROUNDS = 5;
+    const SYSTEM_PROMPT = `You are Advantix Assistant — an AI agent that controls the user's machine via tools. Be concise and efficient. Only call tools when necessary. ${sysContext}`;
 
     /* ── callAI — unified multi-provider call with unlimited rate-limit retry ── */
     const callAI = async (msgs: InternalMsg[], isToolRound = false): Promise<AIResponse> => {
-      const maxTokens = isToolRound ? 1024 : 4096;
+      const maxTokens = isToolRound ? 768 : 2048;
       const WAIT_STEPS = [10, 20, 30, 60];
       let attempt = 0;
 
@@ -633,13 +633,24 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
         let response: Response;
 
         if (provider === "anthropic") {
+          /* Use prompt caching — system prompt + tools are cached after first call.
+             Cached input tokens are billed at 10% of normal rate → big cost saving. */
+          const cachedTools = agentConnected ? [
+            ...TOOLS_DEF.slice(0, -1),
+            { ...TOOLS_DEF[TOOLS_DEF.length - 1], cache_control: { type: "ephemeral" } },
+          ] : [];
           response = await fetch(PROVIDER_URLS.anthropic, {
             method: "POST",
-            headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+            headers: {
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+              "anthropic-beta": "prompt-caching-2024-07-31",
+              "content-type": "application/json",
+            },
             body: JSON.stringify({
               model, max_tokens: maxTokens,
-              system: SYSTEM_PROMPT,
-              tools: agentConnected ? TOOLS_DEF : [],
+              system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+              tools: cachedTools,
               messages: msgs,
             }),
           });
@@ -764,7 +775,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
           ? `ERROR: ${result.error}`
           : [result.stdout, result.stderr ? `STDERR: ${result.stderr}` : ""].filter(Boolean).join("\n");
 
-        const MAX_OUTPUT = 1500;
+        const MAX_OUTPUT = 1000;
         const toolOutput = rawOutput.length > MAX_OUTPUT
           ? rawOutput.slice(0, MAX_OUTPUT) + `\n...(truncated — ${rawOutput.length - MAX_OUTPUT} chars omitted)`
           : rawOutput;
