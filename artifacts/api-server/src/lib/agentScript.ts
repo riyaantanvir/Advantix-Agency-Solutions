@@ -155,9 +155,15 @@ async function executeTool(tool, input) {
 }
 
 /* ── WebSocket connection ────────────────────────────────────────────────── */
-const RECONNECT_DELAY = 5000;
-let reconnectTimer = null;
-let ws = null;
+const RECONNECT_BASE_MS  = 2_000;   /* start at 2 s */
+const RECONNECT_MAX_MS   = 30_000;  /* cap at 30 s  */
+const CLIENT_PING_MS     = 20_000;  /* client-side keepalive every 20 s */
+
+let reconnectTimer   = null;
+let clientPingTimer  = null;
+let ws               = null;
+let reconnectAttempt = 0;
+let closing          = false;       /* true only on intentional SIGINT close */
 
 const colors = {
   reset: "\\x1b[0m", green: "\\x1b[32m", yellow: "\\x1b[33m",
@@ -170,14 +176,45 @@ function ok(msg)   { console.log(c("green", "✓") + " " + msg); }
 function warn(msg) { console.log(c("yellow", "⚠") + " " + msg); }
 function err(msg)  { console.log(c("red", "✗") + " " + msg); }
 
+function scheduleReconnect() {
+  clearTimeout(reconnectTimer);
+  /* Exponential backoff: 2s, 4s, 8s, 16s … capped at 30s */
+  const delay = Math.min(RECONNECT_BASE_MS * 2 ** reconnectAttempt, RECONNECT_MAX_MS);
+  reconnectAttempt++;
+  warn(\`Reconnecting in \${(delay / 1000).toFixed(0)}s... (attempt \${reconnectAttempt})\`);
+  reconnectTimer = setTimeout(connect, delay);
+}
+
+function stopClientPing() {
+  clearInterval(clientPingTimer);
+  clientPingTimer = null;
+}
+
+function startClientPing() {
+  stopClientPing();
+  clientPingTimer = setInterval(() => {
+    if (ws && ws.readyState === 1) {
+      try { ws.send(JSON.stringify({ type: "ping" })); } catch {}
+    }
+  }, CLIENT_PING_MS);
+}
+
 function connect() {
-  if (ws) { try { ws.close(); } catch {} ws = null; }
+  clearTimeout(reconnectTimer);
+
+  /* Cleanly close the old socket WITHOUT triggering our close handler */
+  if (ws) {
+    const old = ws;
+    ws = null;
+    old.onclose = null;   /* detach handler before closing */
+    try { old.close(); } catch {}
+  }
 
   log(\`Connecting to \${c("cyan", SERVER)} ...\`);
   ws = new WebSocket(WS_URL);
 
   ws.addEventListener("open", async () => {
-    clearTimeout(reconnectTimer);
+    reconnectAttempt = 0;   /* reset backoff on successful connect */
     ok(c("bold", "Connected to Advantix!"));
     const info = await getSystemInfo();
     ws.send(JSON.stringify({ type: "ready", info }));
@@ -186,13 +223,15 @@ function connect() {
     else { warn("VS Code not found in PATH — open_vscode will not work"); }
     console.log("\\n" + c("bold", "Advantix Assistant is ready!") + " Chat at: " + c("cyan", SERVER + "/tools/assistant"));
     console.log(c("dim", "Press Ctrl+C to stop.\\n"));
+    startClientPing();   /* begin client-side keepalive */
   });
 
   ws.addEventListener("message", async ({ data }) => {
     let msg;
     try { msg = JSON.parse(data); } catch { return; }
 
-    if (msg.type === "ping") { ws.send(JSON.stringify({ type: "pong" })); return; }
+    if (msg.type === "ping") { try { ws.send(JSON.stringify({ type: "pong" })); } catch {} return; }
+    if (msg.type === "pong") { return; }   /* server ack of our client ping */
     if (msg.type === "authenticated") { return; }
 
     if (msg.type === "tool_call") {
@@ -209,15 +248,17 @@ function connect() {
     }
   });
 
-  ws.addEventListener("close", ({ code, reason }) => {
+  ws.addEventListener("close", ({ code }) => {
+    stopClientPing();
+    if (closing) return;                             /* SIGINT — do not reconnect */
     if (code === 4003) { err("Invalid API key. Get a new key from Advantix Assistant settings."); process.exit(1); }
     if (code === 4001) { err("API key is missing. Run with --key YOUR_KEY"); process.exit(1); }
-    warn(\`Disconnected (code \${code}). Reconnecting in \${RECONNECT_DELAY / 1000}s...\`);
-    reconnectTimer = setTimeout(connect, RECONNECT_DELAY);
+    scheduleReconnect();
   });
 
-  ws.addEventListener("error", () => {
-    warn("Connection error. Will retry...");
+  ws.addEventListener("error", (e) => {
+    warn(\`Connection error\${e?.message ? ": " + e.message : ""}. Will retry...\`);
+    /* "close" fires right after "error" — reconnect is handled there */
   });
 }
 
@@ -229,8 +270,10 @@ console.log(c("bold",        "╚═══════════════�
 connect();
 
 process.on("SIGINT", () => {
+  closing = true;
+  stopClientPing();
   console.log("\\n" + c("yellow", "Stopping agent..."));
-  if (ws) { try { ws.close(); } catch {} }
+  if (ws) { try { ws.close(1000, "user quit"); } catch {} }
   process.exit(0);
 });
 `;
