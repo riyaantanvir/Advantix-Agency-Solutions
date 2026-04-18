@@ -374,9 +374,16 @@ function SettingsModal({
     a.click();
   };
 
-  const runCmd = newKey
+  const isWindows = navigator.userAgent.toLowerCase().includes("win");
+  const [osTab, setOsTab] = useState<"mac" | "windows">(isWindows ? "windows" : "mac");
+
+  const runCmdMac = newKey
     ? `curl -s "${serverBase}/api/tools/assistant/agent.mjs" -o /tmp/agent.mjs && node /tmp/agent.mjs --key ${newKey} --server ${serverBase}`
     : null;
+  const runCmdWin = newKey
+    ? `curl -s "${serverBase}/api/tools/assistant/agent.mjs" -o "%TEMP%\\agent.mjs" && node "%TEMP%\\agent.mjs" --key ${newKey} --server ${serverBase}`
+    : null;
+  const runCmd = osTab === "windows" ? runCmdWin : runCmdMac;
   const hasKey = !!(keyInfo?.exists || newKey);
 
   if (!open) return null;
@@ -506,7 +513,17 @@ function SettingsModal({
                   </button>
                 </div>
                 <div className="space-y-1.5">
-                  <p className="text-xs text-muted-foreground font-medium">Ready-to-use command:</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground font-medium">Ready-to-use command:</p>
+                    <div className="flex items-center gap-1 bg-black/40 rounded-lg p-0.5">
+                      {(["mac", "windows"] as const).map(tab => (
+                        <button key={tab} onClick={() => setOsTab(tab)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-colors ${osTab === tab ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                          {tab === "mac" ? "Mac/Linux" : "Windows"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="bg-black/50 rounded-lg px-3 py-2.5 border border-border/30 flex items-center gap-2">
                     <code className="text-xs text-green-400 font-mono flex-1 break-all">{runCmd}</code>
                     <button onClick={() => copyText(runCmd, "cmd")} className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
@@ -591,11 +608,23 @@ function SettingsModal({
 
                 {/* Step-by-step run instructions */}
                 <div className="space-y-2">
-                  <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Run command</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Run command</p>
+                    <div className="flex items-center gap-1 bg-black/40 rounded-lg p-0.5">
+                      {(["mac", "windows"] as const).map(tab => (
+                        <button key={tab} onClick={() => setOsTab(tab)}
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-semibold transition-colors ${osTab === tab ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                          {tab === "mac" ? "Mac/Linux" : "Windows"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
                   {runCmd ? (
                     <div className="bg-black/60 rounded-lg p-3 border border-border/30 space-y-2">
-                      <p className="text-[10px] text-muted-foreground">Open your terminal and paste this — it works from anywhere:</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {osTab === "windows" ? "Open Command Prompt (cmd) and paste:" : "Open your terminal and paste:"}
+                      </p>
                       <div className="flex items-start gap-2">
                         <code className="text-xs text-green-400 font-mono break-all flex-1">{runCmd}</code>
                         <button
