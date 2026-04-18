@@ -747,6 +747,12 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       }
     };
 
+    /* Derive the public-facing origin from the incoming request so short links
+       always use the correct domain (Replit dev proxy, DO production, etc.)   */
+    const _proto = req.get("x-forwarded-proto") ?? req.protocol ?? "https";
+    const _host  = req.get("x-forwarded-host")  ?? req.get("host") ?? "localhost:8080";
+    const serverOrigin = `${_proto}://${_host}`;
+
     /* ══ Agentic loop ══════════════════════════════════════════════════════ */
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const hasTools = true; /* platform tools always available */
@@ -811,7 +817,6 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
               const [existing] = await db.select({ id: shortUrlsTable.id }).from(shortUrlsTable).where(eq(shortUrlsTable.shortCode, customSlug)).limit(1);
               if (existing) throw new Error(`Slug "${customSlug}" is already taken`);
             }
-            const serverOrigin = process.env.NODE_ENV === "production" ? "https://advantix.digital" : "http://localhost:8080";
             await db.insert(shortUrlsTable).values({
               userId: uid, shortCode, originalUrl: normalized, title, clicks: 0,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -829,7 +834,6 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
               title: shortUrlsTable.title,
               clicks: shortUrlsTable.clicks,
             }).from(shortUrlsTable).where(eq(shortUrlsTable.userId, uid)).orderBy(desc(shortUrlsTable.createdAt)).limit(10);
-            const serverOrigin = process.env.NODE_ENV === "production" ? "https://advantix.digital" : "http://localhost:8080";
             const lines = urls.map(u => `• ${serverOrigin}/r/${u.shortCode} → ${u.originalUrl}${u.title ? ` (${u.title})` : ""} [${u.clicks} clicks]`);
             result = { id: toolId, stdout: urls.length ? lines.join("\n") : "No short links yet.", stderr: "", exitCode: 0 };
           } catch (err) {
