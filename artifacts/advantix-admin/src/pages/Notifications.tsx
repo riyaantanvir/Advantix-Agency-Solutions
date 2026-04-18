@@ -109,10 +109,13 @@ export default function Notifications() {
   const [loading, setLoading] = useState(true);
   const [botToken, setBotToken] = useState("");
   const [chatId, setChatId] = useState("");
+  const [toolUserId, setToolUserId] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [botRestarting, setBotRestarting] = useState(false);
+  const [botRestartResult, setBotRestartResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
@@ -163,6 +166,24 @@ export default function Notifications() {
       toast({ title: e instanceof Error ? e.message : "Toggle failed", variant: "destructive" });
     } finally {
       setSaving(null);
+    }
+  }
+
+  async function restartBot() {
+    setBotRestarting(true);
+    setBotRestartResult(null);
+    try {
+      const raw = await apiFetch(`/api/admin/notifications/telegram/restart-bot`, { method: "POST" });
+      const result = raw as { ok: boolean; message?: string; error?: string };
+      setBotRestartResult(result);
+      if (result.ok) toast({ title: "Telegram bot started!" });
+      else toast({ title: result.error ?? "Start failed", variant: "destructive" });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Start failed";
+      setBotRestartResult({ ok: false, error: msg });
+      toast({ title: msg, variant: "destructive" });
+    } finally {
+      setBotRestarting(false);
     }
   }
 
@@ -311,6 +332,54 @@ export default function Notifications() {
               <p className="text-xs text-muted-foreground mt-1">
                 Current: <span className="font-mono">{settings["TELEGRAM_CHAT_ID"].value}</span>
               </p>
+            )}
+          </div>
+
+          {/* Tool User ID for AI bot */}
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">AI Bot Tool User ID</label>
+            <p className="text-xs text-muted-foreground mb-2">The Tool User ID whose data (SMM, short links) the Telegram AI bot will use when you chat with it.</p>
+            <div className="flex gap-2">
+              <Input
+                value={toolUserId}
+                onChange={e => setToolUserId(e.target.value)}
+                placeholder={settings["TELEGRAM_TOOL_USER_ID"]?.value || "1"}
+                className="rounded-xl font-mono text-sm flex-1"
+                type="number"
+              />
+              <Button
+                onClick={() => { if (toolUserId.trim()) { saveSetting("TELEGRAM_TOOL_USER_ID", toolUserId.trim()); setToolUserId(""); } }}
+                disabled={!toolUserId.trim() || saving === "TELEGRAM_TOOL_USER_ID"}
+                className="rounded-xl gap-2 shrink-0"
+              >
+                {saving === "TELEGRAM_TOOL_USER_ID" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Save
+              </Button>
+            </div>
+            {settings["TELEGRAM_TOOL_USER_ID"]?.value && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Current: <span className="font-mono">{settings["TELEGRAM_TOOL_USER_ID"].value}</span>
+              </p>
+            )}
+          </div>
+
+          {/* Bot controls */}
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              onClick={restartBot}
+              disabled={botRestarting || !hasConfig}
+              variant="default"
+              className="rounded-xl gap-2"
+            >
+              {botRestarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <BotMessageSquare className="w-4 h-4" />}
+              Start / Restart AI Bot
+            </Button>
+            {botRestartResult && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                className={`text-sm flex items-center gap-1.5 ${botRestartResult.ok ? "text-green-500" : "text-destructive"}`}>
+                {botRestartResult.ok ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                {botRestartResult.ok ? (botRestartResult.message ?? "Bot started!") : botRestartResult.error}
+              </motion.div>
             )}
           </div>
 

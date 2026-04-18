@@ -1079,6 +1079,7 @@ export async function seedServices(): Promise<void> {
 const TELEGRAM_DEFAULTS = [
   { name: "TELEGRAM_BOT_TOKEN",                label: "Telegram Bot Token",               value: "",     category: "Notifications" },
   { name: "TELEGRAM_CHAT_ID",                   label: "Telegram Chat / Group ID",         value: "",     category: "Notifications" },
+  { name: "TELEGRAM_TOOL_USER_ID",              label: "Telegram Bot Tool User ID",        value: "1",    category: "Notifications" },
   { name: "TELEGRAM_NOTIFICATIONS_ENABLED",     label: "Telegram Notifications Enabled",   value: "true", category: "Notifications" },
   { name: "TELEGRAM_NOTIFY_ASSISTANT_REQUEST",  label: "Human Agent Requested",            value: "true", category: "Notifications" },
   { name: "TELEGRAM_NOTIFY_NEW_CONTACT",        label: "New Contact Form",                 value: "true", category: "Notifications" },

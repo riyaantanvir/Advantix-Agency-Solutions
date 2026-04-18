@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { requireSuperAdmin } from "../middleware/auth.js";
 import { sendTelegramMessage, SETTING_KEYS } from "../services/telegram.js";
+import { startTelegramBot } from "../lib/telegramBot.js";
 import { db } from "@workspace/db";
 import { integrationsTable } from "@workspace/db/schema";
 import { eq, inArray } from "drizzle-orm";
@@ -58,6 +59,16 @@ router.post("/admin/notifications/telegram/test", requireSuperAdmin, async (_req
     `🔔 <b>Advantix Admin — Test Notification</b>\n\nYour Telegram integration is working correctly! You will receive task notifications here.\n\n<i>— Advantix Admin</i>`
   );
   res.json(result);
+});
+
+/* POST /api/admin/notifications/telegram/restart-bot */
+router.post("/admin/notifications/telegram/restart-bot", requireSuperAdmin, async (_req: Request, res: Response) => {
+  try {
+    await startTelegramBot();
+    res.json({ ok: true, message: "Telegram bot (re)started." });
+  } catch (err) {
+    res.json({ ok: false, error: String(err) });
+  }
 });
 
 export default router;
