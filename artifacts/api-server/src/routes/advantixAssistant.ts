@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { createHash, randomBytes } from "crypto";
-import { db, shortUrlsTable } from "@workspace/db";
+import { db, shortUrlsTable, teamMembersTable, servicesTable, portfolioItemsTable, blogPostsTable, contestsTable } from "@workspace/db";
 import { smmUserKeysTable, smmScheduledPostsTable } from "@workspace/db/schema";
 import { fetchAllPlatforms } from "../lib/smmService.js";
 import { sql, eq, desc, and } from "drizzle-orm";
@@ -364,6 +364,20 @@ const PLATFORM_TOOLS_DEF = [
       type: "object",
       properties: {
         type: { type: "string", enum: ["recent", "scheduled", "all"], description: "Which posts to fetch: 'recent' (from social platforms), 'scheduled' (from queue), or 'all' (default)" },
+      },
+    },
+  },
+  {
+    name: "get_site_info",
+    description: "Fetch live information about Advantix Digital from the website database: team members, services offered, portfolio projects, blog posts, open contests/careers, and contact details. Use whenever the user asks about the company, the team, services, portfolio, blog, careers, or how to contact Advantix Digital.",
+    input_schema: {
+      type: "object",
+      properties: {
+        sections: {
+          type: "array",
+          items: { type: "string", enum: ["team", "services", "portfolio", "blog", "careers", "contact"] },
+          description: "Which sections to fetch. Omit or pass all to fetch everything.",
+        },
       },
     },
   },
@@ -940,6 +954,136 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
             }
 
             result = { id: toolId, stdout: lines.length ? lines.join("\n") : "No posts found.", stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "get_site_info") {
+          try {
+            const requested = Array.isArray(toolInput.sections) && toolInput.sections.length > 0
+              ? toolInput.sections as string[]
+              : ["team", "services", "portfolio", "blog", "careers", "contact"];
+
+            const parts: string[] = [];
+
+            /* ── Contact info (static) ──────────────────────────── */
+            if (requested.includes("contact")) {
+              parts.push([
+                "## Advantix Digital — Contact Info",
+                "Email: hello@advantix.digital",
+                "Phone / WhatsApp: +1 (234) 567-890",
+                "Response Time: Within 24 hours",
+                "Location: Global Remote Agency (Bangladesh-based)",
+                "Website: https://advantix.digital",
+                "Facebook: https://facebook.com/advantixagency",
+                "Instagram: https://instagram.com/advantixagency",
+                "Twitter: https://twitter.com/advantixagency",
+                "LinkedIn: https://linkedin.com/company/advantixagency",
+              ].join("\n"));
+            }
+
+            /* ── Team ─────────────────────────────────────────── */
+            if (requested.includes("team")) {
+              const members = await db.select({
+                name: teamMembersTable.name,
+                role: teamMembersTable.role,
+                bio: teamMembersTable.bio,
+                email: teamMembersTable.email,
+                linkedinUrl: teamMembersTable.linkedinUrl,
+              }).from(teamMembersTable).orderBy(teamMembersTable.id);
+              if (members.length) {
+                const lines = members.map(m =>
+                  `• ${m.name} — ${m.role}${m.bio ? `: ${m.bio}` : ""}${m.email ? ` | Email: ${m.email}` : ""}${m.linkedinUrl ? ` | LinkedIn: ${m.linkedinUrl}` : ""}`
+                );
+                parts.push(`## Team Members (${members.length})\n${lines.join("\n")}`);
+              } else {
+                parts.push("## Team Members\nNo team members found.");
+              }
+            }
+
+            /* ── Services ─────────────────────────────────────── */
+            if (requested.includes("services")) {
+              const svcs = await db.select({
+                name: servicesTable.name,
+                shortDescription: servicesTable.shortDescription,
+                price: servicesTable.price,
+                isActive: servicesTable.isActive,
+              }).from(servicesTable).where(eq(servicesTable.isActive, true));
+              if (svcs.length) {
+                const lines = svcs.map(s =>
+                  `• ${s.name}${s.shortDescription ? `: ${s.shortDescription}` : ""}${s.price ? ` (from ${s.price})` : ""}`
+                );
+                parts.push(`## Services Offered (${svcs.length})\n${lines.join("\n")}`);
+              } else {
+                parts.push("## Services\nNo services listed.");
+              }
+            }
+
+            /* ── Portfolio ────────────────────────────────────── */
+            if (requested.includes("portfolio")) {
+              const items = await db.select({
+                title: portfolioItemsTable.title,
+                category: portfolioItemsTable.category,
+                description: portfolioItemsTable.description,
+                clientName: portfolioItemsTable.clientName,
+                liveUrl: portfolioItemsTable.liveUrl,
+              }).from(portfolioItemsTable).orderBy(desc(portfolioItemsTable.id)).limit(10);
+              if (items.length) {
+                const lines = items.map(p =>
+                  `• ${p.title} [${p.category ?? "Project"}]${p.clientName ? ` — Client: ${p.clientName}` : ""}${p.description ? `: ${p.description.slice(0, 100)}` : ""}${p.liveUrl ? ` | ${p.liveUrl}` : ""}`
+                );
+                parts.push(`## Portfolio Projects (latest ${items.length})\n${lines.join("\n")}`);
+              } else {
+                parts.push("## Portfolio\nNo portfolio items found.");
+              }
+            }
+
+            /* ── Blog ─────────────────────────────────────────── */
+            if (requested.includes("blog")) {
+              const posts = await db.select({
+                title: blogPostsTable.title,
+                excerpt: blogPostsTable.excerpt,
+                author: blogPostsTable.author,
+                category: blogPostsTable.category,
+                slug: blogPostsTable.slug,
+                publishedAt: blogPostsTable.publishedAt,
+              }).from(blogPostsTable)
+                .where(eq(blogPostsTable.status, "published"))
+                .orderBy(desc(blogPostsTable.publishedAt))
+                .limit(8);
+              if (posts.length) {
+                const lines = posts.map(p => {
+                  const date = p.publishedAt ? new Date(p.publishedAt).toLocaleDateString() : "";
+                  return `• "${p.title}"${p.author ? ` by ${p.author}` : ""}${p.category ? ` [${p.category}]` : ""}${date ? ` (${date})` : ""} — https://advantix.digital/blog/${p.slug}`;
+                });
+                parts.push(`## Blog Posts (latest ${posts.length})\n${lines.join("\n")}`);
+              } else {
+                parts.push("## Blog\nNo published blog posts found.");
+              }
+            }
+
+            /* ── Careers / Contests ───────────────────────────── */
+            if (requested.includes("careers")) {
+              const contests = await db.select({
+                title: contestsTable.title,
+                description: contestsTable.description,
+                type: contestsTable.type,
+                prize: contestsTable.prize,
+                deadline: contestsTable.deadline,
+                status: contestsTable.status,
+                isActive: contestsTable.isActive,
+              }).from(contestsTable).where(eq(contestsTable.isActive, true)).orderBy(desc(contestsTable.createdAt));
+              if (contests.length) {
+                const lines = contests.map(c => {
+                  const deadline = c.deadline ? `Deadline: ${new Date(c.deadline).toLocaleDateString()}` : "";
+                  return `• [${c.type ?? "Contest"}] ${c.title}${c.prize ? ` — Prize: ${c.prize}` : ""}${deadline ? ` | ${deadline}` : ""}${c.description ? `\n  ${c.description.slice(0, 120)}` : ""}`;
+                });
+                parts.push(`## Open Contests & Opportunities (${contests.length})\n${lines.join("\n")}`);
+              } else {
+                parts.push("## Careers\nNo active contests or openings right now.");
+              }
+            }
+
+            result = { id: toolId, stdout: parts.join("\n\n"), stderr: "", exitCode: 0 };
           } catch (err) {
             result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
           }

@@ -6,7 +6,7 @@ import {
   FolderOpen, FileText, Edit3, Monitor, Zap, AlertTriangle, Info,
   Bot, User, Settings, X, Shield, Clock, Calendar, MessageSquare,
   Wrench, BarChart3, Activity, Sparkles, ChevronLeft, PenSquare, Menu,
-  Paperclip, Link, List,
+  Paperclip, Link, List, Globe,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -98,6 +98,7 @@ function getToolStatus(tool: string, input: Record<string, unknown>): string {
   if (tool === "list_short_links")  return `Loading short links…`;
   if (tool === "get_smm_stats")     return `Fetching social media stats…`;
   if (tool === "get_smm_posts")     return `Loading posts…`;
+  if (tool === "get_site_info")     return `Fetching site info…`;
   return tool;
 }
 
@@ -112,6 +113,7 @@ const TOOL_META: Record<string, { icon: React.ComponentType<{ className?: string
   list_short_links:  { icon: List,      label: "List Short Links",    color: "text-pink-300" },
   get_smm_stats:     { icon: BarChart3, label: "SMM Stats",           color: "text-violet-400" },
   get_smm_posts:     { icon: MessageSquare, label: "SMM Posts",       color: "text-violet-300" },
+  get_site_info:     { icon: Globe,     label: "Site Info",           color: "text-teal-400" },
 };
 
 function ToolCard({ tool }: { tool: ToolExecution }) {
