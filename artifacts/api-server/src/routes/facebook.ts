@@ -130,7 +130,7 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
 /* ── Webhook ─────────────────────────────────────────────────────────────── */
 
 /* GET — Facebook verification handshake */
-router.get("/api/facebook/webhook", (req: Request, res: Response) => {
+router.get("/facebook/webhook", (req: Request, res: Response) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
@@ -143,7 +143,7 @@ router.get("/api/facebook/webhook", (req: Request, res: Response) => {
 });
 
 /* POST — Receive messages */
-router.post("/api/facebook/webhook", async (req: Request, res: Response) => {
+router.post("/facebook/webhook", async (req: Request, res: Response) => {
   const body = req.body as {
     object?: string;
     entry?: Array<{
@@ -197,7 +197,7 @@ router.post("/api/facebook/webhook", async (req: Request, res: Response) => {
 /* ── OAuth Flow ──────────────────────────────────────────────────────────── */
 
 /* Step 1: Get Facebook OAuth URL */
-router.get("/api/facebook/auth-url", requireToolUser, (req: Request, res: Response) => {
+router.get("/facebook/auth-url", requireToolUser, (req: Request, res: Response) => {
   const appId = getAppId();
   if (!appId) { res.status(500).json({ error: "FACEBOOK_APP_ID not configured" }); return; }
   const redirectUri = encodeURIComponent(`${getWebhookBase()}/api/facebook/callback`);
@@ -208,7 +208,7 @@ router.get("/api/facebook/auth-url", requireToolUser, (req: Request, res: Respon
 });
 
 /* Step 2: OAuth Callback — exchange code for tokens + list pages */
-router.get("/api/facebook/callback", async (req: Request, res: Response) => {
+router.get("/facebook/callback", async (req: Request, res: Response) => {
   const { code, state } = req.query as { code?: string; state?: string };
   if (!code || !state) { res.status(400).send("Missing code or state"); return; }
 
@@ -258,7 +258,7 @@ router.get("/api/facebook/callback", async (req: Request, res: Response) => {
 });
 
 /* Step 3: List pages from OAuth session for user to pick */
-router.get("/api/facebook/oauth-pages", requireToolUser, (req: Request, res: Response) => {
+router.get("/facebook/oauth-pages", requireToolUser, (req: Request, res: Response) => {
   const raw = req.session.oauthState;
   if (!raw) { res.json({ pages: [] }); return; }
   try {
@@ -268,7 +268,7 @@ router.get("/api/facebook/oauth-pages", requireToolUser, (req: Request, res: Res
 });
 
 /* Step 4: Connect a specific page */
-router.post("/api/facebook/connect-page", requireToolUser, async (req: Request, res: Response) => {
+router.post("/facebook/connect-page", requireToolUser, async (req: Request, res: Response) => {
   const raw = req.session.oauthState;
   if (!raw) { res.status(400).json({ error: "No OAuth session, please reconnect" }); return; }
 
@@ -324,7 +324,7 @@ router.post("/api/facebook/connect-page", requireToolUser, async (req: Request, 
 
 /* ── Pages Management ─────────────────────────────────────────────────────── */
 
-router.get("/api/facebook/pages", requireToolUser, async (req: Request, res: Response) => {
+router.get("/facebook/pages", requireToolUser, async (req: Request, res: Response) => {
   const uid = toolUserId(req);
   const pages = await db.select({
     id: facebookPagesTable.id,
@@ -338,7 +338,7 @@ router.get("/api/facebook/pages", requireToolUser, async (req: Request, res: Res
   res.json({ pages });
 });
 
-router.delete("/api/facebook/pages/:id", requireToolUser, async (req: Request, res: Response) => {
+router.delete("/facebook/pages/:id", requireToolUser, async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const uid = toolUserId(req);
   const [page] = await db.select().from(facebookPagesTable)
@@ -356,7 +356,7 @@ router.delete("/api/facebook/pages/:id", requireToolUser, async (req: Request, r
 
 /* ── Stats ────────────────────────────────────────────────────────────────── */
 
-router.get("/api/facebook/stats", requireToolUser, async (req: Request, res: Response) => {
+router.get("/facebook/stats", requireToolUser, async (req: Request, res: Response) => {
   const uid = toolUserId(req);
   const pages = await db.select({ id: facebookPagesTable.id })
     .from(facebookPagesTable).where(eq(facebookPagesTable.toolUserId, uid));
@@ -388,7 +388,7 @@ router.get("/api/facebook/stats", requireToolUser, async (req: Request, res: Res
 
 /* ── Message History ──────────────────────────────────────────────────────── */
 
-router.get("/api/facebook/messages", requireToolUser, async (req: Request, res: Response) => {
+router.get("/facebook/messages", requireToolUser, async (req: Request, res: Response) => {
   const uid = toolUserId(req);
   const pageIdParam = req.query.pageId ? Number(req.query.pageId) : null;
   const limit = Math.min(Number(req.query.limit ?? 50), 100);
@@ -426,7 +426,7 @@ router.get("/api/facebook/messages", requireToolUser, async (req: Request, res: 
 
 /* ── Rules CRUD ──────────────────────────────────────────────────────────── */
 
-router.get("/api/facebook/rules", requireToolUser, async (req: Request, res: Response) => {
+router.get("/facebook/rules", requireToolUser, async (req: Request, res: Response) => {
   const uid = toolUserId(req);
   const pageIdParam = req.query.pageId ? Number(req.query.pageId) : null;
   const pages = await db.select({ id: facebookPagesTable.id })
@@ -443,7 +443,7 @@ router.get("/api/facebook/rules", requireToolUser, async (req: Request, res: Res
   res.json({ rules });
 });
 
-router.post("/api/facebook/rules", requireToolUser, async (req: Request, res: Response) => {
+router.post("/facebook/rules", requireToolUser, async (req: Request, res: Response) => {
   const uid = toolUserId(req);
   const { facebookPageId, ruleName, triggerType, triggerKeywords, replyMode, replyTemplate, aiInstructions, priority } = req.body as {
     facebookPageId: number; ruleName: string; triggerType: string; triggerKeywords?: string;
@@ -463,7 +463,7 @@ router.post("/api/facebook/rules", requireToolUser, async (req: Request, res: Re
   res.json({ rule });
 });
 
-router.put("/api/facebook/rules/:id", requireToolUser, async (req: Request, res: Response) => {
+router.put("/facebook/rules/:id", requireToolUser, async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const uid = toolUserId(req);
   const body = req.body as Partial<{
@@ -494,7 +494,7 @@ router.put("/api/facebook/rules/:id", requireToolUser, async (req: Request, res:
   res.json({ rule });
 });
 
-router.delete("/api/facebook/rules/:id", requireToolUser, async (req: Request, res: Response) => {
+router.delete("/facebook/rules/:id", requireToolUser, async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const uid = toolUserId(req);
   const [existing] = await db.select({ facebookPageId: facebookAutoReplyRulesTable.facebookPageId })
@@ -510,7 +510,7 @@ router.delete("/api/facebook/rules/:id", requireToolUser, async (req: Request, r
 /* ── Manual Check / Scheduler ────────────────────────────────────────────── */
 
 /* Manual "Check Now" — fetch latest messages from Graph API */
-router.post("/api/facebook/check-now", requireToolUser, async (req: Request, res: Response) => {
+router.post("/facebook/check-now", requireToolUser, async (req: Request, res: Response) => {
   const uid = toolUserId(req);
   const { pageId } = req.body as { pageId?: number };
 
@@ -564,7 +564,7 @@ router.post("/api/facebook/check-now", requireToolUser, async (req: Request, res
 });
 
 /* ── Webhook URL info ─────────────────────────────────────────────────────── */
-router.get("/api/facebook/webhook-info", requireToolUser, (_req: Request, res: Response) => {
+router.get("/facebook/webhook-info", requireToolUser, (_req: Request, res: Response) => {
   res.json({
     webhookUrl: `${getWebhookBase()}/api/facebook/webhook`,
     verifyToken: getVerifyToken(),
