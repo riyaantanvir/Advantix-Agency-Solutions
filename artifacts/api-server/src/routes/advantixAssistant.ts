@@ -625,7 +625,10 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
 
     /* ── callAI — unified multi-provider call with unlimited rate-limit retry ── */
     const callAI = async (msgs: InternalMsg[], isToolRound = false): Promise<AIResponse> => {
-      const maxTokens = isToolRound ? 768 : 2048;
+      /* OpenRouter has strict per-request credit limits — use lower cap */
+      const maxTokens = provider === "openrouter"
+        ? (isToolRound ? 512 : 1500)
+        : (isToolRound ? 768 : 2048);
       const WAIT_STEPS = [10, 20, 30, 60];
       let attempt = 0;
 
