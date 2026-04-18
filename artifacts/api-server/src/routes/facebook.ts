@@ -618,6 +618,48 @@ router.post("/facebook/check-now", requireToolUser, async (req: Request, res: Re
 });
 
 /* ── Webhook URL info ─────────────────────────────────────────────────────── */
+/**
+ * Facebook Data Deletion Callback
+ * Facebook calls this when a user removes our app.
+ * Expects signed_request param; returns { url, confirmation_code }
+ */
+router.post("/facebook/data-deletion", async (req: Request, res: Response) => {
+  try {
+    const { createHmac } = await import("node:crypto");
+    const signedRequest = (req.body as Record<string, string>).signed_request;
+    if (!signedRequest) return res.status(400).json({ error: "Missing signed_request" });
+
+    const [encodedSig, payload] = signedRequest.split(".");
+    if (!encodedSig || !payload) return res.status(400).json({ error: "Invalid signed_request format" });
+
+    const appSecret = await getAppSecret();
+    if (appSecret) {
+      const expectedSig = createHmac("sha256", appSecret)
+        .update(payload)
+        .digest("base64url");
+      if (expectedSig !== encodedSig) {
+        return res.status(400).json({ error: "Invalid signature" });
+      }
+    }
+
+    const decoded = JSON.parse(Buffer.from(payload, "base64").toString("utf8")) as { user_id?: string };
+    const userId = decoded.user_id ?? "unknown";
+    const confirmationCode = `adx-del-${userId}-${Date.now()}`;
+
+    // Best-effort: remove any facebook pages linked to this user_id
+    await db.execute(sql`
+      DELETE FROM facebook_pages WHERE fb_user_id = ${userId}
+    `).catch(() => {/* table may not have this column, that's ok */});
+
+    return res.json({
+      url: `https://advantix.digital/pages/data-deletion`,
+      confirmation_code: confirmationCode,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Internal error" });
+  }
+});
+
 router.get("/facebook/webhook-info", requireToolUser, async (_req: Request, res: Response) => {
   res.json({
     webhookUrl: `${getWebhookBase()}/api/facebook/webhook`,

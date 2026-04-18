@@ -103,6 +103,18 @@ function PrivacyPolicyRedirect() {
   return null;
 }
 
+function TermsRedirect() {
+  const [, navigate] = useLocation();
+  useEffect(() => { navigate("/pages/terms-of-service", { replace: true }); }, [navigate]);
+  return null;
+}
+
+function DataDeletionRedirect() {
+  const [, navigate] = useLocation();
+  useEffect(() => { navigate("/pages/data-deletion", { replace: true }); }, [navigate]);
+  return null;
+}
+
 function Router() {
   return (
     <Switch>
@@ -153,6 +165,8 @@ function Router() {
               <Route path="/pages/:slug" component={CustomPage} />
               <Route path="/favorites" component={Favorites} />
               <Route path="/privacy-policy" component={PrivacyPolicyRedirect} />
+              <Route path="/terms-of-service" component={TermsRedirect} />
+              <Route path="/data-deletion" component={DataDeletionRedirect} />
               <Route component={NotFound} />
             </Switch>
           </Suspense>

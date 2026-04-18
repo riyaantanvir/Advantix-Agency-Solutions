@@ -2,7 +2,7 @@ import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import app from "./app.js";
 import { logger } from "./lib/logger.js";
-import { seedAdmin, ensureSessionTable, runMigrations, seedServices, seedTelegramDefaults, seedPrivacyPolicy } from "./seed.js";
+import { seedAdmin, ensureSessionTable, runMigrations, seedServices, seedTelegramDefaults, seedPrivacyPolicy, seedTermsOfService, seedDataDeletion } from "./seed.js";
 import { startSmmScheduler } from "./lib/smmPublisher.js";
 import { startTelegramBot } from "./lib/telegramBot.js";
 import { startFacebookScheduler } from "./lib/facebookScheduler.js";
@@ -27,6 +27,8 @@ async function start(): Promise<void> {
   await seedServices();
   await seedTelegramDefaults();
   await seedPrivacyPolicy();
+  await seedTermsOfService();
+  await seedDataDeletion();
 
   const httpServer = createServer(app);
 

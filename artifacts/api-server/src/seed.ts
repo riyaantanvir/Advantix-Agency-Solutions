@@ -1322,6 +1322,262 @@ export async function seedPrivacyPolicy(): Promise<void> {
   logger.info("Privacy policy page ensured");
 }
 
+export async function seedTermsOfService(): Promise<void> {
+  const content = `
+<style>
+  .tos-wrap{font-family:inherit;color:inherit;max-width:780px;margin:0 auto;padding:2rem 1rem 4rem}
+  .tos-hero{text-align:center;margin-bottom:2.5rem}
+  .tos-hero h1{font-size:2.5rem;font-weight:800;margin-bottom:.75rem}
+  .tos-hero p{color:#9ca3af;font-size:1.05rem;max-width:520px;margin:0 auto}
+  .tos-scope{background:rgba(99,102,241,.07);border:1px solid rgba(99,102,241,.2);border-radius:14px;padding:1.1rem 1.4rem;margin-bottom:2.5rem;font-size:.9rem;color:#9ca3af;text-align:center;line-height:1.6}
+  .tos-scope strong{color:#e5e7eb}
+  .tos-section{border:1px solid rgba(255,255,255,.08);border-radius:16px;overflow:hidden;margin-bottom:1.5rem}
+  .tos-section-header{padding:1rem 1.4rem;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.07)}
+  .tos-section-header h2{font-size:1.05rem;font-weight:600;margin:0}
+  .tos-section-body{padding:1.4rem 1.6rem}
+  .tos-block{margin-bottom:1.4rem}
+  .tos-block:last-child{margin-bottom:0}
+  .tos-block h3{font-size:.88rem;font-weight:600;margin:0 0 .6rem;color:#e5e7eb}
+  .tos-block ul{list-style:none;padding:0;margin:0}
+  .tos-block ul li{display:flex;gap:.6rem;align-items:flex-start;font-size:.875rem;color:#9ca3af;margin-bottom:.45rem;line-height:1.55}
+  .tos-block ul li::before{content:"›";color:#6366f1;flex-shrink:0;margin-top:1px;font-weight:700}
+  .tos-contact{border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:2rem;text-align:center;margin-top:1.5rem}
+  .tos-contact h2{font-size:1.2rem;font-weight:600;margin:.75rem 0 .5rem}
+  .tos-contact p{color:#9ca3af;font-size:.875rem;margin-bottom:1.1rem}
+  .tos-contact a{color:#818cf8;text-decoration:none;font-weight:500}
+  .tos-footer{text-align:center;font-size:.75rem;color:#6b7280;margin-top:2rem}
+</style>
+<div class="tos-wrap">
+  <div class="tos-hero">
+    <h1>Terms of Service</h1>
+    <p>Please read these terms carefully before using Advantix Digital's website or tools.</p>
+  </div>
+  <div class="tos-scope">
+    These Terms of Service apply to <strong>advantix.digital</strong> and all tools and services operated by <strong>Advantix Digital</strong>. By using our services, you agree to these terms.
+  </div>
+
+  <div class="tos-section">
+    <div class="tos-section-header"><h2>1. Acceptance of Terms</h2></div>
+    <div class="tos-section-body">
+      <div class="tos-block">
+        <ul>
+          <li>By accessing or using any part of advantix.digital or our tools platform, you agree to be bound by these Terms of Service.</li>
+          <li>If you do not agree to these terms, please do not use our services.</li>
+          <li>We reserve the right to update these terms at any time. Continued use of our services after changes means you accept the updated terms.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="tos-section">
+    <div class="tos-section-header"><h2>2. Services Provided</h2></div>
+    <div class="tos-section-body">
+      <div class="tos-block">
+        <ul>
+          <li>Advantix Digital provides digital marketing services including Facebook marketing, social media management, website development, graphics &amp; branding, CRM integration, automation, and related services.</li>
+          <li>We also provide a Tools platform including a Facebook Auto-Reply tool, URL Shortener, Social Media Scheduler, and AI Assistant.</li>
+          <li>Services are provided as described on our website and in individual project agreements. We reserve the right to modify or discontinue any service at any time.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="tos-section">
+    <div class="tos-section-header"><h2>3. User Responsibilities</h2></div>
+    <div class="tos-section-body">
+      <div class="tos-block">
+        <h3>Acceptable Use</h3>
+        <ul>
+          <li>You agree to use our services only for lawful purposes and in accordance with these terms.</li>
+          <li>You must not use our services to send spam, misleading content, or any material that violates applicable laws or Facebook's Platform Policies.</li>
+          <li>You are responsible for maintaining the confidentiality of your account credentials.</li>
+        </ul>
+      </div>
+      <div class="tos-block">
+        <h3>Facebook Auto-Reply Tool</h3>
+        <ul>
+          <li>When using the Facebook Auto-Reply tool, you confirm that you are the authorized administrator of the Facebook Page you connect.</li>
+          <li>You are solely responsible for the auto-reply messages you configure. These messages must comply with Facebook's Messaging Policies.</li>
+          <li>You may disconnect your Facebook Page from our tool at any time through your account settings.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="tos-section">
+    <div class="tos-section-header"><h2>4. Intellectual Property</h2></div>
+    <div class="tos-section-body">
+      <div class="tos-block">
+        <ul>
+          <li>All content, branding, and software on advantix.digital is the property of Advantix Digital unless otherwise stated.</li>
+          <li>Deliverables created for clients (e.g., graphics, websites, content) are transferred to the client upon full payment as agreed in the project contract.</li>
+          <li>You may not copy, reproduce, or redistribute any part of our platform or tools without written permission.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="tos-section">
+    <div class="tos-section-header"><h2>5. Limitation of Liability</h2></div>
+    <div class="tos-section-body">
+      <div class="tos-block">
+        <ul>
+          <li>Advantix Digital provides its services "as is." We do not guarantee uninterrupted or error-free operation of our tools or platform.</li>
+          <li>We are not responsible for any indirect, incidental, or consequential damages arising from use of our services.</li>
+          <li>Our total liability for any claim related to our services shall not exceed the amount you paid us for the relevant service in the 30 days prior to the claim.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="tos-section">
+    <div class="tos-section-header"><h2>6. Termination</h2></div>
+    <div class="tos-section-body">
+      <div class="tos-block">
+        <ul>
+          <li>We reserve the right to suspend or terminate your access to our tools if you violate these Terms of Service.</li>
+          <li>You may close your account at any time by contacting us at <a href="mailto:hello@advantix.digital">hello@advantix.digital</a>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="tos-section">
+    <div class="tos-section-header"><h2>7. Governing Law</h2></div>
+    <div class="tos-section-body">
+      <div class="tos-block">
+        <ul>
+          <li>These Terms of Service are governed by applicable law. Any disputes will be resolved through good-faith negotiation first.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="tos-contact">
+    <h2>Questions?</h2>
+    <p>If you have any questions about these Terms of Service, please contact us.</p>
+    <p><strong>Advantix Digital</strong> &nbsp;|&nbsp; <a href="https://advantix.digital">advantix.digital</a> &nbsp;|&nbsp; <a href="mailto:hello@advantix.digital">hello@advantix.digital</a></p>
+  </div>
+  <p class="tos-footer">© ${new Date().getFullYear()} Advantix Digital. All rights reserved.</p>
+</div>
+`;
+  await db.execute(sql`
+    INSERT INTO custom_pages (slug, title, type, description, content, is_published, is_public, meta_title, meta_description)
+    VALUES (
+      'terms-of-service',
+      'Terms of Service',
+      'content',
+      'Terms of Service for Advantix Digital',
+      ${content},
+      true,
+      true,
+      'Terms of Service — Advantix Digital',
+      'Read the Terms of Service for Advantix Digital and our tools platform.'
+    )
+    ON CONFLICT (slug) DO UPDATE SET content = EXCLUDED.content, type = EXCLUDED.type
+  `);
+  await db.execute(sql`UPDATE custom_pages SET is_public = true, is_published = true WHERE slug = 'terms-of-service'`);
+  logger.info("Terms of service page ensured");
+}
+
+export async function seedDataDeletion(): Promise<void> {
+  const content = `
+<style>
+  .dd-wrap{font-family:inherit;color:inherit;max-width:780px;margin:0 auto;padding:2rem 1rem 4rem}
+  .dd-hero{text-align:center;margin-bottom:2.5rem}
+  .dd-hero h1{font-size:2.5rem;font-weight:800;margin-bottom:.75rem}
+  .dd-hero p{color:#9ca3af;font-size:1.05rem;max-width:520px;margin:0 auto}
+  .dd-card{border:1px solid rgba(99,102,241,.3);border-radius:16px;padding:2rem;margin-bottom:1.5rem;background:rgba(99,102,241,.05)}
+  .dd-card h2{font-size:1.15rem;font-weight:700;margin:0 0 1rem}
+  .dd-card ul{list-style:none;padding:0;margin:0}
+  .dd-card ul li{display:flex;gap:.6rem;align-items:flex-start;font-size:.9rem;color:#9ca3af;margin-bottom:.6rem;line-height:1.6}
+  .dd-card ul li::before{content:"›";color:#6366f1;flex-shrink:0;margin-top:2px;font-weight:700}
+  .dd-steps{border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:2rem;margin-bottom:1.5rem}
+  .dd-steps h2{font-size:1.15rem;font-weight:700;margin:0 0 1.2rem}
+  .dd-step{display:flex;gap:1rem;margin-bottom:1.2rem;align-items:flex-start}
+  .dd-step:last-child{margin-bottom:0}
+  .dd-step-num{background:#6366f1;color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0;margin-top:1px}
+  .dd-step-text{font-size:.9rem;color:#9ca3af;line-height:1.6}
+  .dd-step-text strong{color:#e5e7eb}
+  .dd-contact{border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:2rem;text-align:center;margin-top:1.5rem}
+  .dd-contact h2{font-size:1.15rem;font-weight:600;margin:.5rem 0 .5rem}
+  .dd-contact p{color:#9ca3af;font-size:.875rem;margin-bottom:1rem}
+  .dd-contact a{color:#818cf8;text-decoration:none;font-weight:500}
+  .dd-footer{text-align:center;font-size:.75rem;color:#6b7280;margin-top:2rem}
+</style>
+<div class="dd-wrap">
+  <div class="dd-hero">
+    <h1>Data Deletion Request</h1>
+    <p>You have the right to request deletion of your personal data from Advantix Digital's systems at any time.</p>
+  </div>
+
+  <div class="dd-card">
+    <h2>What Data We Hold</h2>
+    <ul>
+      <li>Contact form submissions (name, email, phone, message)</li>
+      <li>Tool platform account data (email, hashed password)</li>
+      <li>Facebook Page access token and page info (if you connected a Facebook Page)</li>
+      <li>Auto-reply rules you created</li>
+      <li>Shortened URLs you created and their click counts</li>
+      <li>Scheduled social media posts</li>
+    </ul>
+  </div>
+
+  <div class="dd-steps">
+    <h2>How to Request Data Deletion</h2>
+    <div class="dd-step">
+      <div class="dd-step-num">1</div>
+      <div class="dd-step-text">Send an email to <strong><a href="mailto:hello@advantix.digital">hello@advantix.digital</a></strong> with the subject line <strong>"Data Deletion Request"</strong>.</div>
+    </div>
+    <div class="dd-step">
+      <div class="dd-step-num">2</div>
+      <div class="dd-step-text">Include the email address associated with your account or the Facebook Page ID you connected, so we can locate your data.</div>
+    </div>
+    <div class="dd-step">
+      <div class="dd-step-num">3</div>
+      <div class="dd-step-text">We will confirm receipt within <strong>48 hours</strong> and complete the deletion within <strong>30 days</strong>.</div>
+    </div>
+    <div class="dd-step">
+      <div class="dd-step-num">4</div>
+      <div class="dd-step-text">You will receive a confirmation email once your data has been permanently removed from our systems.</div>
+    </div>
+  </div>
+
+  <div class="dd-card">
+    <h2>Facebook Users</h2>
+    <ul>
+      <li>If you used Facebook Login or connected your Facebook Page to our Auto-Reply tool, you can also remove our app's access directly from your Facebook account: go to <strong>Facebook Settings → Apps and Websites → Advantix Digital → Remove</strong>.</li>
+      <li>After removing app access from Facebook, your Facebook access token is automatically invalidated. To also remove stored data from our servers, please send us a deletion request as described above.</li>
+    </ul>
+  </div>
+
+  <div class="dd-contact">
+    <h2>Contact Us</h2>
+    <p>For data deletion requests or any privacy concerns, reach out to us directly.</p>
+    <p><strong>Advantix Digital</strong> &nbsp;|&nbsp; <a href="mailto:hello@advantix.digital">hello@advantix.digital</a></p>
+  </div>
+  <p class="dd-footer">© ${new Date().getFullYear()} Advantix Digital. All rights reserved.</p>
+</div>
+`;
+  await db.execute(sql`
+    INSERT INTO custom_pages (slug, title, type, description, content, is_published, is_public, meta_title, meta_description)
+    VALUES (
+      'data-deletion',
+      'Data Deletion Request',
+      'content',
+      'How to request deletion of your personal data from Advantix Digital',
+      ${content},
+      true,
+      true,
+      'Data Deletion Request — Advantix Digital',
+      'Learn how to request deletion of your personal data from Advantix Digital.'
+    )
+    ON CONFLICT (slug) DO UPDATE SET content = EXCLUDED.content, type = EXCLUDED.type
+  `);
+  await db.execute(sql`UPDATE custom_pages SET is_public = true, is_published = true WHERE slug = 'data-deletion'`);
+  logger.info("Data deletion page ensured");
+}
+
 export async function seedTelegramDefaults(): Promise<void> {
   for (const row of TELEGRAM_DEFAULTS) {
     await db.execute(sql`
