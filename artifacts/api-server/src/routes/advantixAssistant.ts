@@ -864,6 +864,7 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       stopReason: string;
       usage: { input_tokens: number; output_tokens: number };
       generationId?: string; /* OpenRouter only — used to fetch exact cost */
+      didStream?: boolean;   /* true when callAI already emitted content SSE events */
     };
 
     /* ── Build multi-modal user content if attachments present ── */
@@ -1010,6 +1011,7 @@ CRITICAL — Error handling and task persistence:
             }),
           });
         } else {
+          /* ── OpenAI-compatible streaming path (OpenRouter, OpenAI) ── */
           const oaiMsgs = toOpenAIMessages(msgs);
           const headers: Record<string, string> = { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" };
           if (provider === "openrouter") headers["HTTP-Referer"] = "https://advantix.digital";
@@ -1018,10 +1020,117 @@ CRITICAL — Error handling and task persistence:
             headers,
             body: JSON.stringify({
               model, max_tokens: maxTokens,
+              stream: true,
+              stream_options: { include_usage: true },
               messages: [{ role: "system", content: SYSTEM_PROMPT }, ...oaiMsgs],
               tools: allToolsOpenAI,
             }),
           });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            let isRateLimit = response.status === 429;
+            try { if (JSON.parse(errText)?.error?.type === "rate_limit_error") isRateLimit = true; } catch {}
+            if (isRateLimit) {
+              const waitSecs = WAIT_STEPS[Math.min(attempt, WAIT_STEPS.length - 1)];
+              sse(res, { type: "content", delta: `\n\n_Rate limit — waiting ${waitSecs}s…_\n\n` });
+              await new Promise(resolve => setTimeout(resolve, waitSecs * 1000));
+              attempt++; continue;
+            }
+            const isVisionError = errText.includes("image input") || errText.includes("vision") ||
+              errText.includes("multimodal") || errText.includes("image_url") ||
+              (response.status === 404 && errText.includes("endpoint"));
+            if (isVisionError && !visionStripped) {
+              msgs = stripImagesFromMsgs(msgs);
+              visionStripped = true;
+              sse(res, { type: "content", delta: `_⚠️ এই AI model টি image support করে না — image সরিয়ে retry করছি…_\n\n` });
+              continue;
+            }
+            throw new Error(`AI API error (${provider}): ${errText}`);
+          }
+
+          /* ── Read SSE stream chunk by chunk ── */
+          const reader = response.body!.getReader();
+          const dec = new TextDecoder();
+          let ssBuf = "";
+          let accText = "";
+          type AccTC = { id: string; name: string; argsStr: string };
+          const accTCs: AccTC[] = [];
+          let accUsage = { input_tokens: 0, output_tokens: 0 };
+          let genId = "";
+          let finishReason = "stop";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            ssBuf += dec.decode(value, { stream: true });
+            const ssLines = ssBuf.split("\n");
+            ssBuf = ssLines.pop() ?? "";
+            for (const ssLine of ssLines) {
+              if (!ssLine.startsWith("data: ")) continue;
+              const raw = ssLine.slice(6).trim();
+              if (raw === "[DONE]") continue;
+              try {
+                const chunk = JSON.parse(raw) as {
+                  id?: string;
+                  choices?: Array<{
+                    delta?: {
+                      content?: string | null;
+                      reasoning?: string | null;
+                      tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
+                    };
+                    finish_reason?: string | null;
+                  }>;
+                  usage?: { prompt_tokens?: number; completion_tokens?: number };
+                };
+                if (!genId && chunk.id) genId = chunk.id;
+                if (chunk.usage) {
+                  accUsage.input_tokens = chunk.usage.prompt_tokens ?? accUsage.input_tokens;
+                  accUsage.output_tokens = chunk.usage.completion_tokens ?? accUsage.output_tokens;
+                }
+                const choice = chunk.choices?.[0];
+                if (!choice) continue;
+                if (choice.finish_reason) finishReason = choice.finish_reason;
+                const delta = choice.delta;
+                if (!delta) continue;
+                /* Text tokens */
+                if (delta.content) {
+                  accText += delta.content;
+                  sse(res, { type: "content", delta: delta.content });
+                }
+                /* Reasoning tokens (DeepSeek R1, QwQ-32b, etc.) */
+                if (delta.reasoning) {
+                  sse(res, { type: "thinking", delta: delta.reasoning });
+                }
+                /* Tool-call tokens — accumulate partial JSON */
+                if (delta.tool_calls) {
+                  for (const tc of delta.tool_calls) {
+                    const idx = tc.index ?? 0;
+                    if (!accTCs[idx]) accTCs[idx] = { id: tc.id ?? "", name: tc.function?.name ?? "", argsStr: "" };
+                    else {
+                      if (tc.id) accTCs[idx].id = tc.id;
+                      if (tc.function?.name) accTCs[idx].name += tc.function.name;
+                    }
+                    if (tc.function?.arguments) accTCs[idx].argsStr += tc.function.arguments;
+                  }
+                }
+              } catch { /* malformed chunk — skip */ }
+            }
+          }
+
+          const toolCalls = accTCs.filter(Boolean).map(tc => ({
+            id: tc.id || crypto.randomUUID(),
+            name: tc.name,
+            input: (() => { try { return JSON.parse(tc.argsStr); } catch { return {}; } })(),
+          }));
+          return {
+            text: accText,
+            toolCalls,
+            stopReason: finishReason === "tool_calls" ? "tool_use" : "end_turn",
+            usage: accUsage,
+            generationId: genId,
+            didStream: true,
+          };
         }
 
         if (response.ok) {
@@ -1036,23 +1145,6 @@ CRITICAL — Error handling and task persistence:
               toolCalls: d.content.filter(b => b.type === "tool_use").map(b => ({ id: b.id ?? crypto.randomUUID(), name: b.name ?? "", input: b.input ?? {} })),
               stopReason: d.stop_reason ?? "end_turn",
               usage: d.usage ?? { input_tokens: 0, output_tokens: 0 },
-            };
-          } else {
-            const d = await response.json() as {
-              id?: string;
-              choices: Array<{ message: { content?: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }; finish_reason?: string }>;
-              usage?: { prompt_tokens: number; completion_tokens: number };
-            };
-            const choice = d.choices[0];
-            return {
-              text: choice.message.content ?? "",
-              toolCalls: (choice.message.tool_calls ?? []).map(tc => ({
-                id: tc.id, name: tc.function.name,
-                input: (() => { try { return JSON.parse(tc.function.arguments); } catch { return {}; } })(),
-              })),
-              stopReason: choice.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
-              usage: { input_tokens: d.usage?.prompt_tokens ?? 0, output_tokens: d.usage?.completion_tokens ?? 0 },
-              generationId: d.id,
             };
           }
         }
@@ -1090,7 +1182,7 @@ CRITICAL — Error handling and task persistence:
     /* ══ Agentic loop ══════════════════════════════════════════════════════ */
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const hasTools = true; /* platform tools always available */
-      const { text, toolCalls, stopReason, usage, generationId } = await callAI(
+      const { text, toolCalls, stopReason, usage, generationId, didStream } = await callAI(
         round === 0 ? messages : sessionMessages,
         hasTools && round < MAX_TOOL_ROUNDS,
       );
@@ -1099,10 +1191,10 @@ CRITICAL — Error handling and task persistence:
       totalInputTokens += usage.input_tokens;
       totalOutputTokens += usage.output_tokens;
 
-      /* ── Stream text ── */
+      /* ── Stream text (only emit SSE here for Anthropic; streaming providers already emitted) ── */
       if (text) {
         fullText += text;
-        sse(res, { type: "content", delta: text });
+        if (!didStream) sse(res, { type: "content", delta: text });
       }
 
       /* ── If no tool calls, we're done ── */

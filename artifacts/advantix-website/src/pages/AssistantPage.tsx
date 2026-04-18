@@ -50,11 +50,12 @@ type AgentInfo = {
 type ToolStartEvent  = { type: "tool_start"; id: string; tool: string; input: Record<string, unknown> };
 type ToolDoneEvent   = { type: "tool_done"; id: string; tool: string; stdout: string; stderr: string; exitCode: number; durationMs?: number };
 type ContentEvent    = { type: "content"; delta: string };
+type ThinkingEvent   = { type: "thinking"; delta: string };
 type DoneEvent       = { type: "done"; totalTokens: number };
 type ConvIdEvent     = { type: "conversation_id"; conversationId: number };
 type ErrorEvent      = { type: "error"; message: string };
 
-type StreamEvent = ToolStartEvent | ToolDoneEvent | ContentEvent | DoneEvent | ConvIdEvent | ErrorEvent;
+type StreamEvent = ToolStartEvent | ToolDoneEvent | ContentEvent | ThinkingEvent | DoneEvent | ConvIdEvent | ErrorEvent;
 
 type Conversation = {
   id: number;
@@ -85,6 +86,7 @@ type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  thinking?: string;      /* reasoning tokens (DeepSeek R1, QwQ, etc.) */
   tools?: ToolExecution[];
   streaming?: boolean;
   statusText?: string;
@@ -350,10 +352,42 @@ const mdComponents = {
   hr: () => <hr className="border-border/30 my-2" />,
 };
 
+function ThinkingBlock({ thinking, streaming }: { thinking: string; streaming?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="w-full rounded-xl border border-violet-500/20 bg-violet-950/20 overflow-hidden text-xs mb-0.5">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-violet-300/80 hover:text-violet-200 hover:bg-violet-950/30 transition-colors text-left"
+      >
+        <span className="flex items-center gap-1.5 shrink-0">
+          {streaming && !open ? (
+            <>
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" style={{ animationDelay: "200ms" }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" style={{ animationDelay: "400ms" }} />
+            </>
+          ) : (
+            <span className="text-[10px]">{open ? "▾" : "▸"}</span>
+          )}
+        </span>
+        <span className="font-medium tracking-wide uppercase text-[10px]">
+          {streaming ? "Thinking…" : `Reasoning (${thinking.length.toLocaleString()} chars)`}
+        </span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 pt-0 font-mono text-[11px] leading-relaxed text-violet-200/60 whitespace-pre-wrap max-h-64 overflow-y-auto">
+          {thinking}
+          {streaming && <span className="inline-block w-1.5 h-3 bg-violet-400 animate-pulse ml-0.5 align-middle" />}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessageBubble({ msg, userName }: { msg: Message; userName?: string }) {
   const isUser = msg.role === "user";
   const initial = (userName ?? "U")[0].toUpperCase();
-  const isThinking = msg.streaming && !msg.content && (!msg.tools || msg.tools.every(t => t.status !== "running"));
   const [msgCopied, setMsgCopied] = useState(false);
   const copyMsg = () => {
     if (!msg.content) return;
@@ -402,6 +436,11 @@ function MessageBubble({ msg, userName }: { msg: Message; userName?: string }) {
               </span>
             ))}
           </div>
+        )}
+
+        {/* Thinking / reasoning block */}
+        {!isUser && msg.thinking && (
+          <ThinkingBlock thinking={msg.thinking} streaming={msg.streaming && !msg.content} />
         )}
 
         {/* Message bubble */}
@@ -918,9 +957,11 @@ export default function AssistantPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const streamBufferRef    = useRef<string>("");
-  const rafRef             = useRef<number | null>(null);
+  const abortControllerRef  = useRef<AbortController | null>(null);
+  const streamBufferRef     = useRef<string>("");
+  const rafRef              = useRef<number | null>(null);
+  const thinkingBufferRef   = useRef<string>("");
+  const thinkingRafRef      = useRef<number | null>(null);
   const [showSetup, setShowSetup] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -1234,6 +1275,20 @@ export default function AssistantPage() {
                     ? { ...t, status: (event.exitCode === 0 ? "done" : "error") as "done" | "error", stdout: event.stdout, stderr: event.stderr, exitCode: event.exitCode, durationMs: event.durationMs }
                     : t) }
                 : m));
+            } else if (event.type === "thinking") {
+              thinkingBufferRef.current += event.delta;
+              if (thinkingRafRef.current === null) {
+                const snapId = assistantId;
+                thinkingRafRef.current = requestAnimationFrame(() => {
+                  thinkingRafRef.current = null;
+                  const chunk = thinkingBufferRef.current;
+                  if (!chunk) return;
+                  thinkingBufferRef.current = "";
+                  setMessages(prev => prev.map(m => m.id === snapId
+                    ? { ...m, thinking: (m.thinking ?? "") + chunk }
+                    : m));
+                });
+              }
             } else if (event.type === "content") {
               streamBufferRef.current += event.delta;
               if (rafRef.current === null) {
@@ -1251,10 +1306,14 @@ export default function AssistantPage() {
             } else if (event.type === "done") {
               /* Flush any remaining buffered content before marking done */
               if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+              if (thinkingRafRef.current !== null) { cancelAnimationFrame(thinkingRafRef.current); thinkingRafRef.current = null; }
               const remaining = streamBufferRef.current;
+              const remainingThinking = thinkingBufferRef.current;
               streamBufferRef.current = "";
+              thinkingBufferRef.current = "";
               setMessages(prev => prev.map(m => m.id === assistantId
-                ? { ...m, streaming: false, statusText: undefined, content: m.content + remaining }
+                ? { ...m, streaming: false, statusText: undefined, content: m.content + remaining,
+                    ...(remainingThinking ? { thinking: (m.thinking ?? "") + remainingThinking } : {}) }
                 : m));
               fetchConversations();
             } else if (event.type === "error") {
@@ -1266,14 +1325,18 @@ export default function AssistantPage() {
         }
       }
     } catch (err) {
-      /* Cancel any pending RAF and flush buffered content */
+      /* Cancel any pending RAFs and flush buffered content */
       if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      if (thinkingRafRef.current !== null) { cancelAnimationFrame(thinkingRafRef.current); thinkingRafRef.current = null; }
       const remaining = streamBufferRef.current;
+      const remainingThinking = thinkingBufferRef.current;
       streamBufferRef.current = "";
+      thinkingBufferRef.current = "";
       const isAbort = (err as Error).name === "AbortError";
       setMessages(prev => prev.map(m => m.id === assistantId
         ? { ...m, streaming: false, statusText: undefined,
             content: m.content + remaining,
+            ...(remainingThinking ? { thinking: (m.thinking ?? "") + remainingThinking } : {}),
             ...(isAbort ? {} : { error: (err as Error).message }) }
         : m));
       if (!isAbort) console.error("Chat error:", err);
