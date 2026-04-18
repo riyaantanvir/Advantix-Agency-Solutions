@@ -854,6 +854,16 @@ export async function runMigrations(): Promise<void> {
   await db.execute(sql`UPDATE agent_sessions SET is_online = false`);
 
   await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS agent_limits (
+      user_id               integer PRIMARY KEY REFERENCES tool_users(id) ON DELETE CASCADE,
+      monthly_message_limit integer,
+      monthly_token_limit   integer,
+      monthly_usd_limit     numeric(10,4),
+      updated_at            timestamptz DEFAULT now() NOT NULL
+    )
+  `);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS agent_messages (
       id          serial PRIMARY KEY,
       user_id     integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,

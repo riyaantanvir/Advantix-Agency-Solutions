@@ -1156,48 +1156,75 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
 /*  ADMIN — usage analytics                                                   */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
-/* GET /api/admin/assistant/usage — per-user AI usage summary */
+/* GET /api/admin/assistant/usage — per-user usage summary with limits */
 router.get("/admin/assistant/usage", requireAdmin, async (_req: Request, res: Response) => {
-  const [usersRow, recentRow] = await Promise.all([
-    /* Per-user totals */
+  const [usersRow, summaryRow] = await Promise.all([
     db.execute(sql`
       SELECT
-        tu.id                                                             AS user_id,
+        tu.id                                                                               AS user_id,
         tu.email,
         tu.name,
-        tu.created_at                                                     AS joined_at,
-        COALESCE(SUM(au.total_tokens), 0)                                 AS total_tokens,
-        COALESCE(SUM(au.input_tokens), 0)                                 AS input_tokens,
-        COALESCE(SUM(au.output_tokens), 0)                                AS output_tokens,
-        COALESCE(SUM(au.estimated_cost_usd), 0)                           AS total_cost_usd,
+        tu.created_at                                                                       AS joined_at,
+        COALESCE(SUM(au.total_tokens), 0)                                                   AS total_tokens,
+        COALESCE(SUM(au.estimated_cost_usd), 0)                                             AS total_cost_usd,
         COALESCE(SUM(CASE WHEN au.created_at >= date_trunc('month', now()) THEN au.estimated_cost_usd ELSE 0 END), 0) AS month_cost_usd,
-        COALESCE(SUM(au.tool_calls), 0)                                   AS total_tool_calls,
-        COUNT(DISTINCT au.id)                                             AS request_count,
-        MAX(au.created_at)                                                AS last_used_at,
-        COUNT(DISTINCT am.id) FILTER (WHERE am.role = 'user')             AS messages_sent
+        COALESCE(SUM(CASE WHEN au.created_at >= date_trunc('month', now()) THEN au.total_tokens ELSE 0 END), 0)       AS month_tokens,
+        COALESCE(SUM(au.tool_calls), 0)                                                     AS total_tool_calls,
+        COUNT(DISTINCT au.id)                                                               AS request_count,
+        MAX(au.created_at)                                                                  AS last_used_at,
+        COUNT(DISTINCT am.id) FILTER (WHERE am.role = 'user')                               AS messages_sent,
+        COUNT(DISTINCT am.id) FILTER (WHERE am.role = 'user' AND am.created_at >= date_trunc('month', now())) AS month_messages,
+        al.monthly_message_limit,
+        al.monthly_token_limit,
+        al.monthly_usd_limit
       FROM tool_users tu
-      LEFT JOIN agent_usage au ON au.user_id = tu.id
-      LEFT JOIN agent_messages am ON am.user_id = tu.id
-      GROUP BY tu.id, tu.email, tu.name, tu.created_at
+      LEFT JOIN agent_usage au     ON au.user_id = tu.id
+      LEFT JOIN agent_messages am  ON am.user_id = tu.id
+      LEFT JOIN agent_limits al    ON al.user_id = tu.id
+      GROUP BY tu.id, tu.email, tu.name, tu.created_at, al.monthly_message_limit, al.monthly_token_limit, al.monthly_usd_limit
       ORDER BY total_cost_usd DESC
     `),
-    /* Last 50 requests across all users */
     db.execute(sql`
       SELECT
-        au.id, au.user_id, tu.email, tu.name,
-        au.provider, au.model,
-        au.input_tokens, au.output_tokens, au.total_tokens,
-        au.estimated_cost_usd, au.tool_calls, au.created_at
-      FROM agent_usage au
-      JOIN tool_users tu ON tu.id = au.user_id
-      ORDER BY au.created_at DESC
-      LIMIT 50
+        COALESCE(SUM(total_tokens), 0)        AS grand_tokens,
+        COALESCE(SUM(estimated_cost_usd), 0)  AS grand_cost,
+        COUNT(DISTINCT user_id)               AS active_users,
+        COALESCE(SUM(CASE WHEN created_at >= date_trunc('month', now()) THEN total_tokens ELSE 0 END), 0) AS month_tokens,
+        COALESCE(SUM(CASE WHEN created_at >= date_trunc('month', now()) THEN estimated_cost_usd ELSE 0 END), 0) AS month_cost
+      FROM agent_usage
     `),
   ]);
   res.json({
     users: usersRow.rows,
-    recentRequests: recentRow.rows,
+    summary: summaryRow.rows[0] ?? {},
   });
+});
+
+/* PUT /api/admin/assistant/users/:id/limit — set per-user limits */
+router.put("/admin/assistant/users/:id/limit", requireAdmin, async (req: Request, res: Response) => {
+  const userId = parseInt(req.params.id);
+  if (isNaN(userId)) return res.status(400).json({ error: "invalid user id" });
+  const { monthlyMessageLimit, monthlyTokenLimit, monthlyUsdLimit } = req.body as {
+    monthlyMessageLimit?: number | null;
+    monthlyTokenLimit?: number | null;
+    monthlyUsdLimit?: number | null;
+  };
+  await db.execute(sql`
+    INSERT INTO agent_limits (user_id, monthly_message_limit, monthly_token_limit, monthly_usd_limit, updated_at)
+    VALUES (
+      ${userId},
+      ${monthlyMessageLimit ?? null},
+      ${monthlyTokenLimit ?? null},
+      ${monthlyUsdLimit ?? null},
+      now()
+    )
+    ON CONFLICT (user_id) DO UPDATE SET
+      monthly_message_limit = EXCLUDED.monthly_message_limit,
+      monthly_token_limit   = EXCLUDED.monthly_token_limit,
+      monthly_usd_limit     = EXCLUDED.monthly_usd_limit,
+      updated_at            = now()
+  `);
+  res.json({ ok: true });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════ */

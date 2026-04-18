@@ -143,7 +143,7 @@ const navItems: NavItem[] = [
     children: [
       { path: "/tools", label: "Advantix Tools", icon: Zap },
       { path: "/tools-dashboard", label: "Tools Dashboard", icon: Wrench, href: "/tools/dashboard" },
-      { path: "/manage-ai", label: "Manage AI", icon: Sparkles },
+      { path: "/manage-assistant", label: "Manage Assistant", icon: BotMessageSquare },
       { path: "/assistant-requests", label: "Assistant Requests", icon: HeadphonesIcon },
       { path: "/assistant-usage", label: "AI Usage & Billing", icon: BarChart2 },
     ],

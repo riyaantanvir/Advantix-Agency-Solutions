@@ -19,6 +19,7 @@ const Team = lazy(() => import("./pages/Team"));
 const AssistantRequests = lazy(() => import("./pages/AssistantRequests"));
 const UserManagement = lazy(() => import("./pages/UserManagement"));
 const ManageAI = lazy(() => import("./pages/ManageAI"));
+const ManageAssistant = lazy(() => import("./pages/ManageAssistant"));
 const Integrations = lazy(() => import("./pages/Integrations"));
 const Tools = lazy(() => import("./pages/Tools"));
 const Tasks = lazy(() => import("./pages/Tasks"));
@@ -202,6 +203,10 @@ function Router() {
 
       <Route path="/manage-ai">
         <ProtectedLayout><ManageAI /></ProtectedLayout>
+      </Route>
+
+      <Route path="/manage-assistant">
+        <ProtectedLayout><ManageAssistant /></ProtectedLayout>
       </Route>
 
       <Route path="/integrations">
