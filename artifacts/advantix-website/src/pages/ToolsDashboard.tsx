@@ -3,11 +3,10 @@ import { motion } from "framer-motion";
 import { Link, useLocation } from "wouter";
 import {
   Link2, BarChart2, Copy, CheckCircle, MessageSquare, ArrowRight,
-  LogOut, Settings, Plus, Zap, Video, Sparkles, Brain, Heart,
-  Headphones, Facebook, Clock, User, ChevronRight,
+  LogOut, Settings, Plus, Zap, Video, Sparkles, Bot, Heart,
+  Headphones, Facebook, Clock, User, ChevronRight, Send, Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { toolsApi, type ShortUrl } from "@/lib/toolsApi";
 import { useToolsUser } from "@/context/ToolsUserContext";
 import { format } from "date-fns";
@@ -31,7 +30,16 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-interface AiUsage { tokensUsed: number; costUsd: number; monthlyLimit: number | null; }
+interface AssistantStats {
+  messagesSent: number;
+  aiResponses: number;
+  toolCalls: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  monthCostUsd: number;
+  firstMessageAt: string | null;
+  lastMessageAt: string | null;
+}
 interface FavoriteItem { image_id: number; url: string; caption: string | null; page_slug: string; folder_name: string; }
 
 const TOOLS = [
@@ -50,8 +58,8 @@ export default function ToolsDashboard() {
   const [loadingUrls, setLoadingUrls] = useState(true);
   const [recStats, setRecStats] = useState({ totalRecordings: 0, totalSeconds: 0 });
   const [loadingRec, setLoadingRec] = useState(true);
-  const [aiUsage, setAiUsage] = useState<AiUsage | null>(null);
-  const [loadingAi, setLoadingAi] = useState(true);
+  const [assistantStats, setAssistantStats] = useState<AssistantStats | null>(null);
+  const [loadingAssistant, setLoadingAssistant] = useState(true);
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [loadingFavs, setLoadingFavs] = useState(true);
 
@@ -62,12 +70,13 @@ export default function ToolsDashboard() {
     if (!user) { navigate("/tools"); return; }
     toolsApi.urls.list().then(setUrls).catch(() => setUrls([])).finally(() => setLoadingUrls(false));
     toolsApi.recordings.stats().then(setRecStats).catch(() => setRecStats({ totalRecordings: 0, totalSeconds: 0 })).finally(() => setLoadingRec(false));
-    fetch("/api/ai/usage/me", { credentials: "include" }).then(r => r.ok ? r.json() : null).then(d => { if (d) setAiUsage(d); }).finally(() => setLoadingAi(false));
+    fetch("/api/tools/assistant/stats", { credentials: "include" }).then(r => r.ok ? r.json() : null).then(d => { if (d) setAssistantStats(d); }).finally(() => setLoadingAssistant(false));
     fetch("/api/favorites/images", { credentials: "include" }).then(r => r.ok ? r.json() : []).then(setFavorites).catch(() => setFavorites([])).finally(() => setLoadingFavs(false));
   }, [user, loading]);
 
   const totalClicks = urls.reduce((s, u) => s + u.clicks, 0);
   const totalMinutes = Math.round(recStats.totalSeconds / 60);
+  const hasAssistantActivity = assistantStats && (assistantStats.messagesSent > 0 || assistantStats.totalTokens > 0);
 
   const handleLogout = async () => { await logout(); navigate("/tools"); };
   const openChat = () => window.dispatchEvent(new Event("open-chat-widget"));
@@ -87,8 +96,6 @@ export default function ToolsDashboard() {
     { label: "Recordings", value: recStats.totalRecordings, icon: Video, color: "text-purple-400", bg: "bg-purple-500/10", loading: loadingRec },
     { label: "Mins Recorded", value: totalMinutes, icon: Clock, color: "text-amber-400", bg: "bg-amber-500/10", loading: loadingRec },
   ];
-
-  const aiPct = aiUsage?.monthlyLimit ? Math.min(100, Math.round((aiUsage.tokensUsed / aiUsage.monthlyLimit) * 100)) : null;
 
   return (
     <div className="pt-24 pb-20 min-h-screen bg-background">
@@ -233,62 +240,65 @@ export default function ToolsDashboard() {
             )}
           </motion.div>
 
-          {/* AI Usage — 2/5 */}
+          {/* Advantix Assistant — 2/5 */}
           <motion.div {...fade(0.12)} className="sm:col-span-2 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="font-bold text-base flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-violet-400" /> AI Usage
+                <Bot className="w-4 h-4 text-emerald-400" /> Assistant Uses
               </h2>
-              <a href="/ai/" className="text-xs text-violet-400 hover:underline flex items-center gap-1">
-                Open <ArrowRight className="w-3 h-3" />
-              </a>
+              <Link href="/tools/assistant">
+                <button className="text-xs text-emerald-400 hover:underline flex items-center gap-1">
+                  Open <ArrowRight className="w-3 h-3" />
+                </button>
+              </Link>
             </div>
 
-            <div className="rounded-xl border border-border/50 bg-card p-4 h-[calc(100%-36px)] flex flex-col justify-between min-h-[130px]">
-              {loadingAi ? (
-                <div className="space-y-2 animate-pulse">
-                  <div className="h-8 w-32 bg-muted/40 rounded" />
-                  <div className="h-2 bg-muted/40 rounded-full" />
+            <div className="rounded-xl border border-border/50 bg-card p-4 flex flex-col justify-between min-h-[160px] gap-3">
+              {loadingAssistant ? (
+                <div className="space-y-2 animate-pulse flex-1">
+                  <div className="h-7 w-28 bg-muted/40 rounded" />
+                  <div className="h-4 w-full bg-muted/30 rounded" />
+                  <div className="h-4 w-3/4 bg-muted/30 rounded" />
                 </div>
-              ) : aiUsage ? (
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-2xl font-bold tabular-nums">{aiUsage.tokensUsed.toLocaleString()}</p>
-                    <p className="text-xs text-muted-foreground">tokens this month</p>
-                  </div>
-                  {aiUsage.monthlyLimit && aiPct !== null ? (
-                    <div className="space-y-1.5">
-                      <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-700 ${aiPct >= 95 ? "bg-red-500" : aiPct >= 80 ? "bg-amber-500" : "bg-violet-500"}`}
-                          style={{ width: `${aiPct}%` }}
-                        />
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className={`text-xs font-medium ${aiPct >= 95 ? "text-red-400" : aiPct >= 80 ? "text-amber-400" : "text-violet-400"}`}>
-                          {aiPct}% used
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          of {aiUsage.monthlyLimit.toLocaleString()}
-                        </span>
-                      </div>
+              ) : hasAssistantActivity ? (
+                <div className="flex-1 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-emerald-500/8 border border-emerald-500/15 p-2.5 text-center">
+                      <p className="text-xl font-bold tabular-nums text-emerald-400">{assistantStats!.messagesSent.toLocaleString()}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
+                        <Send className="w-2.5 h-2.5" /> Messages Sent
+                      </p>
                     </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">${aiUsage.costUsd.toFixed(4)} · no limit</p>
+                    <div className="rounded-lg bg-violet-500/8 border border-violet-500/15 p-2.5 text-center">
+                      <p className="text-xl font-bold tabular-nums text-violet-400">{assistantStats!.toolCalls.toLocaleString()}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 flex items-center justify-center gap-1">
+                        <Wrench className="w-2.5 h-2.5" /> Tool Calls
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground pt-0.5">
+                    <span>{assistantStats!.totalTokens.toLocaleString()} total tokens</span>
+                    <span>${assistantStats!.totalCostUsd.toFixed(4)} lifetime</span>
+                  </div>
+                  {assistantStats!.lastMessageAt && (
+                    <p className="text-[10px] text-muted-foreground/60">
+                      Last used {format(new Date(assistantStats!.lastMessageAt), "MMM d, yyyy")}
+                    </p>
                   )}
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center h-full gap-2 text-center py-2">
-                  <Brain className="w-7 h-7 text-muted-foreground/25" />
-                  <p className="text-xs text-muted-foreground">No AI usage yet</p>
-                  <a href="/ai/" className="text-xs text-violet-400 hover:underline">Start chatting →</a>
+                <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center py-3">
+                  <Bot className="w-8 h-8 text-muted-foreground/20" />
+                  <p className="text-xs text-muted-foreground">No assistant usage yet</p>
+                  <Link href="/tools/assistant">
+                    <button className="text-xs text-emerald-400 hover:underline">Try the Assistant →</button>
+                  </Link>
                 </div>
               )}
 
-              {/* Quick support button */}
               <button
                 onClick={openChat}
-                className="mt-4 w-full flex items-center justify-center gap-2 text-xs text-muted-foreground hover:text-foreground border border-border/50 rounded-lg py-2 hover:border-border transition-colors"
+                className="w-full flex items-center justify-center gap-2 text-xs text-muted-foreground hover:text-foreground border border-border/50 rounded-lg py-2 hover:border-border transition-colors"
               >
                 <MessageSquare className="w-3.5 h-3.5" /> Chat with Support
               </button>
