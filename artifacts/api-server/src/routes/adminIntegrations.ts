@@ -151,6 +151,31 @@ async function testIntegrationKey(name: string, key: string): Promise<{ ok: bool
         ? { ok: true, message: "Connected — Slack webhook delivered" }
         : { ok: false, message: `Slack webhook returned ${r.status}` };
     }
+    if (name === "FACEBOOK_APP_ID") {
+      const r = await fetch(`https://graph.facebook.com/v19.0/${key}?fields=id,name&access_token=${key}|placeholder`);
+      return key.length >= 10
+        ? { ok: true, message: "Facebook App ID saved — format looks valid" }
+        : { ok: false, message: "App ID looks too short — check your Facebook Developer dashboard" };
+    }
+    if (name === "FACEBOOK_APP_SECRET") {
+      return key.length >= 20
+        ? { ok: true, message: "Facebook App Secret saved — will be used to exchange access tokens" }
+        : { ok: false, message: "App Secret looks too short — check your Facebook Developer dashboard" };
+    }
+    if (name === "FACEBOOK_WEBHOOK_VERIFY_TOKEN") {
+      return key.length >= 8
+        ? { ok: true, message: "Webhook Verify Token saved — make sure it matches what you set in Facebook Webhooks settings" }
+        : { ok: false, message: "Verify token is too short — use at least 8 characters" };
+    }
+    if (name === "SMM_META_ACCESS_TOKEN" || (name.includes("META") && name.includes("TOKEN"))) {
+      const r = await fetch(`https://graph.facebook.com/v19.0/me?access_token=${key}`);
+      if (r.ok) {
+        const data = await r.json() as { name?: string; id?: string };
+        return { ok: true, message: `Connected — Token valid for: ${data.name ?? data.id ?? "unknown page"}` };
+      }
+      const err = await r.json().catch(() => null) as { error?: { message?: string } } | null;
+      return { ok: false, message: `Meta API error: ${err?.error?.message ?? r.statusText}` };
+    }
     return { ok: false, message: "No test available for this integration type" };
   } catch (err: any) {
     return { ok: false, message: `Connection error: ${err?.message ?? "Unknown error"}` };

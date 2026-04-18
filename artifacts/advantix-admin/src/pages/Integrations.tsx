@@ -3,7 +3,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Trash2, Edit2, Check, X, Key, Eye, EyeOff,
   ChevronDown, ChevronUp, Plug, Sparkles, Mail, CreditCard, Globe, Shield,
-  Loader2, Wifi, WifiOff,
+  Loader2, Wifi, WifiOff, Share2,
 } from "lucide-react";
 
 interface Integration {
@@ -17,10 +17,11 @@ interface Integration {
   updatedAt: string;
 }
 
-const CATEGORIES = ["AI", "Email", "Payment", "Storage", "Analytics", "Communication", "Other"];
+const CATEGORIES = ["AI", "Social", "Email", "Payment", "Storage", "Analytics", "Communication", "Other"];
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   AI: Sparkles,
+  Social: Share2,
   Email: Mail,
   Payment: CreditCard,
   Storage: Globe,
@@ -31,6 +32,7 @@ const CATEGORY_ICONS: Record<string, React.ElementType> = {
 
 const CATEGORY_COLORS: Record<string, string> = {
   AI: "bg-violet-500/10 text-violet-400 border-violet-500/20",
+  Social: "bg-blue-600/10 text-blue-400 border-blue-600/20",
   Email: "bg-blue-500/10 text-blue-400 border-blue-500/20",
   Payment: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
   Storage: "bg-orange-500/10 text-orange-400 border-orange-500/20",
@@ -45,6 +47,10 @@ const PRESETS = [
   { name: "GEMINI_API_KEY", label: "Google Gemini API Key", category: "AI", description: "API key for Google Gemini models" },
   { name: "OPENROUTER_API_KEY", label: "OpenRouter API Key", category: "AI", description: "API key for OpenRouter (access 200+ models with one key — sk-or-v1-...)" },
   { name: "GROK_API_KEY", label: "Grok (xAI) API Key", category: "AI", description: "API key for xAI Grok models" },
+  { name: "FACEBOOK_APP_ID", label: "Facebook App ID", category: "Social", description: "Your Facebook App ID from developers.facebook.com — used for OAuth login & webhooks" },
+  { name: "FACEBOOK_APP_SECRET", label: "Facebook App Secret", category: "Social", description: "Your Facebook App Secret — keep this private, used to exchange tokens" },
+  { name: "FACEBOOK_WEBHOOK_VERIFY_TOKEN", label: "Facebook Webhook Verify Token", category: "Social", description: "A custom string you set in the Facebook webhook settings to verify webhook calls" },
+  { name: "SMM_META_ACCESS_TOKEN", label: "Meta Page Access Token", category: "Social", description: "Long-lived Facebook/Instagram page access token for SMM auto-posting" },
   { name: "STRIPE_SECRET_KEY", label: "Stripe Secret Key", category: "Payment", description: "Stripe secret key for payment processing" },
   { name: "SENDGRID_API_KEY", label: "SendGrid API Key", category: "Email", description: "API key for SendGrid email delivery" },
   { name: "RESEND_API_KEY", label: "Resend API Key", category: "Email", description: "API key for Resend transactional email" },
