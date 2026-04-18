@@ -6,7 +6,7 @@ import {
   FolderOpen, FileText, Edit3, Monitor, Zap, AlertTriangle, Info,
   Bot, User, Settings, X, Shield, Clock, Calendar, MessageSquare,
   Wrench, BarChart3, Activity, Sparkles, ChevronLeft, PenSquare, Menu,
-  Paperclip, Link, List, Globe, Search,
+  Paperclip, Link, List, Globe, Search, GitBranch,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -117,6 +117,8 @@ function getToolStatus(tool: string, input: Record<string, unknown>): string {
   if (tool === "get_site_info")     return `Fetching site info…`;
   if (tool === "patch_file")        return `Patching ${String(input.path ?? "file")}…`;
   if (tool === "search_in_files")   return `Searching for "${String(input.pattern ?? "…")}"…`;
+  if (tool === "fetch_url")         return `Fetching ${String(input.url ?? "URL")}…`;
+  if (tool === "git")               return `git ${String(input.action ?? "")} ${String(input.args ?? "")}`.trim() + "…";
   return tool;
 }
 
@@ -134,6 +136,8 @@ const TOOL_META: Record<string, { icon: React.ComponentType<{ className?: string
   get_smm_stats:     { icon: BarChart3,    label: "SMM Stats",        color: "text-violet-400" },
   get_smm_posts:     { icon: MessageSquare,label: "SMM Posts",        color: "text-violet-300" },
   get_site_info:     { icon: Globe,        label: "Site Info",        color: "text-teal-400" },
+  fetch_url:         { icon: Globe,        label: "Fetch URL",        color: "text-sky-400" },
+  git:               { icon: GitBranch,    label: "Git",              color: "text-orange-300" },
 };
 
 function ToolCard({ tool }: { tool: ToolExecution }) {
@@ -175,6 +179,13 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
     if (tool.tool === "search_in_files") {
       const fp = tool.input.file_pattern ? ` [${tool.input.file_pattern}]` : "";
       return `"${String(tool.input.pattern ?? "").slice(0, 40)}"${fp}`;
+    }
+    if (tool.tool === "fetch_url") {
+      try { return new URL(String(tool.input.url ?? "")).hostname; } catch { return String(tool.input.url ?? "").slice(0, 50); }
+    }
+    if (tool.tool === "git") {
+      const args = tool.input.args ? ` ${String(tool.input.args)}` : "";
+      return `git ${String(tool.input.action ?? "")}${args}`.slice(0, 60);
     }
     if (tool.tool === "list_directory") return path || ".";
     if (tool.tool === "open_vscode")  return path || ".";

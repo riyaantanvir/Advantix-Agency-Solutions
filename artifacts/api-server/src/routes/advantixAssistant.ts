@@ -499,11 +499,37 @@ const TOOLS_DEF = [
       properties: {
         pattern:        { type: "string",  description: "Search pattern (regex or literal string)" },
         path:           { type: "string",  description: "Directory or file to search in (default: CWD)" },
-        file_pattern:   { type: "string",  description: "File glob filter e.g. '*.ts', '*.py' (optional)" },
+        file_pattern:   { type: "string",  description: "File glob filter e.g. '*.ts', '*.py', '*.dart' (optional)" },
         case_sensitive: { type: "boolean", description: "Case sensitive search (default true)" },
         max_results:    { type: "number",  description: "Maximum result lines to return (default 100)" },
       },
       required: ["pattern"],
+    },
+  },
+  {
+    name: "fetch_url",
+    description: "Fetch the content of any URL — web pages, JSON APIs, documentation, pub.dev packages, Flutter docs, REST endpoints, etc. Returns the text/JSON content. Use when you need to read online documentation, check a package's API, or call an HTTP endpoint.",
+    input_schema: {
+      type: "object",
+      properties: {
+        url:          { type: "string",  description: "Full URL to fetch (https://...)" },
+        extract_text: { type: "boolean", description: "Strip HTML tags and return clean readable text (default true). Set false for raw HTML or JSON." },
+        max_chars:    { type: "number",  description: "Maximum characters to return (default 3000, max 6000)" },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "git",
+    description: "Run git operations on the user's local machine. Use for checking status, viewing diffs, staging, committing, pushing, pulling, or any git workflow.",
+    input_schema: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "Git subcommand: 'status', 'diff', 'log', 'add', 'commit', 'push', 'pull', 'branch', 'stash', 'checkout', 'reset', or any git subcommand" },
+        args:   { type: "string", description: "Arguments for the action. Examples — commit: '-m \"fix: bug\"'; add: '.'; log: '--oneline -10'; diff: 'HEAD~1'; push: 'origin main'" },
+        cwd:    { type: "string", description: "Working directory (optional, defaults to agent CWD)" },
+      },
+      required: ["action"],
     },
   },
 ];
@@ -895,10 +921,27 @@ CODING BEST PRACTICES — Follow these when working on code:
 - ALWAYS use search_in_files before reading files to locate the exact function/line you need.
 - ALWAYS read a file (with max_lines=80 around the target area) before editing it — never edit blind.
 - Prefer patch_file over write_file for files larger than 100 lines — only rewrite the changed portion.
-- After editing code, verify with a quick compile/lint (e.g. tsc --noEmit, eslint, python -m py_compile) if applicable.
+- After editing code, verify with a quick compile/lint (e.g. tsc --noEmit, eslint, flutter analyze, dart analyze) if applicable.
 - When adding a feature: search for existing patterns first, then follow the same conventions.
 - For TypeScript/JS: always import before using. For Python: check imports at top.
 - Return errors with exact file:line references so the user can jump directly.
+- Use fetch_url to read pub.dev package docs, Flutter API docs, or any online reference before implementing.
+
+FLUTTER / DART BEST PRACTICES — Follow when working on Flutter projects:
+- FIRST STEPS: run 'flutter doctor' and 'cat pubspec.yaml' to understand the project setup.
+- After ANY change to pubspec.yaml: run 'flutter pub get' immediately.
+- After editing Dart files: run 'flutter analyze' to catch type/lint errors before declaring done.
+- To run the app: use 'flutter run -d <device_id>' — check available devices with 'flutter devices' first.
+- Hot reload: press 'r' in the running process; hot restart: 'R'; quit: 'q'.
+- NULL SAFETY: Never use '!' operator unless you are certain the value cannot be null. Prefer '?', '??', and null checks.
+- Naming conventions: PascalCase for Widget classes, camelCase for variables/functions, snake_case for file names.
+- Widget structure: always extract repeated or complex UI into separate StatelessWidget or StatefulWidget classes — never use helper functions that return Widget.
+- Use 'const' constructors everywhere possible for better rebuild performance.
+- State management: check existing state management patterns in the codebase (Provider, Riverpod, Bloc, GetX, setState) and follow whatever is already being used.
+- When adding a package: check pub.dev for the latest version, add to pubspec.yaml under dependencies, run 'flutter pub get'.
+- For platform-specific code (iOS/Android): check the respective platform directories for any needed configuration (permissions, entitlements, AndroidManifest.xml, Info.plist).
+- File organization: keep screens in lib/screens/, widgets in lib/widgets/, models in lib/models/, services in lib/services/ — unless project already uses different structure.
+- Auto-fix loop for Flutter: run 'flutter analyze' → fix errors → re-run until clean. Only stop if error requires user's credentials or device access.
 
 CRITICAL — Error handling and task persistence:
 - NEVER stop mid-task because a tool returned an error. Always analyze the error and attempt to fix it automatically before giving up.
@@ -918,8 +961,8 @@ CRITICAL — Error handling and task persistence:
     const callAI = async (msgsArg: InternalMsg[], isToolRound = false): Promise<AIResponse> => {
       /* OpenRouter has strict per-request credit limits — use lower cap */
       const maxTokens = provider === "openrouter"
-        ? (isToolRound ? 512 : 1500)
-        : (isToolRound ? 768 : 2048);
+        ? (isToolRound ? 1200 : 3000)
+        : (isToolRound ? 1024 : 4096);
       const WAIT_STEPS = [10, 20, 30, 60];
       let attempt = 0;
       let msgs = msgsArg;
@@ -1391,6 +1434,52 @@ CRITICAL — Error handling and task persistence:
           } catch (err) {
             result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
           }
+        } else if (toolName === "fetch_url") {
+          /* Server-side HTTP fetch — no local agent needed */
+          try {
+            const url      = String(toolInput.url ?? "");
+            const maxChars = Math.min(6000, Number(toolInput.max_chars ?? 3000));
+            const doExtract = toolInput.extract_text !== false;
+            if (!url) throw new Error("url is required");
+
+            const resp = await fetch(url, {
+              headers: { "User-Agent": "Mozilla/5.0 (compatible; AdvantixAssistant/1.0; +https://advantix.digital)" },
+              signal: AbortSignal.timeout(15_000),
+            });
+            const contentType = resp.headers.get("content-type") ?? "";
+            let content = await resp.text();
+
+            if (doExtract && contentType.includes("html")) {
+              content = content
+                .replace(/<script[\s\S]*?<\/script>/gi, "")
+                .replace(/<style[\s\S]*?<\/style>/gi, "")
+                .replace(/<[^>]+>/g, " ")
+                .replace(/\s{2,}/g, " ")
+                .trim();
+            }
+
+            const truncated = content.length > maxChars
+              ? content.slice(0, maxChars) + `\n\n...(${content.length - maxChars} chars omitted)`
+              : content;
+
+            result = {
+              id: toolId,
+              stdout: `[HTTP ${resp.status} ${resp.statusText}] ${url}\nContent-Type: ${contentType}\n\n${truncated}`,
+              stderr: "", exitCode: 0,
+            };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "git") {
+          /* Forward git to local agent as run_command */
+          try {
+            const action = String(toolInput.action ?? "status");
+            const args   = toolInput.args ? ` ${String(toolInput.args)}` : "";
+            const cmd    = `git ${action}${args} 2>&1 | head -200`;
+            result = await sendToolCall(uid, toolId, "run_command", { command: cmd, cwd: toolInput.cwd }, 30_000);
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: -1, error: String(err) };
+          }
         } else {
           /* Agent tools — forward to local machine */
           try {
@@ -1404,7 +1493,7 @@ CRITICAL — Error handling and task persistence:
           ? `ERROR: ${result.error}`
           : [result.stdout, result.stderr ? `STDERR: ${result.stderr}` : ""].filter(Boolean).join("\n");
 
-        const MAX_OUTPUT = 1000;
+        const MAX_OUTPUT = 2500;
         const toolOutput = rawOutput.length > MAX_OUTPUT
           ? rawOutput.slice(0, MAX_OUTPUT) + `\n...(truncated — ${rawOutput.length - MAX_OUTPUT} chars omitted)`
           : rawOutput;
