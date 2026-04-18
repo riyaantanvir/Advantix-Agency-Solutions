@@ -1154,45 +1154,84 @@ export default function AssistantPage() {
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
             {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center min-h-[50vh] text-center gap-5">
+              <div className="flex flex-col items-center justify-center min-h-[50vh] text-center gap-6 pb-4">
+                {/* Avatar + status */}
                 <div className="relative">
                   <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/15 flex items-center justify-center">
                     <Sparkles className="w-7 h-7 text-primary" />
                   </div>
                   <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-background ${agentStatus.connected ? "bg-green-500" : "bg-muted"}`} />
                 </div>
+
+                {/* Greeting */}
                 <div className="space-y-1">
                   <h3 className="font-display font-semibold text-foreground text-lg">
                     {user?.name ? `Hi, ${user.name.split(" ")[0]}` : "Advantix Assistant"}
                   </h3>
                   <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
                     {agentStatus.connected
-                      ? `Connected to ${agentStatus.info?.hostname}. Ask me anything — I can run commands, write files, and code on your machine.`
-                      : "Connect your local agent via Settings, then I can work directly on your computer."}
+                      ? `Connected to ${agentStatus.info?.hostname}. Ask me anything — I can work directly on your machine.`
+                      : "Connect your local agent to let me work directly on your computer."}
                   </p>
                 </div>
+
                 {!keyInfo?.exists && (
                   <button onClick={() => setShowSettings(true)}
                     className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all">
                     <Key className="w-3.5 h-3.5" /> Get started
                   </button>
                 )}
-                {agentStatus.connected && (
-                  <div className="grid grid-cols-2 gap-2 w-full max-w-xs">
+
+                {/* ── What you can do ── */}
+                <div className="w-full max-w-xl text-left">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 text-center mb-3">What you can do with the agent</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {[
-                      { text: "List files here", icon: FolderOpen },
-                      { text: "Hello World in Python", icon: Terminal },
-                      { text: "Show git status", icon: Info },
-                      { text: "What's in Downloads?", icon: FileText },
-                    ].map(({ text, icon: Icon }) => (
-                      <button key={text} onClick={() => { setInput(text); inputRef.current?.focus(); }}
-                        className="flex items-center gap-2 text-left text-xs px-3 py-2 rounded-lg border border-border/40 text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-primary/5 transition-all">
-                        <Icon className="w-3 h-3 shrink-0 text-primary/50" />
-                        <span>{text}</span>
-                      </button>
+                      {
+                        icon: Terminal,
+                        title: "Run any command",
+                        desc: "Execute shell commands — npm, git, python, ffmpeg, anything in your terminal.",
+                        examples: ["npm install & run dev server", "git pull & show status"],
+                      },
+                      {
+                        icon: FileText,
+                        title: "Read & write files",
+                        desc: "Open, read, edit, or create any file on your machine — code, configs, logs.",
+                        examples: ["Fix a bug and save the file", "Read error logs and explain"],
+                      },
+                      {
+                        icon: FolderOpen,
+                        title: "Browse your filesystem",
+                        desc: "Explore directories, find files, check folder contents anywhere on your Mac.",
+                        examples: ["List files in Downloads", "Find all .env files in project"],
+                      },
+                      {
+                        icon: Sparkles,
+                        title: "Write & run code",
+                        desc: "Generate scripts in any language, save them, and run them right away.",
+                        examples: ["Write a Python scraper and run it", "Create a bash script"],
+                      },
+                    ].map(({ icon: Icon, title, desc, examples }) => (
+                      <div key={title} className="flex gap-3 p-3 rounded-xl border border-border/30 bg-secondary/10 hover:bg-secondary/20 transition-colors text-left">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                          <Icon className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-foreground mb-0.5">{title}</p>
+                          <p className="text-xs text-muted-foreground leading-relaxed mb-1.5">{desc}</p>
+                          <div className="flex flex-col gap-0.5">
+                            {examples.map(ex => (
+                              <button key={ex} onClick={() => { setInput(ex); inputRef.current?.focus(); }}
+                                className="text-left text-[11px] text-primary/70 hover:text-primary flex items-center gap-1 transition-colors group">
+                                <span className="opacity-50 group-hover:opacity-100">→</span> {ex}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
-                )}
+                </div>
               </div>
             )}
             <AnimatePresence initial={false}>
