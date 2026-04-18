@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { createHash, randomBytes } from "crypto";
+import { execSync } from "child_process";
 import { db, shortUrlsTable, teamMembersTable, servicesTable, portfolioItemsTable, blogPostsTable, contestsTable } from "@workspace/db";
 import { smmUserKeysTable, smmScheduledPostsTable } from "@workspace/db/schema";
 import { fetchAllPlatforms } from "../lib/smmService.js";
@@ -583,6 +584,32 @@ const PLATFORM_TOOLS_DEF = [
       },
     },
   },
+  {
+    name: "find_code",
+    description: "Search the Advantix project codebase for any pattern — component names, function names, variable names, error messages, CSS classes, or any text. Returns matching file paths and lines with context. ALWAYS use this first to locate the exact file and line before reading or editing code. Much faster than exploring blindly.",
+    input_schema: {
+      type: "object",
+      properties: {
+        pattern:  { type: "string", description: "Regex or literal text to search for (e.g. 'ThinkingBlock', 'statusText', 'streaming.*content')" },
+        path:     { type: "string", description: "Directory to search in, relative to project root (e.g. 'artifacts/advantix-website/src'). Omit to search entire project." },
+        ext:      { type: "string", description: "File extension filter (e.g. 'ts', 'tsx', 'dart', 'css'). Omit to search all files." },
+        context:  { type: "number", description: "Lines of context around each match (default 2, max 5)." },
+        files_only: { type: "boolean", description: "If true, return only the list of matching file paths (no line content). Fast for finding which file to open." },
+      },
+      required: ["pattern"],
+    },
+  },
+  {
+    name: "list_files",
+    description: "List files in any directory of the Advantix project. Use to explore project structure, find what files exist, or discover component/route files before reading them.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Directory path relative to project root (e.g. 'artifacts/advantix-website/src/pages'). Omit for project root overview." },
+        ext:  { type: "string", description: "Filter by extension (e.g. 'tsx', 'ts'). Omit for all files." },
+      },
+    },
+  },
 ];
 
 async function getApiKey(name: string): Promise<string | null> {
@@ -632,9 +659,24 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
 
   const agentConnected = isAgentConnected(uid);
   const agentInfo = getAgentInfo(uid);
+  /* Build a live project file index so the assistant knows key entry points */
+  let liveProjectMap = "";
+  try {
+    const PROJECT_ROOT = "/home/runner/workspace";
+    const rawFiles = execSync(
+      `rg --files --color=never --glob=!**/node_modules/** --glob=!**/dist/** --glob=!**/.git/** --glob=!**/*.map --glob=!**/pnpm-lock.yaml --glob=**/*.{ts,tsx,dart} ${PROJECT_ROOT}`,
+      { encoding: "utf8", timeout: 5_000, maxBuffer: 512_000 }
+    );
+    const files = rawFiles.trim().split("\n").filter(Boolean)
+      .map(f => f.replace(PROJECT_ROOT + "/", ""))
+      .filter(f => !f.includes("node_modules") && !f.includes("dist/"))
+      .sort();
+    liveProjectMap = `\n\nProject files (${files.length} .ts/.tsx/.dart):\n${files.join("\n")}`;
+  } catch { /* non-fatal */ }
+
   const sysContext = agentConnected && agentInfo
-    ? `Agent connected. OS: ${agentInfo.os}, Shell: ${agentInfo.shell}, CWD: ${agentInfo.cwd}, User: ${agentInfo.username}, VSCode: ${agentInfo.hasVscode}. Use tools to control the machine.`
-    : "No agent connected. Tell the user to start the agent first. Answer questions but cannot run commands.";
+    ? `Agent connected. OS: ${agentInfo.os}, Shell: ${agentInfo.shell}, CWD: ${agentInfo.cwd}, User: ${agentInfo.username}, VSCode: ${agentInfo.hasVscode}. Use tools to control the machine.${liveProjectMap}`
+    : `No agent connected. Tell the user to start the agent first. Answer questions but cannot run commands.${liveProjectMap}`;
 
   try {
     /* ── Auto-title conversation from first user message ── */
@@ -933,8 +975,28 @@ TASK RESUMPTION — When asked to continue or resume:
 - Continue from exactly where the task was interrupted — do not repeat completed steps.
 - If the user says "continue", "resume", "আগের কাজ", or similar, treat it as task resumption.
 
+CODE NAVIGATION — Advantix monorepo structure (at /home/runner/workspace):
+- artifacts/api-server/src/routes/     → Express API routes (advantixAssistant.ts, facebook.ts, smm.ts, etc.)
+- artifacts/api-server/src/lib/        → Server libs (agentManager, smmService, objectStorage, etc.)
+- artifacts/advantix-website/src/pages/ → Main website React pages (AssistantPage.tsx, Home.tsx, etc.)
+- artifacts/advantix-website/src/components/ → Reusable UI components
+- artifacts/advantix-admin/src/pages/  → Admin panel pages (ManageAssistant.tsx, etc.)
+- artifacts/advantix-ai/src/pages/     → AI tool pages
+- lib/db/src/schema/                   → Drizzle ORM database schema
+
+SMART FILE FINDING — Always follow this workflow:
+1. Use find_code(pattern, files_only=true) to instantly find which files contain a symbol/function/component.
+2. Use find_code(pattern, context=3) for a focused snippet showing the exact lines.
+3. THEN read only the specific file with the agent's read_file tool if you need more context.
+4. NEVER read multiple files blindly — always find_code first.
+Examples:
+  - Bug in "Thinking…" display → find_code("Thinking", ext="tsx", files_only=true)
+  - Fix streaming logic → find_code("streamBufferRef|rafRef", ext="tsx")
+  - Find API route → find_code("router\\.post.*assistant", ext="ts", path="artifacts/api-server")
+  - CSS class issue → find_code("animate-bounce|text-muted-foreground", ext="css")
+
 CODING BEST PRACTICES — Follow these when working on code:
-- ALWAYS use search_in_files before reading files to locate the exact function/line you need.
+- ALWAYS use find_code before reading files to locate the exact function/line you need.
 - ALWAYS read a file (with max_lines=80 around the target area) before editing it — never edit blind.
 - Prefer patch_file over write_file for files larger than 100 lines — only rewrite the changed portion.
 - After editing code, verify with a quick compile/lint (e.g. tsc --noEmit, eslint, flutter analyze, dart analyze) if applicable.
@@ -1483,6 +1545,78 @@ CRITICAL — Error handling and task persistence:
             result = { id: toolId, stdout: parts.join("\n\n"), stderr: "", exitCode: 0 };
           } catch (err) {
             result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "find_code") {
+          /* Server-side ripgrep across the Advantix project */
+          try {
+            const pattern    = String(toolInput.pattern ?? "").trim();
+            if (!pattern) throw new Error("pattern is required");
+            const searchPath = String(toolInput.path ?? "").replace(/^\/+/, "").trim();
+            const ext        = String(toolInput.ext ?? "").replace(/[^a-zA-Z0-9]/g, "").trim();
+            const ctx        = Math.min(5, Math.max(0, Number(toolInput.context ?? 2)));
+            const filesOnly  = Boolean(toolInput.files_only);
+            const PROJECT_ROOT = "/home/runner/workspace";
+            const targetDir  = searchPath
+              ? `${PROJECT_ROOT}/${searchPath}`
+              : PROJECT_ROOT;
+            /* Build rg args — always exclude node_modules, dist, .git */
+            const exclude = ["--glob=!**/node_modules/**", "--glob=!**/dist/**", "--glob=!**/.git/**", "--glob=!**/*.map"];
+            const extArgs = ext ? [`--glob=**/*.${ext}`] : [];
+            let stdout = "";
+            if (filesOnly) {
+              const args = ["rg", "--color=never", "--no-heading", "-l", ...exclude, ...extArgs, pattern, targetDir].join(" ");
+              stdout = execSync(args, { cwd: PROJECT_ROOT, encoding: "utf8", timeout: 10_000, maxBuffer: 512_000 });
+              const files = stdout.trim().split("\n").filter(Boolean).map(f => f.replace(PROJECT_ROOT + "/", ""));
+              stdout = files.length ? files.join("\n") : "No matches found.";
+            } else {
+              const args = ["rg", "--color=never", "--no-heading", `-n`, `-C${ctx}`, "--max-count=4", ...exclude, ...extArgs, pattern, targetDir].join(" ");
+              let raw = "";
+              try {
+                raw = execSync(args, { cwd: PROJECT_ROOT, encoding: "utf8", timeout: 10_000, maxBuffer: 1_024_000 });
+              } catch (e: unknown) {
+                const ee = e as { stdout?: string; status?: number };
+                if (ee.status === 1) { stdout = "No matches found."; }
+                else { raw = ee.stdout ?? ""; }
+              }
+              if (!stdout) {
+                /* Trim to first 3000 chars and strip absolute paths */
+                const trimmed = raw.replace(new RegExp(PROJECT_ROOT.replace(/\//g, "\\/") + "/", "g"), "").slice(0, 3000);
+                stdout = trimmed || "No matches found.";
+              }
+            }
+            result = { id: toolId, stdout, stderr: "", exitCode: 0 };
+          } catch (err) {
+            const e = err as { stdout?: string; status?: number; message?: string };
+            if (e.status === 1) {
+              result = { id: toolId, stdout: "No matches found.", stderr: "", exitCode: 0 };
+            } else {
+              result = { id: toolId, stdout: e.stdout?.slice(0, 2000) ?? "", stderr: String(e.message ?? err), exitCode: 1 };
+            }
+          }
+        } else if (toolName === "list_files") {
+          /* List files in Advantix project directory */
+          try {
+            const PROJECT_ROOT = "/home/runner/workspace";
+            const relPath = String(toolInput.path ?? "").replace(/^\/+/, "").trim();
+            const ext     = String(toolInput.ext ?? "").replace(/[^a-zA-Z0-9]/g, "").trim();
+            const targetDir = relPath ? `${PROJECT_ROOT}/${relPath}` : PROJECT_ROOT;
+            const glob = ext ? `**/*.${ext}` : "**/*";
+            const excludes = ["--glob=!**/node_modules/**", "--glob=!**/dist/**", "--glob=!**/.git/**", "--glob=!**/*.map", "--glob=!**/pnpm-lock.yaml"];
+            const args = ["rg", "--files", "--color=never", ...excludes, `--glob=${glob}`, targetDir].join(" ");
+            let raw = "";
+            try {
+              raw = execSync(args, { cwd: PROJECT_ROOT, encoding: "utf8", timeout: 10_000, maxBuffer: 512_000 });
+            } catch (e: unknown) {
+              const ee = e as { stdout?: string; status?: number };
+              raw = ee.status === 1 ? "" : (ee.stdout ?? "");
+            }
+            const files = raw.trim().split("\n").filter(Boolean)
+              .map(f => f.replace(PROJECT_ROOT + "/", ""))
+              .sort();
+            const output = files.length ? files.join("\n") : "No files found.";
+            result = { id: toolId, stdout: output.slice(0, 4000), stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1 };
           }
         } else if (toolName === "patch_file") {
           /* Composite: read → patch lines → write */

@@ -6,7 +6,7 @@ import {
   FolderOpen, FileText, Edit3, Monitor, Zap, AlertTriangle, Info,
   Bot, User, Settings, X, Shield, Clock, Calendar, MessageSquare,
   Wrench, BarChart3, Activity, Sparkles, ChevronLeft, PenSquare, Menu,
-  Paperclip, Link, List, Globe, Search, GitBranch,
+  Paperclip, Link, List, Globe, Search, GitBranch, SearchCode, FolderSearch,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -122,6 +122,8 @@ function getToolStatus(tool: string, input: Record<string, unknown>): string {
   if (tool === "search_in_files")   return `Searching for "${String(input.pattern ?? "…")}"…`;
   if (tool === "fetch_url")         return `Fetching ${String(input.url ?? "URL")}…`;
   if (tool === "git")               return `git ${String(input.action ?? "")} ${String(input.args ?? "")}`.trim() + "…";
+  if (tool === "find_code")         return `Searching "${String(input.pattern ?? "…")}"${input.ext ? ` [.${input.ext}]` : ""}`;
+  if (tool === "list_files")        return `Listing ${String(input.path ?? "project")}${input.ext ? ` (*.${input.ext})` : ""}`;
   return tool;
 }
 
@@ -141,6 +143,8 @@ const TOOL_META: Record<string, { icon: React.ComponentType<{ className?: string
   get_site_info:     { icon: Globe,        label: "Site Info",        color: "text-teal-400" },
   fetch_url:         { icon: Globe,        label: "Fetch URL",        color: "text-sky-400" },
   git:               { icon: GitBranch,    label: "Git",              color: "text-orange-300" },
+  find_code:         { icon: SearchCode,   label: "Find in Code",     color: "text-emerald-400" },
+  list_files:        { icon: FolderSearch, label: "List Files",       color: "text-emerald-300" },
 };
 
 function ToolCard({ tool }: { tool: ToolExecution }) {
