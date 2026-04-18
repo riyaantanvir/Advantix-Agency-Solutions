@@ -592,8 +592,8 @@ async function executeTool(name: string, input: Record<string, unknown>, req: Re
         content: String(input.content),
         excerpt: input.excerpt ? String(input.excerpt) : String(input.content).slice(0, 200),
         author: input.author ? String(input.author) : me,
-        category: input.category ? String(input.category) : null,
-        tags: input.tags ? (String(input.tags).split(",").map(t => t.trim())) : [],
+        category: input.category ? String(input.category) : "General",
+        tags: input.tags ? String(input.tags) : null,
         status: isPublished ? "published" : "draft",
         publishedAt: isPublished ? new Date() : null,
         coverImageUrl: input.coverImageUrl ? String(input.coverImageUrl) : null,
@@ -609,7 +609,7 @@ async function executeTool(name: string, input: Record<string, unknown>, req: Re
       if (input.excerpt) updates.excerpt = String(input.excerpt);
       if (input.author) updates.author = String(input.author);
       if (input.category !== undefined) updates.category = input.category ? String(input.category) : null;
-      if (input.tags) updates.tags = String(input.tags).split(",").map(t => t.trim());
+      if (input.tags) updates.tags = String(input.tags);
       if (input.coverImageUrl !== undefined) updates.coverImageUrl = input.coverImageUrl ? String(input.coverImageUrl) : null;
       if (input.status) {
         updates.status = String(input.status);
