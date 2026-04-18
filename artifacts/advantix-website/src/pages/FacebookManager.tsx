@@ -90,7 +90,7 @@ export default function FacebookManager() {
 
   const { data: pages = [], isLoading: loadingPages } = useQuery<FbPage[]>({
     queryKey: ["fb-pages"],
-    queryFn: () => apiFetch("/facebook/pages"),
+    queryFn: () => apiFetch("/facebook/pages").then((r) => r?.pages ?? r ?? []),
     enabled: !!user,
   });
 
@@ -102,13 +102,13 @@ export default function FacebookManager() {
 
   const { data: rules = [], isLoading: loadingRules } = useQuery<FbRule[]>({
     queryKey: ["fb-rules", selectedPageId],
-    queryFn: () => apiFetch(`/facebook/rules${selectedPageId ? `?pageId=${selectedPageId}` : ""}`),
+    queryFn: () => apiFetch(`/facebook/rules${selectedPageId ? `?pageId=${selectedPageId}` : ""}`).then((r) => r?.rules ?? r ?? []),
     enabled: !!user && tab === "rules",
   });
 
   const { data: messages = [], isLoading: loadingMessages } = useQuery<FbMessage[]>({
     queryKey: ["fb-messages", selectedPageId],
-    queryFn: () => apiFetch(`/facebook/messages${selectedPageId ? `?pageId=${selectedPageId}` : ""}`),
+    queryFn: () => apiFetch(`/facebook/messages${selectedPageId ? `?pageId=${selectedPageId}` : ""}`).then((r) => r?.messages ?? r ?? []),
     enabled: !!user && tab === "messages",
   });
 
