@@ -1015,6 +1015,111 @@ export async function runMigrations(): Promise<void> {
     ON CONFLICT (name) DO NOTHING
   `);
 
+  // ── WhatsApp Assistant session (Baileys auth state + per-user settings) ──
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+      user_id          integer PRIMARY KEY REFERENCES tool_users(id) ON DELETE CASCADE,
+      status           text    NOT NULL DEFAULT 'disconnected',
+      phone_number     text,
+      display_name     text,
+      auth_state       jsonb,
+      last_qr          text,
+      trigger_word     text    NOT NULL DEFAULT '@bot',
+      auto_reply_dm    boolean NOT NULL DEFAULT true,
+      auto_reply_groups boolean NOT NULL DEFAULT false,
+      allowed_jids     jsonb   DEFAULT '[]'::jsonb,
+      blocked_jids     jsonb   DEFAULT '[]'::jsonb,
+      connected_at     timestamptz,
+      updated_at       timestamptz NOT NULL DEFAULT now(),
+      created_at       timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  /* idempotent column adds for older deploys that already had a partial table */
+  await db.execute(sql`ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS phone_number text`);
+  await db.execute(sql`ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS display_name text`);
+  await db.execute(sql`ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS auth_state jsonb`);
+  await db.execute(sql`ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS last_qr text`);
+  await db.execute(sql`ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS trigger_word text NOT NULL DEFAULT '@bot'`);
+  await db.execute(sql`ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS auto_reply_dm boolean NOT NULL DEFAULT true`);
+  await db.execute(sql`ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS auto_reply_groups boolean NOT NULL DEFAULT false`);
+  await db.execute(sql`ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS allowed_jids jsonb DEFAULT '[]'::jsonb`);
+  await db.execute(sql`ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS blocked_jids jsonb DEFAULT '[]'::jsonb`);
+  await db.execute(sql`ALTER TABLE whatsapp_sessions ADD COLUMN IF NOT EXISTS connected_at timestamptz`);
+
+  // ── Finance Management module ──────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS finance_settings (
+      user_id         integer PRIMARY KEY REFERENCES tool_users(id) ON DELETE CASCADE,
+      currency_code   text NOT NULL DEFAULT 'BDT',
+      currency_symbol text NOT NULL DEFAULT '৳',
+      updated_at      timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS finance_tags (
+      id         serial PRIMARY KEY,
+      user_id    integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      name       text NOT NULL,
+      color      text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS finance_tags_user_name_uniq ON finance_tags (user_id, name)
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS finance_payment_methods (
+      id         serial PRIMARY KEY,
+      user_id    integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      name       text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS finance_pm_user_name_uniq ON finance_payment_methods (user_id, name)
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS finance_entries (
+      id                 serial PRIMARY KEY,
+      user_id            integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      date               date NOT NULL,
+      type               text NOT NULL,
+      amount             numeric(14,2) NOT NULL,
+      details            text,
+      tag_id             integer REFERENCES finance_tags(id) ON DELETE SET NULL,
+      payment_method_id  integer REFERENCES finance_payment_methods(id) ON DELETE SET NULL,
+      created_at         timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS finance_entries_user_date_idx ON finance_entries (user_id, date)
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS finance_planned_payments (
+      id         serial PRIMARY KEY,
+      user_id    integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      tag_id     integer REFERENCES finance_tags(id) ON DELETE SET NULL,
+      amount     numeric(14,2) NOT NULL,
+      frequency  text NOT NULL,
+      start_date date NOT NULL,
+      notes      text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS finance_subscriptions (
+      id            serial PRIMARY KEY,
+      user_id       integer NOT NULL REFERENCES tool_users(id) ON DELETE CASCADE,
+      name          text NOT NULL,
+      amount        numeric(14,2) NOT NULL,
+      frequency     text NOT NULL,
+      next_due_date date NOT NULL,
+      notes         text,
+      active        boolean NOT NULL DEFAULT true,
+      created_at    timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
   logger.info("Migrations applied");
 }
 
