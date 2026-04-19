@@ -170,19 +170,19 @@ export default function ToolsDashboard() {
         </motion.div>
 
         {/* ── Stats row ───────────────────────────────────────────────── */}
-        <motion.div {...fade(0.05)} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <motion.div {...fade(0.05)} className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {stats.map((s) => {
             const Icon = s.icon;
             const card = (
-              <div className={`rounded-xl border border-border/50 bg-card p-4 flex items-center gap-3 h-full ${s.href ? "hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer" : ""}`}>
+              <div className={`rounded-xl border border-border/50 bg-card p-4 flex items-start gap-3 h-full ${s.href ? "hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer" : ""}`}>
                 <div className={`w-9 h-9 rounded-xl ${s.bg} flex items-center justify-center shrink-0`}>
                   <Icon className={`w-5 h-5 ${s.color}`} />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-base font-bold tabular-nums leading-tight truncate">{s.loading ? "—" : s.value}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{s.label}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-lg font-bold tabular-nums leading-tight break-words">{s.loading ? "—" : s.value}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 break-words">{s.label}</p>
                   {s.sub && !s.loading && (
-                    <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">{s.sub}</p>
+                    <p className="text-[10px] text-muted-foreground/70 mt-0.5 break-words">{s.sub}</p>
                   )}
                 </div>
               </div>
