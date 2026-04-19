@@ -415,12 +415,12 @@ async function handleIncomingMessage(uid: number, sock: WASocket, msg: proto.IWe
   };
 
   /* Per-chat queue: don't process two messages at the same time in same chat.
-     For self-chat we just drop silently — sending the "এক মিনিট…" placeholder
+     For self-chat we just drop silently — sending the "one moment…" placeholder
      itself triggers another upsert and would still loop even with ID tracking
      under heavy concurrency. */
   if (s.busyJids.has(jid)) {
     if (!isSelfChat) {
-      await sendTracked({ text: "⏳ এক মিনিট, আগের message এর reply দিচ্ছি…" }).catch(() => {});
+      await sendTracked({ text: "⏳ One moment — still replying to your previous message…" }).catch(() => {});
     }
     return;
   }

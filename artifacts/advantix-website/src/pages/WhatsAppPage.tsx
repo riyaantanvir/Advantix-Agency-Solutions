@@ -208,11 +208,11 @@ export default function WhatsAppPage() {
               </div>
 
               <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4">
-                <div className="font-semibold mb-2">এখন assistant এর সাথে কীভাবে কথা বলবেন?</div>
+                <div className="font-semibold mb-2">How to talk to the assistant</div>
                 <ol className="text-sm space-y-2 text-muted-foreground">
                   <li>
-                    <b className="text-foreground">১) নিজেকে message করুন (সবচেয়ে সহজ):</b><br />
-                    WhatsApp খুলে নিজের নামে chat (<i>Message Yourself</i>) এ যান। যা লিখবেন assistant সেখানেই reply দিবে।
+                    <b className="text-foreground">1) Message yourself (easiest):</b><br />
+                    Open WhatsApp and go to your own chat (<i>Message Yourself</i>). Whatever you type, the assistant will reply right there.
                     {state.phone && (
                       <a href={`https://wa.me/${state.phone}`} target="_blank" rel="noreferrer" className="inline-block mt-1 text-blue-400 hover:underline text-xs">
                         → Open Message Yourself chat
@@ -220,12 +220,12 @@ export default function WhatsAppPage() {
                     )}
                   </li>
                   <li>
-                    <b className="text-foreground">২) Group এ test করুন:</b><br />
-                    যেকোনো group এ <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{state.triggerWord || "@bot"} hello</code> লিখুন।
+                    <b className="text-foreground">2) Test in a group:</b><br />
+                    In any group, send <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{state.triggerWord || "@bot"} hello</code>.
                   </li>
                   <li>
-                    <b className="text-foreground">৩) অন্য কেউ message করলে:</b><br />
-                    আপনার number এ কেউ DM করলে assistant তাকে auto-reply দিবে (Auto-reply DM toggle on থাকলে)।
+                    <b className="text-foreground">3) When someone else messages you:</b><br />
+                    If anyone DMs your number, the assistant will auto-reply (only when the Auto-reply DM toggle is on).
                   </li>
                 </ol>
               </div>
@@ -236,11 +236,11 @@ export default function WhatsAppPage() {
             <div className="flex flex-col items-center gap-4 py-4">
               <img src={state.qr} alt="WhatsApp QR" className="w-64 h-64 rounded-lg bg-white p-2" />
               <div className="text-center text-sm text-muted-foreground max-w-md">
-                <p className="font-medium text-foreground mb-1">কীভাবে scan করবেন:</p>
+                <p className="font-medium text-foreground mb-1">How to scan:</p>
                 <ol className="text-left space-y-1">
-                  <li>1. ফোনে WhatsApp খুলুন</li>
-                  <li>2. <b>Settings → Linked Devices → Link a Device</b> এ যান</li>
-                  <li>3. উপরের QR code টি scan করুন</li>
+                  <li>1. Open WhatsApp on your phone</li>
+                  <li>2. Go to <b>Settings → Linked Devices → Link a Device</b></li>
+                  <li>3. Scan the QR code above</li>
                 </ol>
                 <Button variant="outline" size="sm" className="mt-3" onClick={startConnect} disabled={busy}>
                   <RefreshCw className="w-3 h-3 mr-1" /> Refresh QR
@@ -265,7 +265,7 @@ export default function WhatsAppPage() {
               <div className="flex items-center text-muted-foreground">
                 <Loader2 className="w-6 h-6 animate-spin mr-2" /> Initializing connection…
               </div>
-              <p className="text-xs text-muted-foreground">আটকে গেছে? Cancel করে নতুন করে চেষ্টা করুন।</p>
+              <p className="text-xs text-muted-foreground">Stuck? Cancel and try again.</p>
               <Button variant="outline" size="sm" onClick={() => doDisconnect(true)} disabled={busy}>
                 <LogOut className="w-4 h-4 mr-1" /> Cancel & Start Over
               </Button>
@@ -280,7 +280,7 @@ export default function WhatsAppPage() {
 
           {(state.status === "disconnected" || state.status === "error") && (
             <div className="text-center py-6">
-              <p className="text-muted-foreground mb-4">WhatsApp connect করতে নিচের button এ click করুন। QR code আসবে।</p>
+              <p className="text-muted-foreground mb-4">Click the button below to connect WhatsApp. A QR code will appear.</p>
               <Button onClick={startConnect} disabled={busy} size="lg" className="bg-green-500 hover:bg-green-600">
                 {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <MessageCircle className="w-4 h-4 mr-2" />}
                 Connect WhatsApp
@@ -296,7 +296,7 @@ export default function WhatsAppPage() {
           <div className="space-y-5">
             <div>
               <Label htmlFor="trigger">Trigger word (for groups)</Label>
-              <p className="text-xs text-muted-foreground mb-2">Group এ message এর শুরুতে এই word থাকলে assistant reply দিবে। DM এর জন্য optional।</p>
+              <p className="text-xs text-muted-foreground mb-2">When a group message starts with this word, the assistant will reply. Optional for DMs.</p>
               <Input
                 id="trigger" value={state.triggerWord}
                 onChange={e => setState(s => ({ ...s, triggerWord: e.target.value }))}
@@ -311,7 +311,7 @@ export default function WhatsAppPage() {
             <div className="flex items-center justify-between">
               <div>
                 <Label className="text-base">Auto-reply in DMs</Label>
-                <p className="text-xs text-muted-foreground">Direct message এ আসা সব text এ assistant reply দিবে।</p>
+                <p className="text-xs text-muted-foreground">The assistant will reply to all incoming direct messages.</p>
               </div>
               <Switch checked={state.autoReplyDm} onCheckedChange={v => saveSettings({ autoReplyDm: v })} />
             </div>
@@ -319,7 +319,7 @@ export default function WhatsAppPage() {
             <div className="flex items-center justify-between">
               <div>
                 <Label className="text-base">Auto-reply in allowed groups</Label>
-                <p className="text-xs text-muted-foreground">Allowed group এ trigger word ছাড়াও সব message এ reply দিবে।</p>
+                <p className="text-xs text-muted-foreground">In allowed groups, reply to every message even without the trigger word.</p>
               </div>
               <Switch checked={state.autoReplyGroups} onCheckedChange={v => saveSettings({ autoReplyGroups: v })} />
             </div>
@@ -330,7 +330,7 @@ export default function WhatsAppPage() {
         <div className="grid md:grid-cols-2 gap-6 mb-6">
           <Card className="p-6">
             <h3 className="font-semibold mb-1">Allowed chats</h3>
-            <p className="text-xs text-muted-foreground mb-3">যদি কোন chat এই list এ থাকে, শুধু এদের message এ reply দিবে। Empty list = সব chat allowed।</p>
+            <p className="text-xs text-muted-foreground mb-3">If any chat is in this list, only those will get replies. Empty list = all chats allowed.</p>
             <div className="flex gap-2 mb-3">
               <Input value={newJid} onChange={e => setNewJid(e.target.value)} placeholder="880171234567 or xxx@g.us" />
               <Button size="sm" onClick={() => addJid(newJid, "allow")}><Plus className="w-4 h-4" /></Button>
@@ -349,7 +349,7 @@ export default function WhatsAppPage() {
 
           <Card className="p-6">
             <h3 className="font-semibold mb-1">Blocked chats</h3>
-            <p className="text-xs text-muted-foreground mb-3">এই list এর কোন chat থেকে message এলে assistant ignore করবে।</p>
+            <p className="text-xs text-muted-foreground mb-3">Messages from any chat in this list will be ignored by the assistant.</p>
             <div className="flex gap-2 mb-3">
               <Input value={newBlockJid} onChange={e => setNewBlockJid(e.target.value)} placeholder="880171234567" />
               <Button size="sm" variant="outline" onClick={() => addJid(newBlockJid, "block")}><Plus className="w-4 h-4" /></Button>
@@ -369,13 +369,13 @@ export default function WhatsAppPage() {
 
         {/* Examples */}
         <Card className="p-6 bg-gradient-to-br from-green-500/5 to-emerald-500/5 border-green-500/20">
-          <h3 className="font-semibold mb-3">যা যা WhatsApp এ বলতে পারবেন:</h3>
+          <h3 className="font-semibold mb-3">Things you can say on WhatsApp:</h3>
           <ul className="space-y-2 text-sm">
-            <li>• <i>"আজকে lunch এ ৩০০ টাকা খরচ হইসে"</i> → entry add হবে</li>
-            <li>• <i>"এই মাসে কত খরচ হইসে?"</i> → finance summary</li>
-            <li>• <i>"google.com short link বানাও"</i> → short URL</li>
-            <li>• <i>"facebook এ কত followers আছে?"</i> → SMM stats</li>
-            <li>• <i>"transport এ কত গেছে this month?"</i> → category-wise expense</li>
+            <li>• <i>"Spent 300 on lunch today"</i> → entry will be added</li>
+            <li>• <i>"How much did I spend this month?"</i> → finance summary</li>
+            <li>• <i>"Make a short link for google.com"</i> → short URL</li>
+            <li>• <i>"How many followers on facebook?"</i> → SMM stats</li>
+            <li>• <i>"How much went to transport this month?"</i> → category-wise expense</li>
           </ul>
           {savingSettings && <div className="mt-3 text-xs text-muted-foreground">Saving…</div>}
         </Card>

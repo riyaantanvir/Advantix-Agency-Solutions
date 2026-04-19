@@ -1742,7 +1742,7 @@ export default function AssistantPage() {
                 <div className="flex items-center gap-2 mb-2">
                   <BrainCircuit className="w-3.5 h-3.5 text-violet-400" />
                   <span className="text-xs font-semibold text-violet-300">Project Memory</span>
-                  <span className="text-[10px] text-muted-foreground/50 ml-1">— আগের কাজের সারাংশ। AI এটা প্রতিটা message এ পড়বে।</span>
+                  <span className="text-[10px] text-muted-foreground/50 ml-1">— summary of previous work. AI reads this on every message.</span>
                   <div className="flex-1" />
                   <button
                     onClick={saveMemory}
@@ -1759,7 +1759,7 @@ export default function AssistantPage() {
                 <textarea
                   value={memoryEditValue}
                   onChange={e => setMemoryEditValue(e.target.value)}
-                  placeholder="Project এ কী কী হয়েছে, কোন files আছে, কী করতে হবে — এখানে লেখো। AI প্রতিটা message এ এটা পড়বে।"
+                  placeholder="What's been done in the project, which files exist, what needs to happen next — write here. AI reads this on every message."
                   className="w-full h-28 bg-background/50 border border-violet-500/20 rounded-lg px-3 py-2 text-xs text-foreground placeholder-muted-foreground/40 resize-none focus:outline-none focus:border-violet-500/40 leading-relaxed"
                 />
               </div>
@@ -1924,7 +1924,7 @@ export default function AssistantPage() {
                         <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                         <span className="text-amber-300/80">Task was interrupted</span>
                         <button
-                          onClick={() => sendMessage("আগের কাজটা continue করো — tool calls শেষ হয়েছে, এখন বাকি কাজ সম্পন্ন করো।")}
+                          onClick={() => sendMessage("Continue the previous task — tool calls are done, now finish the remaining work.")}
                           className="ml-1 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 font-semibold transition-colors"
                         >
                           Resume →
@@ -2122,7 +2122,7 @@ export default function AssistantPage() {
                 </div>
                 <div>
                   <h2 className="font-display font-semibold text-foreground text-sm">New Project</h2>
-                  <p className="text-[11px] text-muted-foreground">Project তৈরি করো এবং instructions দাও</p>
+                  <p className="text-[11px] text-muted-foreground">Create a project and add instructions</p>
                 </div>
                 <div className="flex-1" />
                 <button onClick={() => setShowNewProjectModal(false)} className="p-1 text-muted-foreground hover:text-foreground rounded-lg">
@@ -2179,13 +2179,13 @@ export default function AssistantPage() {
                 <div>
                   <label className="text-xs font-semibold text-foreground/80 mb-1.5 block">
                     Project Instructions
-                    <span className="ml-1 text-muted-foreground/50 font-normal">(AI সবসময় এটা মনে রাখবে)</span>
+                    <span className="ml-1 text-muted-foreground/50 font-normal">(AI will always remember this)</span>
                   </label>
                   <textarea
                     value={newProjInstructions}
                     onChange={e => setNewProjInstructions(e.target.value)}
                     rows={4}
-                    placeholder="Project কী করবে, কোথায় files আছে, কোন stack use হচ্ছে, কী করতে হবে — এখানে লেখো।"
+                    placeholder="What the project does, where files live, which stack is in use, what needs to happen — write here."
                     className="w-full bg-background border border-border/50 rounded-xl px-3 py-2.5 text-xs text-foreground placeholder-muted-foreground/40 resize-none focus:outline-none focus:border-primary/50 leading-relaxed transition-colors"
                   />
                 </div>

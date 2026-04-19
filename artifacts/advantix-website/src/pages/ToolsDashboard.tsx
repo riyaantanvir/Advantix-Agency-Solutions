@@ -338,7 +338,7 @@ export default function ToolsDashboard() {
                   <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
                     <Bot className="w-5 h-5 text-emerald-400" />
                   </div>
-                  <p className="text-xs text-muted-foreground">Coding, Flutter, tasks — সব কিছু করুন</p>
+                  <p className="text-xs text-muted-foreground">Coding, Flutter, tasks — do it all</p>
                 </div>
               )}
 

@@ -103,8 +103,8 @@ function formatReply(reply: string, toolNotes: string[]): string {
   const cleaned = (reply || "").trim();
   if (!cleaned) {
     return toolNotes.length
-      ? `(কোন reply আসেনি — used tools: ${toolNotes.join(", ")})`
-      : "(কোন reply আসেনি)";
+      ? `(No reply received — used tools: ${toolNotes.join(", ")})`
+      : "(No reply received)";
   }
   /* Strip markdown that doesn't render well in WhatsApp */
   return cleaned
