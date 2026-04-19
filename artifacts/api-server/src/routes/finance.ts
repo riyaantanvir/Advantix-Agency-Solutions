@@ -6,6 +6,7 @@ import {
   financeEntriesTable,
   financePlannedPaymentsTable,
   financeSubscriptionsTable,
+  financeSettingsTable,
 } from "@workspace/db";
 import { and, eq, desc, gte, lte, sql, inArray } from "drizzle-orm";
 import { requireToolUser } from "../middleware/toolAuth.js";
@@ -46,6 +47,35 @@ function safeCell(v: any): string {
   // Always wrap every cell in quotes (matches user's expected import/export format)
   return `"${s.replace(/"/g, '""')}"`;
 }
+
+/* ─────────────── SETTINGS ─────────────── */
+router.get("/tools/finance/settings", async (req, res) => {
+  const u = uid(req);
+  const [row] = await db.select().from(financeSettingsTable).where(eq(financeSettingsTable.userId, u)).limit(1);
+  if (row) { res.json(row); return; }
+  // Auto-create defaults on first access
+  const [created] = await db.insert(financeSettingsTable).values({ userId: u }).returning();
+  res.json(created);
+});
+
+router.put("/tools/finance/settings", async (req, res) => {
+  const u = uid(req);
+  const code = String(req.body.currencyCode || "").trim().toUpperCase().slice(0, 8);
+  const symbol = String(req.body.currencySymbol || "").trim().slice(0, 8);
+  if (!code || !symbol) { res.status(400).json({ error: "currencyCode and currencySymbol are required" }); return; }
+  const [existing] = await db.select().from(financeSettingsTable).where(eq(financeSettingsTable.userId, u)).limit(1);
+  if (!existing) {
+    const [row] = await db.insert(financeSettingsTable)
+      .values({ userId: u, currencyCode: code, currencySymbol: symbol }).returning();
+    res.json(row);
+    return;
+  }
+  const [row] = await db.update(financeSettingsTable)
+    .set({ currencyCode: code, currencySymbol: symbol, updatedAt: new Date() })
+    .where(eq(financeSettingsTable.userId, u))
+    .returning();
+  res.json(row);
+});
 
 /* ─────────────── TAGS ─────────────── */
 router.get("/tools/finance/tags", async (req, res) => {

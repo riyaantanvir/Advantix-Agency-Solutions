@@ -4,16 +4,17 @@ import { motion } from "framer-motion";
 import {
   Wallet, PlusCircle, ListChecks, BarChart2, CalendarClock, Repeat,
   Tag as TagIcon, CreditCard, Upload, Download, Trash2, Edit2, Save, X,
-  TrendingUp, TrendingDown, Filter, FileSpreadsheet, ArrowLeft,
+  TrendingUp, TrendingDown, Filter, FileSpreadsheet, ArrowLeft, Settings as SettingsIcon, Coins,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToolsUser } from "@/context/ToolsUserContext";
 
-type View = "dashboard" | "add" | "all" | "planned" | "subs" | "tags" | "methods";
+type View = "dashboard" | "add" | "all" | "planned" | "subs" | "settings";
 
 interface Tag { id: number; name: string; color: string | null; }
 interface PaymentMethod { id: number; name: string; }
+interface FinanceSettings { userId: number; currencyCode: string; currencySymbol: string; }
 interface Entry { id: number; date: string; type: "expense" | "income"; amount: string; details: string | null; tagId: number | null; paymentMethodId: number | null; }
 interface PlannedPayment { id: number; tagId: number | null; amount: string; frequency: string; startDate: string; notes: string | null; }
 interface Subscription { id: number; name: string; amount: string; frequency: string; nextDueDate: string; notes: string | null; active: boolean; }
@@ -25,7 +26,10 @@ interface DashboardData {
   series: { date: string; type: string; amount: number }[];
 }
 
-const BDT = (n: number | string) => "৳ " + Number(n).toLocaleString("en-BD", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+// Currency symbol — mutated when user settings load. Read fresh on every render.
+let CURRENCY_SYMBOL = "৳";
+const BDT = (n: number | string) =>
+  `${CURRENCY_SYMBOL} ` + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 async function api<T = any>(url: string, opts: RequestInit = {}): Promise<T> {
   const r = await fetch(url, {
@@ -51,8 +55,7 @@ const NAV: { id: View; label: string; icon: any }[] = [
   { id: "all", label: "All Entries", icon: ListChecks },
   { id: "planned", label: "Planned Payments", icon: CalendarClock },
   { id: "subs", label: "Subscriptions", icon: Repeat },
-  { id: "tags", label: "Tags", icon: TagIcon },
-  { id: "methods", label: "Payment Methods", icon: CreditCard },
+  { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
 export default function FinancePage() {
@@ -61,19 +64,27 @@ export default function FinancePage() {
   const [view, setView] = useState<View>("dashboard");
   const [tags, setTags] = useState<Tag[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [settings, setSettings] = useState<FinanceSettings | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (loading) return;
     if (!user) { navigate("/login"); return; }
     refreshLookups();
+    api<FinanceSettings>("/api/tools/finance/settings").then(s => { setSettings(s); CURRENCY_SYMBOL = s.currencySymbol || "৳"; }).catch(() => {});
   }, [user, loading]);
+
+  // Keep module-level symbol in sync if settings change later
+  useEffect(() => {
+    if (settings?.currencySymbol) CURRENCY_SYMBOL = settings.currencySymbol;
+  }, [settings?.currencySymbol]);
 
   function refreshLookups() {
     api<Tag[]>("/api/tools/finance/tags").then(setTags).catch(() => {});
     api<PaymentMethod[]>("/api/tools/finance/payment-methods").then(setMethods).catch(() => {});
   }
   function bumpRefresh() { setRefreshKey(k => k + 1); refreshLookups(); }
+  function onSettingsSaved(s: FinanceSettings) { setSettings(s); CURRENCY_SYMBOL = s.currencySymbol || "৳"; bumpRefresh(); }
 
   if (loading) return <div className="p-10 text-center text-muted-foreground">Loading…</div>;
   if (!user) return null;
@@ -121,12 +132,11 @@ export default function FinancePage() {
           {/* Content */}
           <div className="min-w-0">
             {view === "dashboard" && <DashboardView refreshKey={refreshKey} tags={tags} methods={methods} onJump={setView} />}
-            {view === "add" && <AddEntryView tags={tags} methods={methods} onSaved={bumpRefresh} onManageTags={() => setView("tags")} onManageMethods={() => setView("methods")} />}
+            {view === "add" && <AddEntryView tags={tags} methods={methods} onSaved={bumpRefresh} onManageTags={() => setView("settings")} onManageMethods={() => setView("settings")} />}
             {view === "all" && <AllEntriesView refreshKey={refreshKey} tags={tags} methods={methods} onChange={bumpRefresh} />}
             {view === "planned" && <PlannedView refreshKey={refreshKey} tags={tags} onChange={bumpRefresh} />}
             {view === "subs" && <SubscriptionsView refreshKey={refreshKey} onChange={bumpRefresh} />}
-            {view === "tags" && <TagsView tags={tags} onChange={bumpRefresh} />}
-            {view === "methods" && <MethodsView methods={methods} onChange={bumpRefresh} />}
+            {view === "settings" && <SettingsView settings={settings} tags={tags} methods={methods} onChange={bumpRefresh} onSettingsSaved={onSettingsSaved} />}
           </div>
         </div>
       </div>
@@ -746,6 +756,140 @@ function SubscriptionsView({ refreshKey, onChange }: { refreshKey: number; onCha
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────── SETTINGS ─────────────── */
+const PRESET_CURRENCIES: { code: string; symbol: string; label: string }[] = [
+  { code: "BDT", symbol: "৳", label: "Bangladeshi Taka (৳)" },
+  { code: "USD", symbol: "$", label: "US Dollar ($)" },
+  { code: "EUR", symbol: "€", label: "Euro (€)" },
+  { code: "GBP", symbol: "£", label: "British Pound (£)" },
+  { code: "INR", symbol: "₹", label: "Indian Rupee (₹)" },
+  { code: "JPY", symbol: "¥", label: "Japanese Yen (¥)" },
+  { code: "AED", symbol: "د.إ", label: "UAE Dirham (د.إ)" },
+  { code: "SAR", symbol: "﷼", label: "Saudi Riyal (﷼)" },
+  { code: "PKR", symbol: "₨", label: "Pakistani Rupee (₨)" },
+];
+
+function SettingsView({ settings, tags, methods, onChange, onSettingsSaved }: {
+  settings: FinanceSettings | null; tags: Tag[]; methods: PaymentMethod[];
+  onChange: () => void; onSettingsSaved: (s: FinanceSettings) => void;
+}) {
+  const [tab, setTab] = useState<"general" | "tags" | "methods">("general");
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 border-b border-border">
+        {([
+          { k: "general", l: "General", i: Coins },
+          { k: "tags", l: "Tags", i: TagIcon },
+          { k: "methods", l: "Payment Methods", i: CreditCard },
+        ] as const).map(t => {
+          const Icon = t.i;
+          const active = tab === t.k;
+          return (
+            <button
+              key={t.k}
+              onClick={() => setTab(t.k)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition ${
+                active ? "border-emerald-500 text-emerald-300" : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Icon className="w-4 h-4" /> {t.l}
+            </button>
+          );
+        })}
+      </div>
+      {tab === "general" && <GeneralSettings settings={settings} onSaved={onSettingsSaved} />}
+      {tab === "tags" && <TagsView tags={tags} onChange={onChange} />}
+      {tab === "methods" && <MethodsView methods={methods} onChange={onChange} />}
+    </div>
+  );
+}
+
+function GeneralSettings({ settings, onSaved }: { settings: FinanceSettings | null; onSaved: (s: FinanceSettings) => void }) {
+  const [code, setCode] = useState(settings?.currencyCode || "BDT");
+  const [symbol, setSymbol] = useState(settings?.currencySymbol || "৳");
+  const [custom, setCustom] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    if (!settings) return;
+    setCode(settings.currencyCode);
+    setSymbol(settings.currencySymbol);
+    setCustom(!PRESET_CURRENCIES.some(p => p.code === settings.currencyCode));
+  }, [settings?.currencyCode, settings?.currencySymbol]);
+
+  function pick(c: string) {
+    if (c === "__custom") { setCustom(true); return; }
+    setCustom(false);
+    const found = PRESET_CURRENCIES.find(p => p.code === c);
+    if (found) { setCode(found.code); setSymbol(found.symbol); }
+  }
+
+  async function save() {
+    setBusy(true); setMsg("");
+    try {
+      const saved = await api<FinanceSettings>("/api/tools/finance/settings", {
+        method: "PUT",
+        body: JSON.stringify({ currencyCode: code.trim().toUpperCase(), currencySymbol: symbol.trim() }),
+      });
+      onSaved(saved);
+      setMsg("Saved ✓");
+      setTimeout(() => setMsg(""), 2000);
+    } catch (e: any) {
+      setMsg(e.message || "Failed to save");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="bg-card/50 border border-border rounded-2xl p-5 space-y-5">
+      <div>
+        <h3 className="font-semibold flex items-center gap-2 mb-1"><Coins className="w-4 h-4 text-amber-400" /> Currency</h3>
+        <p className="text-xs text-muted-foreground">All amounts on the dashboard, entries, and reports use this currency.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="md:col-span-2">
+          <label className="text-xs text-muted-foreground">Preset</label>
+          <select
+            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+            value={custom ? "__custom" : code}
+            onChange={e => pick(e.target.value)}
+          >
+            {PRESET_CURRENCIES.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
+            <option value="__custom">Custom…</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Symbol</label>
+          <Input value={symbol} onChange={e => setSymbol(e.target.value.slice(0, 8))} disabled={!custom} maxLength={8} />
+        </div>
+      </div>
+
+      {custom && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="text-xs text-muted-foreground">Currency Code (3–8 letters)</label>
+            <Input value={code} onChange={e => setCode(e.target.value.toUpperCase().slice(0, 8))} placeholder="e.g. CAD" maxLength={8} />
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-xl bg-muted/30 p-4">
+        <p className="text-xs text-muted-foreground mb-1">Preview</p>
+        <p className="text-2xl font-bold tabular-nums">{symbol} {(12345.67).toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</p>
+        <p className="text-xs text-muted-foreground mt-1">{code}</p>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Button onClick={save} disabled={busy || !code.trim() || !symbol.trim()} className="bg-emerald-600 hover:bg-emerald-700">
+          <Save className="w-4 h-4 mr-2" /> {busy ? "Saving…" : "Save"}
+        </Button>
+        {msg && <span className={`text-sm ${msg.startsWith("Saved") ? "text-emerald-400" : "text-red-400"}`}>{msg}</span>}
       </div>
     </div>
   );

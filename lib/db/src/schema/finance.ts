@@ -1,6 +1,13 @@
 import { pgTable, serial, text, integer, timestamp, numeric, date, boolean, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { toolUsersTable } from "./toolUsers";
 
+export const financeSettingsTable = pgTable("finance_settings", {
+  userId: integer("user_id").primaryKey().references(() => toolUsersTable.id, { onDelete: "cascade" }),
+  currencyCode: text("currency_code").notNull().default("BDT"),
+  currencySymbol: text("currency_symbol").notNull().default("৳"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const financeTagsTable = pgTable("finance_tags", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => toolUsersTable.id, { onDelete: "cascade" }),
