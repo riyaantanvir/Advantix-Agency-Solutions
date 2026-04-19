@@ -190,6 +190,13 @@ export default function WhatsAppPage() {
                 </Button>
               </div>
             )}
+            {(state.status === "connecting" || state.status === "qr") && (
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => doDisconnect(true)} disabled={busy}>
+                  <LogOut className="w-4 h-4 mr-1" /> Cancel & Reset
+                </Button>
+              </div>
+            )}
           </div>
 
           {state.status === "connected" && (
@@ -254,8 +261,14 @@ export default function WhatsAppPage() {
           )}
 
           {state.status === "connecting" && !state.qr && (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">
-              <Loader2 className="w-6 h-6 animate-spin mr-2" /> Initializing connection…
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <div className="flex items-center text-muted-foreground">
+                <Loader2 className="w-6 h-6 animate-spin mr-2" /> Initializing connection…
+              </div>
+              <p className="text-xs text-muted-foreground">আটকে গেছে? Cancel করে নতুন করে চেষ্টা করুন।</p>
+              <Button variant="outline" size="sm" onClick={() => doDisconnect(true)} disabled={busy}>
+                <LogOut className="w-4 h-4 mr-1" /> Cancel & Start Over
+              </Button>
             </div>
           )}
 
