@@ -327,15 +327,15 @@ async function handleIncomingMessage(uid: number, sock: WASocket, msg: proto.IWe
   if (jid === "status@broadcast") return;
 
   /* "Message Yourself" support: allow fromMe messages, but ONLY when the
-     chat is the user's own JID — i.e. their personal self-chat. This way
-     they can talk to the assistant from their own WhatsApp without needing
-     a second number. Outgoing messages to OTHER chats are ignored so we
-     don't accidentally reply on their behalf. */
-  const rawOwn = sock.user?.id;
-  const ownNum = rawOwn ? rawOwn.split(":")[0].split("@")[0] : null;
+     chat is the user's own JID — i.e. their personal self-chat. WhatsApp
+     identifies a user by either their phone number (PN, *@s.whatsapp.net)
+     or their LID (linked-identifier, *@lid). Self-chat may use EITHER, so
+     we compare the numeric prefix against both ownPn and ownLid. */
+  const ownPn  = (sock.user as any)?.id ? String((sock.user as any).id).split(":")[0].split("@")[0] : null;
+  const ownLid = (sock.user as any)?.lid ? String((sock.user as any).lid).split(":")[0].split("@")[0] : null;
   const jidNum = jid.split("@")[0].split(":")[0];
-  const isSelfChat = !!ownNum && jidNum === ownNum;
-  log(`uid=${uid} msg from=${jid} fromMe=${msg.key.fromMe} ownNum=${ownNum} isSelf=${isSelfChat}`);
+  const isSelfChat = (!!ownPn && jidNum === ownPn) || (!!ownLid && jidNum === ownLid);
+  log(`uid=${uid} msg from=${jid} fromMe=${msg.key.fromMe} ownPn=${ownPn} ownLid=${ownLid} isSelf=${isSelfChat}`);
   if (msg.key.fromMe && !isSelfChat) return;
 
   const msgId = `${jid}:${msg.key.id}`;
