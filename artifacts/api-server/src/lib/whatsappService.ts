@@ -380,13 +380,12 @@ async function handleIncomingMessage(uid: number, sock: WASocket, msg: proto.IWe
   let shouldReply = false;
 
   if (isGroup) {
-    if (!settings.autoReplyGroups && allowed.length === 0) return;
-    /* In groups: require trigger word OR mention */
+    /* In groups: ONLY reply when the trigger word is used. No auto-reply
+       in groups under any circumstance — keeps the bot silent in normal
+       group chatter and only speaks when explicitly invoked. */
     if (cleanedText.toLowerCase().startsWith(trigger)) {
       cleanedText = cleanedText.slice(trigger.length).trim();
       shouldReply = true;
-    } else if (settings.autoReplyGroups && allowed.includes(jid)) {
-      shouldReply = true; /* group is explicitly allowed */
     }
   } else {
     /* DM */
