@@ -1585,6 +1585,14 @@ CRITICAL — Error handling and task persistence:
 
       totalToolCalls += toolCalls.length;
 
+      /* Announce all planned tools before execution — frontend shows them as "pending" */
+      if (toolCalls.length > 0) {
+        sse(res, {
+          type: "tools_planned",
+          tools: toolCalls.map(tc => ({ id: tc.id, tool: tc.name, input: tc.input as Record<string, unknown> })),
+        });
+      }
+
       for (const tc of toolCalls) {
         const toolId   = tc.id;
         const toolName = tc.name;

@@ -49,15 +49,16 @@ type AgentInfo = {
   username: string; shell: string; cwd: string; nodeVersion: string; hasVscode: boolean;
 };
 
-type ToolStartEvent  = { type: "tool_start"; id: string; tool: string; input: Record<string, unknown> };
-type ToolDoneEvent   = { type: "tool_done"; id: string; tool: string; stdout: string; stderr: string; exitCode: number; durationMs?: number };
-type ContentEvent    = { type: "content"; delta: string };
-type ThinkingEvent   = { type: "thinking"; delta: string };
-type DoneEvent       = { type: "done"; totalTokens: number };
-type ConvIdEvent     = { type: "conversation_id"; conversationId: number };
-type ErrorEvent      = { type: "error"; message: string };
+type ToolStartEvent    = { type: "tool_start"; id: string; tool: string; input: Record<string, unknown> };
+type ToolDoneEvent     = { type: "tool_done"; id: string; tool: string; stdout: string; stderr: string; exitCode: number; durationMs?: number };
+type ToolsPlannedEvent = { type: "tools_planned"; tools: { id: string; tool: string; input: Record<string, unknown> }[] };
+type ContentEvent      = { type: "content"; delta: string };
+type ThinkingEvent     = { type: "thinking"; delta: string };
+type DoneEvent         = { type: "done"; totalTokens: number };
+type ConvIdEvent       = { type: "conversation_id"; conversationId: number };
+type ErrorEvent        = { type: "error"; message: string };
 
-type StreamEvent = ToolStartEvent | ToolDoneEvent | ContentEvent | ThinkingEvent | DoneEvent | ConvIdEvent | ErrorEvent;
+type StreamEvent = ToolStartEvent | ToolDoneEvent | ToolsPlannedEvent | ContentEvent | ThinkingEvent | DoneEvent | ConvIdEvent | ErrorEvent;
 
 type Conversation = {
   id: number;
@@ -133,7 +134,7 @@ const PROJECT_TYPES: ProjectTypeDef[] = [
 
 type ToolExecution = {
   id: string; tool: string; input: Record<string, unknown>;
-  status: "running" | "done" | "error";
+  status: "pending" | "running" | "done" | "error";
   stdout?: string; stderr?: string; exitCode?: number;
   durationMs?: number;
   startedAt?: number;
@@ -223,9 +224,10 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
   const [elapsed, setElapsed] = useState(0);
   const meta = TOOL_META[tool.tool] ?? { icon: Terminal, label: tool.tool, color: "text-slate-400" };
   const Icon = meta.icon;
+  const isPending = tool.status === "pending";
   const isRunning = tool.status === "running";
   const isError = tool.status === "error" || (tool.exitCode !== undefined && tool.exitCode !== 0);
-  const isDone = !isRunning && !isError;
+  const isDone = !isPending && !isRunning && !isError;
 
   /* Live elapsed counter while running */
   useEffect(() => {
@@ -305,7 +307,8 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       className={`rounded-xl border overflow-hidden text-xs font-mono transition-all ${
-        isRunning ? "border-amber-500/40 bg-gradient-to-r from-amber-500/5 to-transparent"
+        isPending  ? "border-slate-500/30 bg-gradient-to-r from-slate-500/5 to-transparent opacity-60"
+        : isRunning ? "border-amber-500/40 bg-gradient-to-r from-amber-500/5 to-transparent"
         : isDone   ? "border-green-500/25 bg-gradient-to-r from-green-500/5 to-transparent"
         : "border-red-500/25 bg-gradient-to-r from-red-500/5 to-transparent"
       }`}
@@ -315,11 +318,11 @@ function ToolCard({ tool }: { tool: ToolExecution }) {
         className="flex items-center gap-2 w-full px-3 py-2 hover:bg-white/[0.03] transition-colors text-left"
       >
         <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${
-          isRunning ? "bg-amber-500/15" : isDone ? "bg-green-500/15" : "bg-red-500/15"
+          isPending ? "bg-slate-500/10" : isRunning ? "bg-amber-500/15" : isDone ? "bg-green-500/15" : "bg-red-500/15"
         }`}>
           {isRunning
             ? <Loader2 className={`w-3 h-3 ${meta.color} animate-spin`} />
-            : <Icon className={`w-3 h-3 ${meta.color}`} />}
+            : <Icon className={`w-3 h-3 ${isPending ? "text-slate-500" : meta.color}`} />}
         </div>
         <span className={`font-semibold text-[10px] uppercase tracking-wider shrink-0 ${meta.color}`}>{meta.label}</span>
         <span className="text-muted-foreground/60 truncate flex-1 text-[11px] font-normal">{getDetail()}</span>
@@ -1406,11 +1409,26 @@ export default function AssistantPage() {
               currentConvId = event.conversationId;
               setConversationId(event.conversationId);
               fetchConversations();
+            } else if (event.type === "tools_planned") {
+              /* Pre-announce all tools before execution — show as "pending" queue */
+              setMessages(prev => prev.map(m => m.id === assistantId
+                ? { ...m, tools: event.tools.map((t: { id: string; tool: string; input: Record<string, unknown> }) => ({
+                    id: t.id, tool: t.tool, input: t.input, status: "pending" as const,
+                  })) }
+                : m));
             } else if (event.type === "tool_start") {
               const status = getToolStatus(event.tool, event.input);
-              setMessages(prev => prev.map(m => m.id === assistantId
-                ? { ...m, statusText: status, tools: [...(m.tools ?? []), { id: event.id, tool: event.tool, input: event.input, status: "running", startedAt: Date.now() }] }
-                : m));
+              setMessages(prev => prev.map(m => {
+                if (m.id !== assistantId) return m;
+                const existingIdx = (m.tools ?? []).findIndex(t => t.id === event.id);
+                if (existingIdx >= 0) {
+                  /* Upgrade pending → running */
+                  const updated = [...(m.tools ?? [])];
+                  updated[existingIdx] = { ...updated[existingIdx], status: "running", startedAt: Date.now() };
+                  return { ...m, statusText: status, tools: updated };
+                }
+                return { ...m, statusText: status, tools: [...(m.tools ?? []), { id: event.id, tool: event.tool, input: event.input, status: "running" as const, startedAt: Date.now() }] };
+              }));
             } else if (event.type === "tool_done") {
               setMessages(prev => prev.map(m => m.id === assistantId
                 ? { ...m, statusText: undefined, tools: (m.tools ?? []).map(t => t.id === event.id
@@ -1950,7 +1968,8 @@ export default function AssistantPage() {
             <AnimatePresence>
               {sending && (() => {
                 const streamingMsg = messages.slice().reverse().find(m => m.role === "assistant" && m.streaming);
-                const runningTool = streamingMsg?.tools?.find(t => t.status === "running");
+                const runningTool  = streamingMsg?.tools?.find(t => t.status === "running");
+                const pendingTools = streamingMsg?.tools?.filter(t => t.status === "pending") ?? [];
                 const toolMeta = runningTool ? (TOOL_META[runningTool.tool] ?? { icon: Terminal, label: runningTool.tool, color: "text-slate-400" }) : null;
                 const ToolIcon = toolMeta?.icon;
                 const cmd = runningTool
@@ -1961,6 +1980,8 @@ export default function AssistantPage() {
                      runningTool.tool === "open_vscode" ? `Opening VS Code` :
                      runningTool.tool === "get_cwd"    ? `Getting current directory` :
                      toolMeta?.label ?? runningTool.tool)
+                  : pendingTools.length > 0
+                    ? `Queued ${pendingTools.length} tool${pendingTools.length === 1 ? "" : "s"}…`
                   : streamingMsg ? "Thinking…" : null;
                 if (!cmd) return null;
                 return (
@@ -1975,9 +1996,11 @@ export default function AssistantPage() {
                     <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-mono ${
                       runningTool
                         ? "bg-amber-500/8 border-amber-500/25 text-amber-300/80"
+                        : pendingTools.length > 0
+                          ? "bg-slate-500/8 border-slate-500/20 text-slate-400/80"
                         : "bg-primary/5 border-primary/20 text-primary/60"
                     }`}>
-                      <Loader2 className={`w-3 h-3 animate-spin shrink-0 ${runningTool ? "text-amber-400" : "text-primary/50"}`} />
+                      <Loader2 className={`w-3 h-3 animate-spin shrink-0 ${runningTool ? "text-amber-400" : pendingTools.length > 0 ? "text-slate-400" : "text-primary/50"}`} />
                       {ToolIcon && <ToolIcon className={`w-3 h-3 shrink-0 ${toolMeta!.color}`} />}
                       <span className="truncate">{cmd}</span>
                     </div>
