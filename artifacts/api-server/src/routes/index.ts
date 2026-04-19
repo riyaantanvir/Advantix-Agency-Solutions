@@ -45,6 +45,7 @@ import adminOverviewStatsRouter from "./adminOverviewStats.js";
 import advantixAssistantRouter from "./advantixAssistant.js";
 import adminAssistantRouter from "./adminAssistant.js";
 import facebookRouter from "./facebook.js";
+import financeRouter from "./finance.js";
 
 const router: IRouter = Router();
 
@@ -96,5 +97,6 @@ router.use(adminOverviewStatsRouter);
 router.use(advantixAssistantRouter);
 router.use(adminAssistantRouter);
 router.use(facebookRouter);
+router.use(financeRouter);
 
 export default router;
