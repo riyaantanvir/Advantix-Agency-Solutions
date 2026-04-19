@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { Link2, Video, ArrowRight, Zap, Sparkles, Headphones, Lock, Terminal, Share2 } from "lucide-react";
+import { Link2, Video, ArrowRight, Zap, Sparkles, Headphones, Lock, Terminal, Share2, Wallet } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useToolsUser } from "@/context/ToolsUserContext";
 
@@ -67,6 +67,17 @@ const tools = [
     href: "/tools/social-media",
     color: "text-pink-400",
     bg: "bg-pink-500/10",
+    badge: "New",
+    external: false,
+  },
+  {
+    slug: "finance",
+    icon: Wallet,
+    name: "Finance Management",
+    description: "Track income and expenses in BDT, manage planned payments and recurring subscriptions, get a real-time dashboard with breakdowns by tag and payment method, and import/export entries via CSV.",
+    href: "/tools/finance",
+    color: "text-emerald-400",
+    bg: "bg-emerald-500/10",
     badge: "New",
     external: false,
   },
