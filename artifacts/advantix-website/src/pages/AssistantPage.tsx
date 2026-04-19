@@ -211,9 +211,11 @@ const TOOL_META: Record<string, { icon: React.ComponentType<{ className?: string
   git:               { icon: GitBranch,    label: "Git",              color: "text-orange-300" },
   find_code:           { icon: SearchCode,   label: "Find in Code",       color: "text-emerald-400" },
   list_files:          { icon: FolderSearch, label: "List Files",         color: "text-emerald-300" },
-  read_codebase_file:  { icon: Code2,        label: "Read File",          color: "text-blue-300" },
-  edit_codebase_file:  { icon: Pencil,       label: "Edit File",          color: "text-amber-300" },
-  run_build_check:     { icon: Wrench,       label: "Build Check",        color: "text-green-300" },
+  read_codebase_file:    { icon: Code2,          label: "Read File",          color: "text-blue-300" },
+  edit_codebase_file:    { icon: Pencil,         label: "Edit File",          color: "text-amber-300" },
+  run_build_check:       { icon: Wrench,         label: "Build Check",        color: "text-green-300" },
+  update_project_memory: { icon: BrainCircuit,   label: "Update Journal",     color: "text-violet-400" },
+  scan_project:          { icon: Activity,       label: "Scan Project",       color: "text-cyan-300" },
 };
 
 function ToolCard({ tool }: { tool: ToolExecution }) {

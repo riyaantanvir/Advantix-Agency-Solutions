@@ -10,6 +10,7 @@ import { requireAdmin } from "../middleware/auth.js";
 import { getAgentScript } from "../lib/agentScript.js";
 import {
   isAgentConnected, getAgentInfo, sendToolCall, registerAgent,
+  setAgentSnapshot, getAgentSnapshot,
   setAgentInfo, removeAgent, resolveToolCall, markAgentAlive,
   type AgentSystemInfo, type ToolResult,
 } from "../lib/agentManager.js";
@@ -675,6 +676,38 @@ const PLATFORM_TOOLS_DEF = [
       required: ["command"],
     },
   },
+  {
+    name: "update_project_memory",
+    description: "Save a journal entry to this project's memory. Call this AFTER completing any task — bug fix, feature, refactor, or analysis. Write a brief but informative entry: what was done, which files changed, and what the current state is. This memory is loaded at the start of every future conversation so you don't waste tokens re-discovering the same context. Format: one or two clear sentences.",
+    input_schema: {
+      type: "object",
+      properties: {
+        entry: {
+          type: "string",
+          description: "Journal entry to append. Be specific: e.g. 'Fixed streaming bug in advantixAssistant.ts (line 1200) — changed delta.tool_calls fallback. Next: test with GLM model.' Max 400 chars.",
+        },
+        status: {
+          type: "string",
+          enum: ["done", "in_progress", "blocked", "note"],
+          description: "Entry type: 'done' = task complete, 'in_progress' = still working, 'blocked' = waiting on user, 'note' = info/observation",
+        },
+      },
+      required: ["entry"],
+    },
+  },
+  {
+    name: "scan_project",
+    description: "Run a quick automated scan of the connected local project: git log (recent commits), git status (modified files), project type detection (Flutter/Node/Python), and key config files. Use this at the START of any codebase session to instantly understand the project state without asking the user. Returns a structured snapshot of what's going on.",
+    input_schema: {
+      type: "object",
+      properties: {
+        deep: {
+          type: "boolean",
+          description: "If true, also runs flutter analyze / tsc --noEmit / python -m py_compile for error detection. Defaults to false (fast scan only).",
+        },
+      },
+    },
+  },
 ];
 
 async function getApiKey(name: string): Promise<string | null> {
@@ -764,7 +797,24 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     projectCtxBlock += `\n\n## PROJECT INSTRUCTIONS\n${projectInstructions}`;
   }
   if (projectMemory) {
-    projectCtxBlock += `\n\n## PROJECT MEMORY (tasks completed so far)\n${projectMemory}`;
+    /* Format memory as structured journal — parse status emoji for summary */
+    const memLines = projectMemory.split("\n").filter(Boolean);
+    const lastEntries = memLines.slice(-20); /* last 20 entries */
+    const doneCount     = memLines.filter(l => l.includes("✅")).length;
+    const progressCount = memLines.filter(l => l.includes("🔄")).length;
+    const blockedCount  = memLines.filter(l => l.includes("⚠️")).length;
+    const lastEntry     = memLines[memLines.length - 1] ?? "";
+    projectCtxBlock += `\n\n## PROJECT JOURNAL (${memLines.length} entries | ✅ ${doneCount} done | 🔄 ${progressCount} in-progress | ⚠️ ${blockedCount} blocked)`;
+    projectCtxBlock += `\nLast entry: ${lastEntry}`;
+    if (memLines.length > 1) {
+      projectCtxBlock += `\n\nRecent entries:\n${lastEntries.join("\n")}`;
+    }
+  }
+
+  /* ── Include cached project snapshot if available ── */
+  const cachedSnapshot = getAgentSnapshot(uid);
+  if (cachedSnapshot) {
+    projectCtxBlock += `\n\n## PROJECT SNAPSHOT (from last scan_project)\n${cachedSnapshot.slice(0, 1500)}`;
   }
 
   const sysContext = agentConnected && agentInfo
@@ -1090,8 +1140,10 @@ STEP 5 — VERIFY:
   run_build_check("tsc-website") or relevant check
   If errors: read the error, fix, re-check
 
-STEP 6 — REPORT:
+STEP 6 — REPORT + JOURNAL:
   Brief summary of what changed and why (use "সম্পন্ন:" format)
+  THEN: update_project_memory(entry="<1-2 sentence summary of what was done and what files changed>", status="done")
+  This is MANDATORY after every completed task — it builds the project history for future sessions.
 
 CODEBASE STRUCTURE (Advantix monorepo at /home/runner/workspace):
 - artifacts/api-server/src/routes/advantixAssistant.ts → Main AI assistant backend (2000+ lines)
@@ -1117,8 +1169,25 @@ EDITING RULES:
 - For large changes across multiple locations: edit one at a time, verify after each
 - After any TypeScript edit: run_build_check to catch type errors immediately
 
+PROJECT MEMORY — Rules for keeping the journal up to date:
+- ALWAYS call update_project_memory AFTER completing any task (bug fix, feature, refactor, analysis).
+- ALWAYS call update_project_memory if you are stopping mid-task with status="in_progress".
+- Write specific entries: include file names, what changed, and what the next step is.
+- Examples:
+    update_project_memory("Fixed streaming bug in advantixAssistant.ts — changed delta.tool_calls fallback logic. Tested with GLM.", "done")
+    update_project_memory("Added read_codebase_file + edit_codebase_file tools. Next: test with real codebase edit.", "in_progress")
+    update_project_memory("scan_project on Flutter project — pubspec.yaml has 23 deps, flutter analyze clean.", "note")
+- The PROJECT JOURNAL in your context is your project memory — check it before re-doing work.
+
+LOCAL CODEBASE SESSION — When agent connects and user asks about their project:
+STEP 0 — SCAN FIRST (before any other action):
+  scan_project() — runs git log, git status, detects project type (Flutter/Node/Python), reads key configs
+  This gives you instant context: recent commits, modified files, current branch, project structure.
+  If last scan_project result is in PROJECT SNAPSHOT: it may be fresh — check timestamp before re-scanning.
+  For deep error check: scan_project(deep=true) runs flutter analyze / tsc --noEmit automatically.
+
 FLUTTER / DART BEST PRACTICES — Follow when working on Flutter projects:
-- FIRST STEPS: run 'flutter doctor' and 'cat pubspec.yaml' to understand the project setup.
+- FIRST STEPS: run scan_project() then 'flutter doctor' if needed to understand the project setup.
 - After ANY change to pubspec.yaml: run 'flutter pub get' immediately.
 - After editing Dart files: run 'flutter analyze' to catch type/lint errors before declaring done.
 - To run the app: use 'flutter run -d <device_id>' — check available devices with 'flutter devices' first.
@@ -1133,22 +1202,6 @@ FLUTTER / DART BEST PRACTICES — Follow when working on Flutter projects:
 - File organization: keep screens in lib/screens/, widgets in lib/widgets/, models in lib/models/, services in lib/services/ — unless project already uses different structure.
 - Auto-fix loop for Flutter: run 'flutter analyze' → fix errors → re-run until clean. Only stop if error requires user's credentials or device access.
 - Use fetch_url to read pub.dev package docs, Flutter API docs, or any online reference before implementing.
-
-FLUTTER / DART BEST PRACTICES — Follow when working on Flutter projects:
-- FIRST STEPS: run 'flutter doctor' and 'cat pubspec.yaml' to understand the project setup.
-- After ANY change to pubspec.yaml: run 'flutter pub get' immediately.
-- After editing Dart files: run 'flutter analyze' to catch type/lint errors before declaring done.
-- To run the app: use 'flutter run -d <device_id>' — check available devices with 'flutter devices' first.
-- Hot reload: press 'r' in the running process; hot restart: 'R'; quit: 'q'.
-- NULL SAFETY: Never use '!' operator unless you are certain the value cannot be null. Prefer '?', '??', and null checks.
-- Naming conventions: PascalCase for Widget classes, camelCase for variables/functions, snake_case for file names.
-- Widget structure: always extract repeated or complex UI into separate StatelessWidget or StatefulWidget classes — never use helper functions that return Widget.
-- Use 'const' constructors everywhere possible for better rebuild performance.
-- State management: check existing state management patterns in the codebase (Provider, Riverpod, Bloc, GetX, setState) and follow whatever is already being used.
-- When adding a package: check pub.dev for the latest version, add to pubspec.yaml under dependencies, run 'flutter pub get'.
-- For platform-specific code (iOS/Android): check the respective platform directories for any needed configuration (permissions, entitlements, AndroidManifest.xml, Info.plist).
-- File organization: keep screens in lib/screens/, widgets in lib/widgets/, models in lib/models/, services in lib/services/ — unless project already uses different structure.
-- Auto-fix loop for Flutter: run 'flutter analyze' → fix errors → re-run until clean. Only stop if error requires user's credentials or device access.
 
 CRITICAL — Error handling and task persistence:
 - NEVER stop mid-task because a tool returned an error. Always analyze the error and attempt to fix it automatically before giving up.
@@ -1850,6 +1903,82 @@ CRITICAL — Error handling and task persistence:
             }
             const out = stdout.trim() || "(no output — check passed clean)";
             result = { id: toolId, stdout: out.slice(0, 3000), stderr: "", exitCode };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1 };
+          }
+        } else if (toolName === "update_project_memory") {
+          /* Append a timestamped journal entry to the conversation's task_memory */
+          try {
+            const entry   = String(toolInput.entry ?? "").trim().slice(0, 400);
+            const status  = String(toolInput.status ?? "done");
+            if (!entry) throw new Error("entry is required");
+
+            const statusEmoji: Record<string, string> = {
+              done: "✅", in_progress: "🔄", blocked: "⚠️", note: "📝",
+            };
+            const emoji = statusEmoji[status] ?? "📝";
+            const now = new Date();
+            const ts = `${now.toISOString().slice(0, 10)} ${now.toTimeString().slice(0, 5)}`;
+            const line = `[${ts}] ${emoji} ${entry}`;
+
+            /* Load current memory, append, trim to 8000 chars */
+            const memRow = await db.execute(sql`
+              SELECT task_memory FROM agent_conversations WHERE id = ${convId} AND user_id = ${uid}
+            `);
+            const current = ((memRow.rows[0] as { task_memory?: string } | undefined)?.task_memory ?? "").trim();
+            const updated = current ? `${current}\n${line}` : line;
+            const trimmed = updated.length > 8000 ? "…(older entries trimmed)\n" + updated.slice(-7800) : updated;
+
+            await db.execute(sql`
+              UPDATE agent_conversations
+              SET task_memory = ${trimmed}, updated_at = now()
+              WHERE id = ${convId} AND user_id = ${uid}
+            `);
+
+            result = { id: toolId, stdout: `✓ Journal updated:\n${line}`, stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1 };
+          }
+        } else if (toolName === "scan_project") {
+          /* Quick project scan via local agent — runs on user's machine */
+          try {
+            if (!agentConnected) throw new Error("Local agent not connected. Connect the agent to run project scan.");
+            const deep = Boolean(toolInput.deep);
+            const agentInfo2 = getAgentInfo(uid);
+            const cwd = agentInfo2?.cwd ?? ".";
+
+            /* Run multiple info-gathering commands */
+            const commands: Array<{ label: string; cmd: string }> = [
+              { label: "git_log",    cmd: `git -C ${JSON.stringify(cwd)} log --oneline -8 2>/dev/null || echo "(not a git repo)"` },
+              { label: "git_status", cmd: `git -C ${JSON.stringify(cwd)} status --short 2>/dev/null || echo ""` },
+              { label: "git_branch", cmd: `git -C ${JSON.stringify(cwd)} branch --show-current 2>/dev/null || echo ""` },
+              { label: "structure",  cmd: `ls ${JSON.stringify(cwd)}` },
+              { label: "pubspec",    cmd: `test -f ${JSON.stringify(cwd + "/pubspec.yaml")} && head -20 ${JSON.stringify(cwd + "/pubspec.yaml")} || echo "(no pubspec.yaml)"` },
+              { label: "package",    cmd: `test -f ${JSON.stringify(cwd + "/package.json")} && cat ${JSON.stringify(cwd + "/package.json")} | head -20 || echo "(no package.json)"` },
+              { label: "requirements", cmd: `test -f ${JSON.stringify(cwd + "/requirements.txt")} && head -10 ${JSON.stringify(cwd + "/requirements.txt")} || echo "(no requirements.txt)"` },
+            ];
+            if (deep) {
+              commands.push(
+                { label: "flutter_analyze", cmd: `cd ${JSON.stringify(cwd)} && flutter analyze 2>&1 | tail -20 || echo "(flutter not available)"` },
+                { label: "tsc_check",       cmd: `cd ${JSON.stringify(cwd)} && npx tsc --noEmit 2>&1 | head -20 || echo "(tsc not available)"` },
+              );
+            }
+
+            const parts: string[] = [];
+            for (const { label, cmd } of commands) {
+              try {
+                const r = await sendToolCall(uid, crypto.randomUUID(), "run_command", { command: cmd }, 15_000);
+                const out = (r.stdout ?? "").trim();
+                if (out && out !== "(no pubspec.yaml)" && out !== "(no package.json)" && out !== "(no requirements.txt)") {
+                  parts.push(`### ${label}\n${out.slice(0, 600)}`);
+                }
+              } catch { /* skip failed commands */ }
+            }
+
+            const snapshot = parts.join("\n\n").slice(0, 3000);
+            /* Cache snapshot in agent memory for sysContext */
+            setAgentSnapshot(uid, snapshot);
+            result = { id: toolId, stdout: snapshot || "Scan complete (no output).", stderr: "", exitCode: 0 };
           } catch (err) {
             result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1 };
           }

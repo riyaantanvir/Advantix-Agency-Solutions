@@ -34,6 +34,7 @@ type AgentEntry = {
   pingTimer: ReturnType<typeof setTimeout> | null;
   deadTimer: ReturnType<typeof setTimeout> | null;
   alive: boolean;
+  projectSnapshot: string | null; /* auto-analysis result from connect-time scan */
 };
 
 const agents = new Map<number, AgentEntry>();
@@ -102,9 +103,19 @@ export function registerAgent(userId: number, ws: WebSocket, info: AgentSystemIn
   const entry: AgentEntry = {
     ws, userId, info, pending: new Map(),
     pingTimer: null, deadTimer: null, alive: true,
+    projectSnapshot: null,
   };
   agents.set(userId, entry);
   schedulePing(entry);
+}
+
+export function setAgentSnapshot(userId: number, snapshot: string): void {
+  const entry = agents.get(userId);
+  if (entry) entry.projectSnapshot = snapshot;
+}
+
+export function getAgentSnapshot(userId: number): string | null {
+  return agents.get(userId)?.projectSnapshot ?? null;
 }
 
 export function setAgentInfo(userId: number, info: AgentSystemInfo): void {
