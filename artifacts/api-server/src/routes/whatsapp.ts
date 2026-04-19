@@ -21,6 +21,7 @@ router.get("/tools/whatsapp/status", requireToolUser, async (req, res) => {
     phone: live.phone ?? row?.phoneNumber ?? null,
     displayName: live.displayName ?? row?.displayName ?? null,
     error: live.error,
+    qr: live.qrPng ?? null,
     triggerWord: row?.triggerWord ?? "@bot",
     autoReplyDm: row?.autoReplyDm ?? true,
     autoReplyGroups: row?.autoReplyGroups ?? false,

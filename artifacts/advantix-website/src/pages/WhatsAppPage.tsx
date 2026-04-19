@@ -54,16 +54,36 @@ export default function WhatsAppPage() {
   useEffect(() => {
     loadStatus();
     /* SSE for live QR + status */
+    let pollTimer: number | null = null;
+    let sseConnected = false;
     const es = new EventSource("/api/tools/whatsapp/stream", { withCredentials: true } as any);
     esRef.current = es;
+    es.onopen = () => { sseConnected = true; };
     es.onmessage = (e) => {
       try {
         const d = JSON.parse(e.data);
         setState(s => ({ ...s, ...d }));
       } catch { /* ignore */ }
     };
-    es.onerror = () => { /* will auto-reconnect */ };
-    return () => { es.close(); };
+    es.onerror = () => {
+      /* Fallback: if SSE isn't working (proxy, network), poll status every 2s */
+      if (!sseConnected && !pollTimer) {
+        pollTimer = window.setInterval(loadStatus, 2000);
+      }
+    };
+    /* Also poll every 3s while connecting/qr — defence-in-depth in case SSE
+       drops a message (status moves but QR misses) */
+    const stateTick = window.setInterval(() => {
+      setState(curr => {
+        if (curr.status === "connecting" || curr.status === "qr") loadStatus();
+        return curr;
+      });
+    }, 3000);
+    return () => {
+      es.close();
+      if (pollTimer) clearInterval(pollTimer);
+      clearInterval(stateTick);
+    };
   }, []);
 
   const startConnect = async () => {

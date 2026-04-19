@@ -1,6 +1,7 @@
 import {
   makeWASocket,
   DisconnectReason,
+  fetchLatestBaileysVersion,
   type WASocket,
   type AuthenticationState,
   type SignalDataTypeMap,
@@ -15,7 +16,8 @@ import { eq, sql } from "drizzle-orm";
 import pino from "pino";
 import { runAssistantForWhatsApp } from "./assistantInternal.js";
 
-const logger = pino({ level: "warn" }).child({ module: "whatsapp" });
+const logger = pino({ level: "info" }).child({ module: "whatsapp" });
+const log = (...args: any[]) => console.log("[whatsapp]", ...args);
 
 /* ── Per-user runtime state ──────────────────────────────────────── */
 type UserState = {
@@ -72,7 +74,7 @@ export function subscribeStatus(uid: number, cb: (payload: object) => void): () 
 
 export function getStatus(uid: number) {
   const s = getState(uid);
-  return { status: s.status, phone: s.phone, displayName: s.displayName, error: s.lastError };
+  return { status: s.status, phone: s.phone, displayName: s.displayName, error: s.lastError, qrPng: s.qrPng };
 }
 
 /* ── DB-backed auth state for Baileys ─────────────────────────────── */
@@ -166,19 +168,34 @@ export async function connect(uid: number): Promise<void> {
   s.qrPng = null;
   pushQrUpdate(uid);
   await persistStatus(uid, { status: "connecting", lastQr: null });
+  log(`uid=${uid} starting Baileys connect (gen=${myGen})`);
 
   try {
     const { state, saveCreds } = await makeDbAuthState(uid);
     const QRCode = (await import("qrcode")).default;
+    /* Always fetch the current WhatsApp Web protocol version so the server
+       does not reject our connection with version-mismatch (silent hang). */
+    let version: [number, number, number] | undefined;
+    try {
+      const v = await fetchLatestBaileysVersion();
+      version = v.version;
+      log(`uid=${uid} using WA version`, version, "isLatest=", v.isLatest);
+    } catch (e) {
+      log(`uid=${uid} fetchLatestBaileysVersion failed, using default:`, (e as Error)?.message);
+    }
 
     const sock = makeWASocket({
+      version,
       auth: state,
       logger: logger as any,
       printQRInTerminal: false,
       browser: ["Advantix Assistant", "Chrome", "1.0.0"],
       syncFullHistory: false,
       markOnlineOnConnect: false,
+      connectTimeoutMs: 30_000,
+      qrTimeout: 60_000,
     });
+    log(`uid=${uid} socket created, waiting for events…`);
 
     s.socket = sock;
 
@@ -189,15 +206,21 @@ export async function connect(uid: number): Promise<void> {
       if (myGen !== s.generation) return;
       const { connection, lastDisconnect, qr } = update;
       if (qr) {
+        log(`uid=${uid} QR received (len=${qr.length})`);
         try {
           s.qrPng = await QRCode.toDataURL(qr, { width: 320, margin: 1 });
           s.status = "qr";
           await persistStatus(uid, { status: "qr", lastQr: qr });
           pushQrUpdate(uid);
-        } catch (e) { logger.error({ err: e }, "qr render failed"); }
+        } catch (e) { log(`uid=${uid} qr render failed:`, (e as Error)?.message); }
+      }
+
+      if (connection === "connecting") {
+        log(`uid=${uid} ws connecting…`);
       }
 
       if (connection === "open") {
+        log(`uid=${uid} CONNECTED as`, sock.user?.id);
         s.status = "connected";
         s.qrPng = null;
         const me = sock.user;
@@ -215,6 +238,7 @@ export async function connect(uid: number): Promise<void> {
       if (connection === "close") {
         const reason = (lastDisconnect?.error as Boom)?.output?.statusCode;
         const loggedOut = reason === DisconnectReason.loggedOut;
+        log(`uid=${uid} CLOSED reason=${reason} err=${lastDisconnect?.error?.message ?? "n/a"} intentional=${s.intentionalDisconnect}`);
         s.socket = null;
         if (loggedOut) {
           s.status = "disconnected";
@@ -253,6 +277,7 @@ export async function connect(uid: number): Promise<void> {
     });
 
   } catch (err) {
+    log(`uid=${uid} connect() THREW:`, (err as Error)?.message, (err as Error)?.stack);
     s.status = "error";
     s.lastError = String((err as Error)?.message ?? err);
     s.socket = null;
