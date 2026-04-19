@@ -327,17 +327,19 @@ async function handleIncomingMessage(uid: number, sock: WASocket, msg: proto.IWe
   if (!jid) return;
   if (jid === "status@broadcast") return;
 
-  /* "Message Yourself" support: allow fromMe messages, but ONLY when the
-     chat is the user's own JID — i.e. their personal self-chat. WhatsApp
-     identifies a user by either their phone number (PN, *@s.whatsapp.net)
-     or their LID (linked-identifier, *@lid). Self-chat may use EITHER, so
-     we compare the numeric prefix against both ownPn and ownLid. */
+  /* fromMe handling — three cases:
+       1. Self-chat ("Message Yourself"): allow, so user can talk to bot themselves
+       2. Group: allow, because the trigger-word check below ensures we only
+          reply to messages explicitly invoking the bot ("@bot ...")
+       3. Private DM with someone else: SKIP, so we don't reply on the user's
+          behalf to outgoing messages they sent to other people */
   const ownPn  = (sock.user as any)?.id ? String((sock.user as any).id).split(":")[0].split("@")[0] : null;
   const ownLid = (sock.user as any)?.lid ? String((sock.user as any).lid).split(":")[0].split("@")[0] : null;
   const jidNum = jid.split("@")[0].split(":")[0];
   const isSelfChat = (!!ownPn && jidNum === ownPn) || (!!ownLid && jidNum === ownLid);
-  log(`uid=${uid} msg from=${jid} fromMe=${msg.key.fromMe} ownPn=${ownPn} ownLid=${ownLid} isSelf=${isSelfChat}`);
-  if (msg.key.fromMe && !isSelfChat) return;
+  const isGroup = jid.endsWith("@g.us");
+  log(`uid=${uid} msg from=${jid} fromMe=${msg.key.fromMe} ownPn=${ownPn} ownLid=${ownLid} isSelf=${isSelfChat} isGroup=${isGroup}`);
+  if (msg.key.fromMe && !isSelfChat && !isGroup) return;
 
   /* Critical: in self-chat the bot's OWN replies also come back as fromMe.
      Skip anything we sent ourselves to break the infinite reply loop. */
@@ -367,7 +369,6 @@ async function handleIncomingMessage(uid: number, sock: WASocket, msg: proto.IWe
   const [settings] = await db.select().from(whatsappSessionsTable).where(eq(whatsappSessionsTable.userId, uid)).limit(1);
   if (!settings) return;
 
-  const isGroup = jid.endsWith("@g.us");
   const allowed = (settings.allowedJids || []) as string[];
   const blocked = (settings.blockedJids || []) as string[];
 
