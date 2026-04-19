@@ -210,7 +210,21 @@ export default function WhatsAppPage() {
                   <li>2. <b>Settings → Linked Devices → Link a Device</b> এ যান</li>
                   <li>3. উপরের QR code টি scan করুন</li>
                 </ol>
+                <Button variant="outline" size="sm" className="mt-3" onClick={startConnect} disabled={busy}>
+                  <RefreshCw className="w-3 h-3 mr-1" /> Refresh QR
+                </Button>
               </div>
+            </div>
+          )}
+
+          {state.status === "qr" && !state.qr && (
+            <div className="text-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-3 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground mb-4">QR expired or server restarted. Click below to get a fresh code.</p>
+              <Button onClick={startConnect} disabled={busy} size="lg" className="bg-green-500 hover:bg-green-600">
+                {busy ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                Generate New QR
+              </Button>
             </div>
           )}
 
