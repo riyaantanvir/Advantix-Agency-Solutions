@@ -134,10 +134,26 @@ export default function FinancePage() {
   );
 }
 
+/* ─────────────── DATE PRESETS ─────────────── */
+type DatePreset = "this-month" | "last-month" | "this-year" | "last-7" | "last-30" | "all" | "custom";
+const ymd = (d: Date) => d.toISOString().slice(0, 10);
+function presetRange(p: DatePreset): { from: string; to: string } {
+  const today = new Date();
+  const y = today.getFullYear(), m = today.getMonth();
+  if (p === "this-month") return { from: ymd(new Date(y, m, 1)), to: ymd(new Date(y, m + 1, 0)) };
+  if (p === "last-month") return { from: ymd(new Date(y, m - 1, 1)), to: ymd(new Date(y, m, 0)) };
+  if (p === "this-year") return { from: ymd(new Date(y, 0, 1)), to: ymd(new Date(y, 11, 31)) };
+  if (p === "last-7") { const s = new Date(today); s.setDate(s.getDate() - 6); return { from: ymd(s), to: ymd(today) }; }
+  if (p === "last-30") { const s = new Date(today); s.setDate(s.getDate() - 29); return { from: ymd(s), to: ymd(today) }; }
+  return { from: "", to: "" };
+}
+
 /* ─────────────── DASHBOARD ─────────────── */
 function DashboardView({ refreshKey, tags, methods, onJump }: { refreshKey: number; tags: Tag[]; methods: PaymentMethod[]; onJump: (v: View) => void }) {
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const initial = presetRange("this-month");
+  const [preset, setPreset] = useState<DatePreset>("this-month");
+  const [from, setFrom] = useState(initial.from);
+  const [to, setTo] = useState(initial.to);
   const [tagId, setTagId] = useState("");
   const [pmId, setPmId] = useState("");
   const [data, setData] = useState<DashboardData | null>(null);
@@ -162,7 +178,15 @@ function DashboardView({ refreshKey, tags, methods, onJump }: { refreshKey: numb
 
   return (
     <div className="space-y-6">
-      <FilterBar from={from} to={to} setFrom={setFrom} setTo={setTo} tagId={tagId} setTagId={setTagId} pmId={pmId} setPmId={setPmId} tags={tags} methods={methods} />
+      <FilterBar
+        from={from} to={to}
+        setFrom={(v) => { setPreset("custom"); setFrom(v); }}
+        setTo={(v) => { setPreset("custom"); setTo(v); }}
+        tagId={tagId} setTagId={setTagId} pmId={pmId} setPmId={setPmId}
+        tags={tags} methods={methods}
+        preset={preset}
+        setPreset={(p) => { setPreset(p); const r = presetRange(p); setFrom(r.from); setTo(r.to); }}
+      />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="Total Income" value={loading ? "…" : BDT(data?.income || 0)} icon={TrendingUp} color="text-green-400" bg="bg-green-500/10" />
@@ -224,16 +248,45 @@ function StatCard({ label, value, sub, icon: Icon, color, bg }: { label: string;
   );
 }
 
-function FilterBar({ from, to, setFrom, setTo, tagId, setTagId, pmId, setPmId, tags, methods, type, setType }: {
+function FilterBar({ from, to, setFrom, setTo, tagId, setTagId, pmId, setPmId, tags, methods, type, setType, preset, setPreset }: {
   from: string; to: string; setFrom: (v: string) => void; setTo: (v: string) => void;
   tagId: string; setTagId: (v: string) => void; pmId: string; setPmId: (v: string) => void;
   tags: Tag[]; methods: PaymentMethod[]; type?: string; setType?: (v: string) => void;
+  preset?: DatePreset; setPreset?: (p: DatePreset) => void;
 }) {
+  const presets: { key: DatePreset; label: string }[] = [
+    { key: "this-month", label: "This Month" },
+    { key: "last-month", label: "Last Month" },
+    { key: "last-7", label: "Last 7 Days" },
+    { key: "last-30", label: "Last 30 Days" },
+    { key: "this-year", label: "This Year" },
+    { key: "all", label: "All Time" },
+  ];
   return (
     <div className="bg-card/50 border border-border rounded-2xl p-4">
       <div className="flex items-center gap-2 mb-3 text-sm font-medium text-muted-foreground">
         <Filter className="w-4 h-4" /> Filters
       </div>
+      {setPreset && (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {presets.map(p => (
+            <button
+              key={p.key}
+              onClick={() => setPreset(p.key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                preset === p.key
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                  : "bg-muted/30 text-muted-foreground border-transparent hover:border-border"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+          {preset === "custom" && (
+            <span className="px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-500/20 text-violet-300 border border-violet-500/30">Custom</span>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div>
           <label className="text-xs text-muted-foreground">From</label>
