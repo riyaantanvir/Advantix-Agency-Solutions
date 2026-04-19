@@ -41,6 +41,12 @@ interface AssistantStats {
   lastMessageAt: string | null;
 }
 interface FavoriteItem { image_id: number; url: string; caption: string | null; page_slug: string; folder_name: string; }
+interface FinanceSummary {
+  monthIncome: number; monthExpense: number; monthNet: number;
+  byTag: { tagId: number | null; tagName: string; amount: number }[];
+}
+
+const bdt = (n: number) => "৳ " + Math.round(n).toLocaleString("en-BD");
 
 const TOOLS = [
   { label: "Advantix Assistant", desc: "AI coding & task agent", icon: Bot, color: "text-emerald-400", bg: "bg-emerald-500/10", border: "hover:border-emerald-500/40 hover:bg-emerald-500/5", href: "/tools/assistant", external: false },
@@ -64,6 +70,8 @@ export default function ToolsDashboard() {
   const [loadingAssistant, setLoadingAssistant] = useState(true);
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [loadingFavs, setLoadingFavs] = useState(true);
+  const [finance, setFinance] = useState<FinanceSummary | null>(null);
+  const [loadingFinance, setLoadingFinance] = useState(true);
 
   const shortBase = typeof window !== "undefined" ? window.location.origin : "";
 
@@ -74,7 +82,16 @@ export default function ToolsDashboard() {
     toolsApi.recordings.stats().then(setRecStats).catch(() => setRecStats({ totalRecordings: 0, totalSeconds: 0 })).finally(() => setLoadingRec(false));
     fetch("/api/tools/assistant/stats", { credentials: "include" }).then(r => r.ok ? r.json() : null).then(d => { if (d) setAssistantStats(d); }).finally(() => setLoadingAssistant(false));
     fetch("/api/favorites/images", { credentials: "include" }).then(r => r.ok ? r.json() : []).then(setFavorites).catch(() => setFavorites([])).finally(() => setLoadingFavs(false));
+    fetch("/api/tools/finance/dashboard", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setFinance(d); })
+      .catch(() => {})
+      .finally(() => setLoadingFinance(false));
   }, [user, loading]);
+
+  const topExpenseTag = finance
+    ? [...(finance.byTag || [])].filter(t => t.amount > 0).sort((a, b) => b.amount - a.amount)[0]
+    : undefined;
 
   const totalClicks = urls.reduce((s, u) => s + u.clicks, 0);
   const totalMinutes = Math.round(recStats.totalSeconds / 60);
@@ -93,6 +110,26 @@ export default function ToolsDashboard() {
   const initials = user.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const stats = [
+    {
+      label: "This Month Spend",
+      value: finance ? bdt(finance.monthExpense) : "—",
+      sub: finance && finance.monthIncome > 0 ? `Income ${bdt(finance.monthIncome)}` : undefined,
+      icon: Wallet,
+      color: "text-rose-400",
+      bg: "bg-rose-500/10",
+      loading: loadingFinance,
+      href: "/tools/finance",
+    },
+    {
+      label: topExpenseTag ? `Top: ${topExpenseTag.tagName}` : "Top Category",
+      value: topExpenseTag ? bdt(topExpenseTag.amount) : "—",
+      sub: topExpenseTag ? "Most spent overall" : undefined,
+      icon: BarChart2,
+      color: "text-amber-400",
+      bg: "bg-amber-500/10",
+      loading: loadingFinance,
+      href: "/tools/finance",
+    },
     { label: "Short Links", value: urls.length, icon: Link2, color: "text-indigo-400", bg: "bg-indigo-500/10", loading: loadingUrls },
     { label: "Total Clicks", value: totalClicks, icon: BarChart2, color: "text-emerald-400", bg: "bg-emerald-500/10", loading: loadingUrls },
     { label: "Recordings", value: recStats.totalRecordings, icon: Video, color: "text-purple-400", bg: "bg-purple-500/10", loading: loadingRec },
@@ -133,18 +170,25 @@ export default function ToolsDashboard() {
         </motion.div>
 
         {/* ── Stats row ───────────────────────────────────────────────── */}
-        <motion.div {...fade(0.05)} className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {stats.map(({ label, value, icon: Icon, color, bg, loading: l }) => (
-            <div key={label} className="rounded-xl border border-border/50 bg-card p-4 flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center shrink-0`}>
-                <Icon className={`w-5 h-5 ${color}`} />
+        <motion.div {...fade(0.05)} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {stats.map((s) => {
+            const Icon = s.icon;
+            const card = (
+              <div className={`rounded-xl border border-border/50 bg-card p-4 flex items-center gap-3 h-full ${s.href ? "hover:border-primary/40 hover:bg-primary/5 transition-colors cursor-pointer" : ""}`}>
+                <div className={`w-9 h-9 rounded-xl ${s.bg} flex items-center justify-center shrink-0`}>
+                  <Icon className={`w-5 h-5 ${s.color}`} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-base font-bold tabular-nums leading-tight truncate">{s.loading ? "—" : s.value}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{s.label}</p>
+                  {s.sub && !s.loading && (
+                    <p className="text-[10px] text-muted-foreground/70 mt-0.5 truncate">{s.sub}</p>
+                  )}
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="text-xl font-bold tabular-nums leading-none">{l ? "—" : value}</p>
-                <p className="text-xs text-muted-foreground mt-0.5 truncate">{label}</p>
-              </div>
-            </div>
-          ))}
+            );
+            return s.href ? <Link key={s.label} href={s.href}>{card}</Link> : <div key={s.label}>{card}</div>;
+          })}
         </motion.div>
 
         {/* ── Tools grid ──────────────────────────────────────────────── */}
