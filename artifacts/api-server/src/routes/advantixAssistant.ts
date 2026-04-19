@@ -1063,10 +1063,26 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     type AnthropicTextBlock  = { type: "text"; text: string };
     type ContentBlock = AnthropicImageBlock | AnthropicTextBlock;
 
-    /* ── Resume detection — check if user is continuing an interrupted task ── */
+    /* ── Resume detection — keyword match OR recent interrupted task ── */
     const resumeKeywords = ["continue", "resume", "abar", "আগের", "oikhan", "থেকে", "suru kor", "akhan theke",
       "কোথায় ছিলে", "ki korsilam", "ki hoise", "carry on", "continue koro", "baki kaj", "baki ta", "age ki", "আগে কী"];
-    const isResuming = resumeKeywords.some(k => message.toLowerCase().includes(k.toLowerCase()));
+    const keywordMatch = resumeKeywords.some(k => message.toLowerCase().includes(k.toLowerCase()));
+
+    /* Auto-resume: if the last 🔄 in-progress entry was within 3 hours — task is likely still active */
+    let autoResumeFromJournal = false;
+    if (!keywordMatch && projectMemory) {
+      const lastInProgress = projectMemory.split("\n").filter(l => l.includes("🔄")).pop();
+      if (lastInProgress) {
+        const tsMatch = lastInProgress.match(/\[(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})\]/);
+        if (tsMatch) {
+          const entryTimeStr = `${tsMatch[1]}T${tsMatch[2]}:00`;
+          const entryTime = new Date(entryTimeStr);
+          const hoursAgo = (Date.now() - entryTime.getTime()) / (1000 * 60 * 60);
+          if (hoursAgo < 3) autoResumeFromJournal = true;
+        }
+      }
+    }
+    const isResuming = keywordMatch || autoResumeFromJournal;
 
     let userContent: string | ContentBlock[];
     if (attachments && attachments.length > 0) {
@@ -1082,10 +1098,23 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       if (message?.trim()) blocks.push({ type: "text", text: message });
       userContent = blocks;
     } else if (isResuming && projectMemory) {
-      /* Inject resume context: pull last in-progress entries from memory */
+      /* Inject resume context: pull in-progress + recent entries from memory */
       const memLines = projectMemory.split("\n").filter(Boolean);
-      const lastEntries = memLines.slice(-8).join("\n");
-      const resumeCtx = `[RESUME CONTEXT — Task was interrupted. Here is your recent journal:\n${lastEntries}\nResume from where you stopped. Do NOT re-do completed steps.]\n\n${message}`;
+      /* Show last in-progress entry + last 6 entries for full picture */
+      const inProgressLines = memLines.filter(l => l.includes("🔄"));
+      const lastInProgress  = inProgressLines[inProgressLines.length - 1] ?? "";
+      const recentEntries   = memLines.slice(-6).join("\n");
+      const trigger = autoResumeFromJournal ? "auto-detected from recent in-progress journal" : "user requested resume";
+      const resumeCtx = [
+        `[RESUME CONTEXT (${trigger})]`,
+        `Last in-progress step: ${lastInProgress || "(none)"}`,
+        `Recent journal:\n${recentEntries}`,
+        `INSTRUCTIONS: Check which steps above are ✅ done and which are 🔄 in-progress.`,
+        `Skip ALL done steps. Continue from the NEXT unfinished step.`,
+        `Do NOT restart from beginning. Do NOT re-read files already read. Do NOT re-run scans already done.`,
+        `---`,
+        message,
+      ].join("\n");
       userContent = resumeCtx;
     } else {
       userContent = message;
@@ -1142,29 +1171,38 @@ TASK RESUMPTION — CRITICAL — When asked to continue or resume:
 CODEBASE WORK — FULL AGENTIC WORKFLOW (follow exactly like Replit agent):
 When given ANY coding task — bug fix, feature, UI change, API change — follow these steps INSTANTLY without asking:
 
-STEP 1 — LOCATE:
-  find_code("<symbol or error text>", files_only=true) → see which files
-  find_code("<symbol>", context=3) → see the exact lines
+STEP 0 — CHECK JOURNAL FIRST (before ANYTHING else):
+  Look at PROJECT JOURNAL in your context.
+  - If ✅ "done" for this task already: tell user it's done, don't redo it.
+  - If 🔄 "in_progress" for this task: skip to the next unfinished step — don't restart.
+  - If no entry for this task: continue to STEP 1.
 
-STEP 2 — READ:
-  read_codebase_file("<path>", offset=<line>, limit=80) → read the relevant section
-  For large files: read around the specific area, not the whole file
+STEP 1 — SAVE TASK PLAN (for multi-step tasks only):
+  update_project_memory("TASK: <goal>. Plan: [1]<step1> [2]<step2>. Starting step 1.", "in_progress")
+  This ensures if interrupted, you can resume from exact step.
 
-STEP 3 — PLAN:
-  Briefly state: what is the issue, what needs to change, which files
+STEP 2 — LOCATE (targeted, not broad):
+  find_code("<symbol or error text>", files_only=true) → exact files
+  find_code("<symbol>", context=3) → exact lines
+  NEVER use list_files() for the whole project — it wastes tokens.
 
-STEP 4 — EDIT:
+STEP 3 — READ (only what's needed):
+  read_codebase_file("<path>", offset=<line>, limit=80) → only the relevant section
+  If you already read this file in this session: use that content from history — don't re-read.
+
+STEP 4 — EDIT + CHECKPOINT:
   edit_codebase_file("<path>", old_string="<exact 5-10 lines>", new_string="<fixed code>")
-  Always include 5-10 lines of surrounding context in old_string so it's unique
+  After each edit: update_project_memory("Step N done: Edited <file>. Next: step N+1.", "in_progress")
 
 STEP 5 — VERIFY:
   run_build_check("tsc-website") or relevant check
   If errors: read the error, fix, re-check
+  On success: update_project_memory("tsc check clean for <file>.", "note")
 
-STEP 6 — REPORT + JOURNAL:
-  Brief summary of what changed and why (use "সম্পন্ন:" format)
-  THEN: update_project_memory(entry="<1-2 sentence summary of what was done and what files changed>", status="done")
-  This is MANDATORY after every completed task — it builds the project history for future sessions.
+STEP 6 — REPORT + FINAL JOURNAL:
+  Brief summary (use "সম্পন্ন:" format)
+  MANDATORY: update_project_memory("<what was done, which files, result>", "done")
+  This closes the task — future sessions will see ✅ and won't redo it.
 
 CODEBASE STRUCTURE (Advantix monorepo at /home/runner/workspace):
 - artifacts/api-server/src/routes/advantixAssistant.ts → Main AI assistant backend (2000+ lines)
@@ -1191,21 +1229,32 @@ EDITING RULES:
 - After any TypeScript edit: run_build_check to catch type errors immediately
 
 PROJECT MEMORY — Rules for keeping the journal up to date:
-- ALWAYS call update_project_memory AFTER completing any task (bug fix, feature, refactor, analysis).
-- ALWAYS call update_project_memory if you are stopping mid-task with status="in_progress".
-- Write specific entries: include file names, what changed, and what the next step is.
-- Examples:
-    update_project_memory("Fixed streaming bug in advantixAssistant.ts — changed delta.tool_calls fallback logic. Tested with GLM.", "done")
-    update_project_memory("Added read_codebase_file + edit_codebase_file tools. Next: test with real codebase edit.", "in_progress")
-    update_project_memory("scan_project on Flutter project — pubspec.yaml has 23 deps, flutter analyze clean.", "note")
-- The PROJECT JOURNAL in your context is your project memory — check it before re-doing work.
+- For MULTI-STEP tasks: FIRST call update_project_memory at the START with the full plan (status="in_progress"):
+    update_project_memory("TASK: Add auth system. Plan: [1]schema [2]routes [3]frontend. Starting step 1.", "in_progress")
+- After EACH step completes: update with next step:
+    update_project_memory("Step 1 done: schema added to seed.ts. Next: step 2 — add /auth routes.", "in_progress")
+- After ALL steps done: final entry (status="done"):
+    update_project_memory("Auth system complete. Files: seed.ts, auth.ts, AuthPage.tsx. All passing tsc check.", "done")
+- If INTERRUPTED mid-task: save where you stopped:
+    update_project_memory("INTERRUPTED at step 2/3. Done: schema. Remaining: routes, frontend.", "in_progress")
+- CHECK journal before starting — if ✅ done: skip. If 🔄 in-progress: resume from that step.
+- DO NOT repeat steps already in journal as ✅.
+
+TOKEN-EFFICIENT WORKING — Follow these to minimize unnecessary work:
+- NEVER scan the whole codebase for a targeted fix — use find_code(pattern) to go directly to the file/line.
+- NEVER re-read a file you already read in this session — use the content from history or journal.
+- NEVER re-run git/project scans if PROJECT SNAPSHOT in context is less than 30 minutes old.
+- PREFER find_code(files_only=true) over list_files() — it's 10x faster for finding the right file.
+- READ only the relevant section of a large file (offset+limit) — not the whole file.
+- If journal says "🔄 Edited X" — that file is already changed, don't re-read it unless you need to verify.
+- If journal says "✅ tsc check passed" — skip the build check for that file.
 
 LOCAL CODEBASE SESSION — When agent connects and user asks about their project:
-STEP 0 — SCAN FIRST (before any other action):
-  scan_project() — runs git log, git status, detects project type (Flutter/Node/Python), reads key configs
-  This gives you instant context: recent commits, modified files, current branch, project structure.
-  If last scan_project result is in PROJECT SNAPSHOT: it may be fresh — check timestamp before re-scanning.
-  For deep error check: scan_project(deep=true) runs flutter analyze / tsc --noEmit automatically.
+STEP 0 — CHECK PROJECT SNAPSHOT FIRST:
+  The PROJECT SNAPSHOT in context (from auto-scan on connect) already has: git log, branch, status, project type.
+  If snapshot exists and is recent: USE IT — don't run scan_project() again.
+  If snapshot is missing or stale (>30 min): run scan_project() to refresh.
+  For deep error check ONLY when user reports errors: scan_project(deep=true).
 
 FLUTTER / DART BEST PRACTICES — Follow when working on Flutter projects:
 - FIRST STEPS: run scan_project() then 'flutter doctor' if needed to understand the project setup.
@@ -2372,6 +2421,30 @@ export async function handleAgentWebSocket(ws: WebSocket, req: IncomingMessage):
 
       if (msg.type === "ready" && msg.info) {
         setAgentInfo(uid, msg.info);
+        /* ── Background auto-scan on connect — gives AI instant project awareness ── */
+        setImmediate(async () => {
+          try {
+            const cwd = msg.info!.cwd;
+            const cwd_q = JSON.stringify(cwd);
+            const cmds: Array<{ label: string; cmd: string }> = [
+              { label: "branch",  cmd: `git -C ${cwd_q} branch --show-current 2>/dev/null` },
+              { label: "log",     cmd: `git -C ${cwd_q} log --oneline -6 2>/dev/null || echo "(no git)"` },
+              { label: "status",  cmd: `git -C ${cwd_q} status --short 2>/dev/null` },
+              { label: "ls",      cmd: `ls ${cwd_q}` },
+              { label: "pubspec", cmd: `test -f ${cwd_q + "/pubspec.yaml"} && grep -E "^(name|version|flutter|sdk):" ${cwd_q}/pubspec.yaml | head -8 || echo ""` },
+              { label: "package", cmd: `test -f ${cwd_q + "/package.json"} && node -e "try{const p=require(${JSON.stringify(cwd + "/package.json")});console.log('name:',p.name,'version:',p.version)}catch(e){}" 2>/dev/null || echo ""` },
+            ];
+            const parts: string[] = [`[auto-scan @ ${new Date().toISOString().slice(0,16)}]`];
+            for (const { label, cmd } of cmds) {
+              try {
+                const r = await sendToolCall(uid, crypto.randomUUID(), "run_command", { command: cmd }, 8_000);
+                const out = (r.stdout ?? "").trim();
+                if (out) parts.push(`${label}: ${out.slice(0, 300)}`);
+              } catch { /* skip */ }
+            }
+            if (parts.length > 1) setAgentSnapshot(uid, parts.join("\n"));
+          } catch { /* non-fatal */ }
+        });
         return;
       }
 
