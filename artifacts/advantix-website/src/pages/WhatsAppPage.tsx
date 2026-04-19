@@ -193,10 +193,35 @@ export default function WhatsAppPage() {
           </div>
 
           {state.status === "connected" && (
-            <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4">
-              <div className="text-sm text-muted-foreground">Connected as</div>
-              <div className="text-lg font-semibold">{state.displayName || state.phone}</div>
-              {state.phone && <div className="text-sm font-mono text-muted-foreground">+{state.phone}</div>}
+            <div className="space-y-3">
+              <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4">
+                <div className="text-sm text-muted-foreground">Connected as</div>
+                <div className="text-lg font-semibold">{state.displayName || state.phone}</div>
+                {state.phone && <div className="text-sm font-mono text-muted-foreground">+{state.phone}</div>}
+              </div>
+
+              <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4">
+                <div className="font-semibold mb-2">এখন assistant এর সাথে কীভাবে কথা বলবেন?</div>
+                <ol className="text-sm space-y-2 text-muted-foreground">
+                  <li>
+                    <b className="text-foreground">১) নিজেকে message করুন (সবচেয়ে সহজ):</b><br />
+                    WhatsApp খুলে নিজের নামে chat (<i>Message Yourself</i>) এ যান। যা লিখবেন assistant সেখানেই reply দিবে।
+                    {state.phone && (
+                      <a href={`https://wa.me/${state.phone}`} target="_blank" rel="noreferrer" className="inline-block mt-1 text-blue-400 hover:underline text-xs">
+                        → Open Message Yourself chat
+                      </a>
+                    )}
+                  </li>
+                  <li>
+                    <b className="text-foreground">২) Group এ test করুন:</b><br />
+                    যেকোনো group এ <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{state.triggerWord || "@bot"} hello</code> লিখুন।
+                  </li>
+                  <li>
+                    <b className="text-foreground">৩) অন্য কেউ message করলে:</b><br />
+                    আপনার number এ কেউ DM করলে assistant তাকে auto-reply দিবে (Auto-reply DM toggle on থাকলে)।
+                  </li>
+                </ol>
+              </div>
             </div>
           )}
 

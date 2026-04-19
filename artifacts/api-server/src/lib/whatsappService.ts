@@ -315,10 +315,20 @@ export async function disconnect(uid: number, fullLogout = false): Promise<void>
 
 /* ── Incoming message handling ────────────────────────────────────── */
 async function handleIncomingMessage(uid: number, sock: WASocket, msg: proto.IWebMessageInfo) {
-  if (!msg.message || msg.key.fromMe) return;
+  if (!msg.message) return;
   const jid = msg.key.remoteJid;
   if (!jid) return;
   if (jid === "status@broadcast") return;
+
+  /* "Message Yourself" support: allow fromMe messages, but ONLY when the
+     chat is the user's own JID — i.e. their personal self-chat. This way
+     they can talk to the assistant from their own WhatsApp without needing
+     a second number. Outgoing messages to OTHER chats are ignored so we
+     don't accidentally reply on their behalf. */
+  const ownJid = sock.user?.id ? sock.user.id.split(":")[0] + "@s.whatsapp.net" : null;
+  if (msg.key.fromMe) {
+    if (!ownJid || jid !== ownJid) return;
+  }
 
   const msgId = `${jid}:${msg.key.id}`;
   const s = getState(uid);
