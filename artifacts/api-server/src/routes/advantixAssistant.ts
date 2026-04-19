@@ -845,11 +845,14 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     /* ── Emit conversationId to frontend immediately ── */
     sse(res, { type: "conversation_id", conversationId: convId });
 
-    /* ── Load history — only last 10 rows for minimal context ── */
+    /* ── Dynamic history limit — load more when a task is in-progress ── */
+    const hasInProgress = projectMemory.includes("🔄");
+    const historyLimit = hasInProgress ? 28 : 12;
+
     const historyRows = await db.execute(sql`
       SELECT role, content, tool_name, tool_input, tool_result
       FROM agent_messages WHERE user_id = ${uid} AND conversation_id = ${convId}
-      ORDER BY created_at DESC LIMIT 8
+      ORDER BY created_at DESC LIMIT ${historyLimit}
     `);
     /* Reverse so oldest-first */
     (historyRows.rows as unknown[]).reverse();
@@ -875,7 +878,10 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
         const last = flat[flat.length - 1];
         const lastIsToolResultBatch = last?.role === "user" && Array.isArray(last.content) &&
           (last.content as Block[]).some(b => b.type === "tool_result");
-        const HIST_MAX = 400;
+        /* Longer truncation for edit/read tools — they contain critical code context */
+        const toolForHistory = r.tool_name ?? "";
+        const HIST_MAX = (toolForHistory.includes("read") || toolForHistory.includes("edit") || toolForHistory.includes("find_code"))
+          ? 1200 : 500;
         const resultContent = (r.tool_result ?? "").length > HIST_MAX
           ? (r.tool_result ?? "").slice(0, HIST_MAX) + "\n...(truncated)"
           : (r.tool_result ?? "");
@@ -1057,6 +1063,11 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     type AnthropicTextBlock  = { type: "text"; text: string };
     type ContentBlock = AnthropicImageBlock | AnthropicTextBlock;
 
+    /* ── Resume detection — check if user is continuing an interrupted task ── */
+    const resumeKeywords = ["continue", "resume", "abar", "আগের", "oikhan", "থেকে", "suru kor", "akhan theke",
+      "কোথায় ছিলে", "ki korsilam", "ki hoise", "carry on", "continue koro", "baki kaj", "baki ta", "age ki", "আগে কী"];
+    const isResuming = resumeKeywords.some(k => message.toLowerCase().includes(k.toLowerCase()));
+
     let userContent: string | ContentBlock[];
     if (attachments && attachments.length > 0) {
       const blocks: ContentBlock[] = [];
@@ -1070,6 +1081,12 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
       }
       if (message?.trim()) blocks.push({ type: "text", text: message });
       userContent = blocks;
+    } else if (isResuming && projectMemory) {
+      /* Inject resume context: pull last in-progress entries from memory */
+      const memLines = projectMemory.split("\n").filter(Boolean);
+      const lastEntries = memLines.slice(-8).join("\n");
+      const resumeCtx = `[RESUME CONTEXT — Task was interrupted. Here is your recent journal:\n${lastEntries}\nResume from where you stopped. Do NOT re-do completed steps.]\n\n${message}`;
+      userContent = resumeCtx;
     } else {
       userContent = message;
     }
@@ -1112,11 +1129,15 @@ TASK SUMMARY — Important:
   **সম্পন্ন:** [1-4 bullet points of what was changed/fixed, in the user's language]
 - Keep each bullet short (one line). Do NOT add this summary for simple questions, explanations, or conversations — only for actual tool-based tasks.
 
-TASK RESUMPTION — When asked to continue or resume:
-- Check the conversation history — all previous tool calls and their results are already saved.
-- Identify what was completed (look at tool_use blocks and their results) and what remains.
-- Continue from exactly where the task was interrupted — do not repeat completed steps.
-- If the user says "continue", "resume", "আগের কাজ", or similar, treat it as task resumption.
+TASK RESUMPTION — CRITICAL — When asked to continue or resume:
+- If the message starts with [RESUME CONTEXT], it means you were interrupted. READ that block carefully.
+- The RESUME CONTEXT block contains your recent journal entries — they show exactly what was done.
+- Check the PROJECT JOURNAL in your system context — ✅ = already done, 🔄 = in-progress, ⚠️ = blocked.
+- Look at conversation history to see which tool calls were completed and their results.
+- SKIP ALL completed steps — jump straight to the NEXT uncompleted step.
+- NEVER say "Let me start from the beginning" — that wastes tokens and frustrates the user.
+- If task_memory shows "🔄 Edited X" — that file was already changed. Move on to the next file.
+- Even without a [RESUME CONTEXT] block: if user says "continue"/"resume"/"abar"/"baki"/"থেকে"/"oikhan theke" — always resume, never restart.
 
 CODEBASE WORK — FULL AGENTIC WORKFLOW (follow exactly like Replit agent):
 When given ANY coding task — bug fix, feature, UI change, API change — follow these steps INSTANTLY without asking:
@@ -1216,6 +1237,30 @@ CRITICAL — Error handling and task persistence:
       ? `\n\n--- USER INSTRUCTIONS (always follow these) ---\n${userInstructions.trim()}\n--- END OF USER INSTRUCTIONS ---`
       : "";
     const SYSTEM_PROMPT = `${basePrompt}${instrSection}\n\n${sysContext}`;
+
+    /* ── Auto-checkpoint helper — silently appends progress to task_memory ── */
+    const autoCheckpoint = async (entry: string, status: "in_progress" | "done" = "in_progress"): Promise<void> => {
+      try {
+        const emoji = status === "done" ? "✅" : "🔄";
+        const now = new Date();
+        const ts = `${now.toISOString().slice(0, 10)} ${now.toTimeString().slice(0, 5)}`;
+        const line = `[${ts}] ${emoji} ${entry}`;
+        const memRow = await db.execute(sql`
+          SELECT task_memory FROM agent_conversations WHERE id = ${convId} AND user_id = ${uid}
+        `);
+        const current = ((memRow.rows[0] as { task_memory?: string } | undefined)?.task_memory ?? "").trim();
+        /* Deduplicate: skip if last entry is nearly the same (within 60s) */
+        const lastLine = current.split("\n").filter(Boolean).pop() ?? "";
+        const entryCore = entry.slice(0, 40);
+        if (lastLine.includes(entryCore)) return; /* avoid duplicate checkpoints */
+        const updated = current ? `${current}\n${line}` : line;
+        const trimmed = updated.length > 8000 ? "…(older entries trimmed)\n" + updated.slice(-7800) : updated;
+        await db.execute(sql`
+          UPDATE agent_conversations SET task_memory = ${trimmed}, updated_at = now()
+          WHERE id = ${convId} AND user_id = ${uid}
+        `);
+      } catch { /* non-fatal */ }
+    };
 
     /* ── callAI — unified multi-provider call with unlimited rate-limit retry ── */
     const callAI = async (msgsArg: InternalMsg[], isToolRound = false): Promise<AIResponse> => {
@@ -1874,6 +1919,8 @@ CRITICAL — Error handling and task persistence:
             const oldLines = oldStr.split("\n").length;
             const newLines = newStr.split("\n").length;
             result = { id: toolId, stdout: `✓ Edited ${relPath}\n  Replaced ${oldLines} line${oldLines===1?"":"s"} → ${newLines} line${newLines===1?"":"s"}`, stderr: "", exitCode: 0 };
+            /* Auto-checkpoint: record this edit so task can be resumed if interrupted */
+            void autoCheckpoint(`Edited ${relPath} (${oldLines}→${newLines} lines)`);
           } catch (err) {
             result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1 };
           }
@@ -2011,6 +2058,7 @@ CRITICAL — Error handling and task persistence:
               stdout: `✓ Patched ${filePath}\n  Replaced lines ${startLine}–${endLine} (${replaced} line${replaced===1?"":"s"}) with ${added} line${added===1?"":"s"}\n  Total lines now: ${patched.split("\n").length}`,
               stderr: "", exitCode: 0,
             };
+            void autoCheckpoint(`Patched ${filePath} (lines ${startLine}–${endLine})`);
           } catch (err) {
             result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
           }
@@ -2089,6 +2137,10 @@ CRITICAL — Error handling and task persistence:
           /* Agent tools — forward to local machine */
           try {
             result = await sendToolCall(uid, toolId, toolName, toolInput, 60_000);
+            /* Auto-checkpoint for file-writing agent tools */
+            if (result.exitCode === 0 && toolName === "write_file" && toolInput.path) {
+              void autoCheckpoint(`Wrote file: ${String(toolInput.path)}`);
+            }
           } catch (err) {
             result = { id: toolId, stdout: "", stderr: String(err), exitCode: -1, error: String(err) };
           }
