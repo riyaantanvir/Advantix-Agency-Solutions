@@ -516,9 +516,9 @@ function MessageBubble({ msg, userName }: { msg: Message; userName?: string }) {
           </div>
         )}
 
-        {/* Thinking / reasoning block */}
-        {!isUser && msg.thinking && (
-          <ThinkingBlock thinking={msg.thinking} streaming={msg.streaming && !msg.content} />
+        {/* Thinking / reasoning block — only while actively streaming thinking (not as a final dump) */}
+        {!isUser && msg.thinking && msg.streaming && !msg.content && !msg.tools?.length && (
+          <ThinkingBlock thinking={msg.thinking} streaming={true} />
         )}
 
         {/* Message bubble */}
