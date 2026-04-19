@@ -160,6 +160,7 @@ type Message = {
   error?: string;
   attachments?: AttachedFile[];
   interrupted?: boolean;
+  streamingStartedAt?: number; /* timestamp when streaming began */
 };
 
 type KeyInfo = {
@@ -430,6 +431,19 @@ const mdComponents = {
   hr: () => <hr className="border-border/30 my-2" />,
 };
 
+function ThinkingTimer({ startedAt }: { startedAt?: number }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const t0 = startedAt ?? Date.now();
+    const iv = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 500);
+    return () => clearInterval(iv);
+  }, [startedAt]);
+  if (elapsed < 2) return null;
+  return (
+    <span className="text-[10px] tabular-nums text-primary/40 ml-1">{elapsed}s</span>
+  );
+}
+
 function ThinkingBlock({ thinking, streaming }: { thinking: string; streaming?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
@@ -543,7 +557,7 @@ function MessageBubble({ msg, userName }: { msg: Message; userName?: string }) {
                 </span>
                 {msg.statusText
                   ? <span className="font-mono text-foreground/70 truncate max-w-xs">{msg.statusText}</span>
-                  : <span>Thinking…</span>
+                  : <span className="flex items-center">Thinking…<ThinkingTimer startedAt={msg.streamingStartedAt} /></span>
                 }
               </span>
             )}
@@ -1367,7 +1381,7 @@ export default function AssistantPage() {
 
     const userMsg: Message = { id: genId(), role: "user", content: text, attachments: currentAttachments };
     const assistantId = genId();
-    const assistantMsg: Message = { id: assistantId, role: "assistant", content: "", tools: [], streaming: true };
+    const assistantMsg: Message = { id: assistantId, role: "assistant", content: "", tools: [], streaming: true, streamingStartedAt: Date.now() };
 
     setMessages(prev => [...prev, userMsg, assistantMsg]);
 
@@ -1410,11 +1424,14 @@ export default function AssistantPage() {
               setConversationId(event.conversationId);
               fetchConversations();
             } else if (event.type === "tools_planned") {
-              /* Pre-announce all tools before execution — show as "pending" queue */
+              /* Pre-announce all tools before execution — show as "pending" queue (APPEND, not replace) */
               setMessages(prev => prev.map(m => m.id === assistantId
-                ? { ...m, tools: event.tools.map((t: { id: string; tool: string; input: Record<string, unknown> }) => ({
-                    id: t.id, tool: t.tool, input: t.input, status: "pending" as const,
-                  })) }
+                ? { ...m, tools: [
+                    ...(m.tools ?? []),
+                    ...event.tools.map((t: { id: string; tool: string; input: Record<string, unknown> }) => ({
+                      id: t.id, tool: t.tool, input: t.input, status: "pending" as const,
+                    })),
+                  ]}
                 : m));
             } else if (event.type === "tool_start") {
               const status = getToolStatus(event.tool, event.input);
