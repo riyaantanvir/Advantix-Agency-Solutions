@@ -634,6 +634,47 @@ const PLATFORM_TOOLS_DEF = [
       },
     },
   },
+  {
+    name: "read_codebase_file",
+    description: "Read the contents of any file in the Advantix project codebase (on the server). Returns file content with line numbers. Use AFTER find_code to read the target file. Always read before editing. Use offset+limit to read large files in chunks.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path:   { type: "string", description: "File path relative to project root (e.g. 'artifacts/api-server/src/routes/advantixAssistant.ts')" },
+        offset: { type: "number", description: "Start from this line number (1-indexed). Use for large files." },
+        limit:  { type: "number", description: "Max number of lines to return (default 80, max 300)." },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "edit_codebase_file",
+    description: "Edit a file in the Advantix project codebase (on the server) by replacing an exact string with a new string. ALWAYS read the file first with read_codebase_file to get the exact content to replace. old_string must match the file content exactly (including indentation and whitespace). Use enough context (5-10 surrounding lines) to make old_string unique in the file.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path:       { type: "string", description: "File path relative to project root." },
+        old_string: { type: "string", description: "Exact text to find and replace (must match file content exactly, including indentation). Must be unique in the file." },
+        new_string: { type: "string", description: "Replacement text (can be empty string to delete)." },
+      },
+      required: ["path", "old_string", "new_string"],
+    },
+  },
+  {
+    name: "run_build_check",
+    description: "Run a build or lint check on the Advantix codebase (server-side) to verify code changes. Use after editing TypeScript/Dart files to catch errors before declaring done. Runs quickly in dry-run / check mode only.",
+    input_schema: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+          enum: ["tsc-website", "tsc-api", "tsc-admin", "tsc-ai", "eslint-website", "eslint-api"],
+          description: "Which check to run: 'tsc-website' = type-check advantix-website, 'tsc-api' = type-check api-server, 'tsc-admin', 'tsc-ai', 'eslint-website', 'eslint-api'",
+        },
+      },
+      required: ["command"],
+    },
+  },
 ];
 
 async function getApiKey(name: string): Promise<string | null> {
@@ -1027,34 +1068,70 @@ TASK RESUMPTION — When asked to continue or resume:
 - Continue from exactly where the task was interrupted — do not repeat completed steps.
 - If the user says "continue", "resume", "আগের কাজ", or similar, treat it as task resumption.
 
-CODE NAVIGATION — Advantix monorepo structure (at /home/runner/workspace):
-- artifacts/api-server/src/routes/     → Express API routes (advantixAssistant.ts, facebook.ts, smm.ts, etc.)
-- artifacts/api-server/src/lib/        → Server libs (agentManager, smmService, objectStorage, etc.)
-- artifacts/advantix-website/src/pages/ → Main website React pages (AssistantPage.tsx, Home.tsx, etc.)
-- artifacts/advantix-website/src/components/ → Reusable UI components
-- artifacts/advantix-admin/src/pages/  → Admin panel pages (ManageAssistant.tsx, etc.)
-- artifacts/advantix-ai/src/pages/     → AI tool pages
-- lib/db/src/schema/                   → Drizzle ORM database schema
+CODEBASE WORK — FULL AGENTIC WORKFLOW (follow exactly like Replit agent):
+When given ANY coding task — bug fix, feature, UI change, API change — follow these steps INSTANTLY without asking:
 
-SMART FILE FINDING — Always follow this workflow:
-1. Use find_code(pattern, files_only=true) to instantly find which files contain a symbol/function/component.
-2. Use find_code(pattern, context=3) for a focused snippet showing the exact lines.
-3. THEN read only the specific file with the agent's read_file tool if you need more context.
-4. NEVER read multiple files blindly — always find_code first.
-Examples:
-  - Bug in "Thinking…" display → find_code("Thinking", ext="tsx", files_only=true)
-  - Fix streaming logic → find_code("streamBufferRef|rafRef", ext="tsx")
-  - Find API route → find_code("router\\.post.*assistant", ext="ts", path="artifacts/api-server")
-  - CSS class issue → find_code("animate-bounce|text-muted-foreground", ext="css")
+STEP 1 — LOCATE:
+  find_code("<symbol or error text>", files_only=true) → see which files
+  find_code("<symbol>", context=3) → see the exact lines
 
-CODING BEST PRACTICES — Follow these when working on code:
-- ALWAYS use find_code before reading files to locate the exact function/line you need.
-- ALWAYS read a file (with max_lines=80 around the target area) before editing it — never edit blind.
-- Prefer patch_file over write_file for files larger than 100 lines — only rewrite the changed portion.
-- After editing code, verify with a quick compile/lint (e.g. tsc --noEmit, eslint, flutter analyze, dart analyze) if applicable.
-- When adding a feature: search for existing patterns first, then follow the same conventions.
-- For TypeScript/JS: always import before using. For Python: check imports at top.
-- Return errors with exact file:line references so the user can jump directly.
+STEP 2 — READ:
+  read_codebase_file("<path>", offset=<line>, limit=80) → read the relevant section
+  For large files: read around the specific area, not the whole file
+
+STEP 3 — PLAN:
+  Briefly state: what is the issue, what needs to change, which files
+
+STEP 4 — EDIT:
+  edit_codebase_file("<path>", old_string="<exact 5-10 lines>", new_string="<fixed code>")
+  Always include 5-10 lines of surrounding context in old_string so it's unique
+
+STEP 5 — VERIFY:
+  run_build_check("tsc-website") or relevant check
+  If errors: read the error, fix, re-check
+
+STEP 6 — REPORT:
+  Brief summary of what changed and why (use "সম্পন্ন:" format)
+
+CODEBASE STRUCTURE (Advantix monorepo at /home/runner/workspace):
+- artifacts/api-server/src/routes/advantixAssistant.ts → Main AI assistant backend (2000+ lines)
+- artifacts/api-server/src/routes/                    → All Express API routes
+- artifacts/api-server/src/lib/                       → Server libs (agentManager, smmService, etc.)
+- artifacts/api-server/src/seed.ts                    → Database schema/migrations
+- artifacts/advantix-website/src/pages/AssistantPage.tsx → Main assistant frontend (2000+ lines)
+- artifacts/advantix-website/src/pages/               → All website React pages
+- artifacts/advantix-website/src/components/          → Reusable UI components
+- artifacts/advantix-admin/src/pages/                 → Admin panel (ManageAssistant.tsx, etc.)
+- artifacts/advantix-ai/src/pages/                    → AI tool pages
+
+QUICK EXAMPLES — how to approach common tasks:
+  "streaming bug" → find_code("streaming|accTCs|delta\\.tool", ext="ts") → read → fix → tsc-api
+  "UI component broken" → find_code("ThinkingBlock|ToolCard", ext="tsx") → read → fix → tsc-website
+  "API endpoint missing" → find_code("router\\.post.*endpoint", ext="ts") → read → add → tsc-api
+  "DB schema change" → read_codebase_file("artifacts/api-server/src/seed.ts") → edit → restart api
+
+EDITING RULES:
+- ALWAYS read_codebase_file BEFORE edit_codebase_file — never edit blind
+- old_string must include 5-10 surrounding lines to be unique in the file
+- old_string must match character-for-character (spaces, tabs, newlines)
+- For large changes across multiple locations: edit one at a time, verify after each
+- After any TypeScript edit: run_build_check to catch type errors immediately
+
+FLUTTER / DART BEST PRACTICES — Follow when working on Flutter projects:
+- FIRST STEPS: run 'flutter doctor' and 'cat pubspec.yaml' to understand the project setup.
+- After ANY change to pubspec.yaml: run 'flutter pub get' immediately.
+- After editing Dart files: run 'flutter analyze' to catch type/lint errors before declaring done.
+- To run the app: use 'flutter run -d <device_id>' — check available devices with 'flutter devices' first.
+- Hot reload: press 'r' in the running process; hot restart: 'R'; quit: 'q'.
+- NULL SAFETY: Never use '!' operator unless you are certain the value cannot be null. Prefer '?', '??', and null checks.
+- Naming conventions: PascalCase for Widget classes, camelCase for variables/functions, snake_case for file names.
+- Widget structure: always extract repeated or complex UI into separate StatelessWidget or StatefulWidget classes — never use helper functions that return Widget.
+- Use 'const' constructors everywhere possible for better rebuild performance.
+- State management: check existing state management patterns in the codebase (Provider, Riverpod, Bloc, GetX, setState) and follow whatever is already being used.
+- When adding a package: check pub.dev for the latest version, add to pubspec.yaml under dependencies, run 'flutter pub get'.
+- For platform-specific code (iOS/Android): check the respective platform directories for any needed configuration (permissions, entitlements, AndroidManifest.xml, Info.plist).
+- File organization: keep screens in lib/screens/, widgets in lib/widgets/, models in lib/models/, services in lib/services/ — unless project already uses different structure.
+- Auto-fix loop for Flutter: run 'flutter analyze' → fix errors → re-run until clean. Only stop if error requires user's credentials or device access.
 - Use fetch_url to read pub.dev package docs, Flutter API docs, or any online reference before implementing.
 
 FLUTTER / DART BEST PRACTICES — Follow when working on Flutter projects:
@@ -1697,6 +1774,82 @@ CRITICAL — Error handling and task persistence:
               .sort();
             const output = files.length ? files.join("\n") : "No files found.";
             result = { id: toolId, stdout: output.slice(0, 4000), stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1 };
+          }
+        } else if (toolName === "read_codebase_file") {
+          /* Read a file from the Replit workspace server-side */
+          try {
+            const PROJECT_ROOT = "/home/runner/workspace";
+            const relPath = String(toolInput.path ?? "").replace(/^\/+/, "").trim();
+            if (!relPath) throw new Error("path is required");
+            /* Prevent path traversal */
+            const absPath = `${PROJECT_ROOT}/${relPath}`;
+            if (!absPath.startsWith(PROJECT_ROOT + "/")) throw new Error("Invalid path");
+            const { readFileSync } = await import("fs");
+            const raw = readFileSync(absPath, "utf8");
+            const allLines = raw.split("\n");
+            const total = allLines.length;
+            const offsetLine = Math.max(1, Number(toolInput.offset ?? 1));
+            const limitLines = Math.min(300, Math.max(10, Number(toolInput.limit ?? 80)));
+            const sliced = allLines.slice(offsetLine - 1, offsetLine - 1 + limitLines);
+            const numbered = sliced.map((l, i) => `${String(offsetLine + i).padStart(4, " ")}→ ${l}`).join("\n");
+            const header = `File: ${relPath} (${total} lines total, showing ${offsetLine}–${Math.min(offsetLine + limitLines - 1, total)})\n`;
+            result = { id: toolId, stdout: header + numbered, stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1 };
+          }
+        } else if (toolName === "edit_codebase_file") {
+          /* Edit a file in the Replit workspace server-side — exact string replacement */
+          try {
+            const PROJECT_ROOT = "/home/runner/workspace";
+            const relPath   = String(toolInput.path ?? "").replace(/^\/+/, "").trim();
+            const oldStr    = String(toolInput.old_string ?? "");
+            const newStr    = String(toolInput.new_string ?? "");
+            if (!relPath)   throw new Error("path is required");
+            if (!oldStr)    throw new Error("old_string is required");
+            const absPath = `${PROJECT_ROOT}/${relPath}`;
+            if (!absPath.startsWith(PROJECT_ROOT + "/")) throw new Error("Invalid path");
+            const { readFileSync, writeFileSync } = await import("fs");
+            const original = readFileSync(absPath, "utf8");
+            /* Count occurrences to ensure uniqueness */
+            const occurrences = original.split(oldStr).length - 1;
+            if (occurrences === 0) throw new Error(`old_string not found in file. Make sure it matches exactly (including whitespace/indentation).`);
+            if (occurrences > 1) throw new Error(`old_string matches ${occurrences} locations — make it more unique by adding more surrounding context.`);
+            const updated = original.replace(oldStr, newStr);
+            writeFileSync(absPath, updated, "utf8");
+            const oldLines = oldStr.split("\n").length;
+            const newLines = newStr.split("\n").length;
+            result = { id: toolId, stdout: `✓ Edited ${relPath}\n  Replaced ${oldLines} line${oldLines===1?"":"s"} → ${newLines} line${newLines===1?"":"s"}`, stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1 };
+          }
+        } else if (toolName === "run_build_check") {
+          /* Run TypeScript or lint check server-side */
+          try {
+            const cmd = String(toolInput.command ?? "");
+            const PROJECT_ROOT = "/home/runner/workspace";
+            const CMD_MAP: Record<string, string> = {
+              "tsc-website":    `pnpm --filter @workspace/advantix-website exec tsc --noEmit 2>&1 | head -50`,
+              "tsc-api":        `pnpm --filter @workspace/api-server exec tsc --noEmit 2>&1 | head -50`,
+              "tsc-admin":      `pnpm --filter @workspace/advantix-admin exec tsc --noEmit 2>&1 | head -50`,
+              "tsc-ai":         `pnpm --filter @workspace/advantix-ai exec tsc --noEmit 2>&1 | head -50`,
+              "eslint-website": `pnpm --filter @workspace/advantix-website exec eslint src --max-warnings=5 2>&1 | head -50`,
+              "eslint-api":     `pnpm --filter @workspace/api-server exec eslint src --max-warnings=5 2>&1 | head -50`,
+            };
+            const shell = CMD_MAP[cmd];
+            if (!shell) throw new Error(`Unknown command: ${cmd}. Use one of: ${Object.keys(CMD_MAP).join(", ")}`);
+            let stdout = "";
+            let exitCode = 0;
+            try {
+              stdout = execSync(shell, { cwd: PROJECT_ROOT, encoding: "utf8", timeout: 60_000, maxBuffer: 512_000, shell: "/bin/sh" });
+            } catch (e: unknown) {
+              const ee = e as { stdout?: string; stderr?: string; status?: number };
+              stdout = (ee.stdout ?? "") + (ee.stderr ?? "");
+              exitCode = ee.status ?? 1;
+            }
+            const out = stdout.trim() || "(no output — check passed clean)";
+            result = { id: toolId, stdout: out.slice(0, 3000), stderr: "", exitCode };
           } catch (err) {
             result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1 };
           }
