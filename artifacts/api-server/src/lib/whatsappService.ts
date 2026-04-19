@@ -268,11 +268,17 @@ export async function connect(uid: number): Promise<void> {
     });
 
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
-      if (type !== "notify") return;
+      /* "notify" = new message from someone else
+         "append" = message sent from another linked device of YOUR account
+                    (this is how "Message Yourself" + sending from your phone
+                    while we're connected as a linked-device shows up).
+         Both must be handled so the user can talk to the bot themselves. */
+      if (type !== "notify" && type !== "append") return;
       if (myGen !== s.generation) return;
+      log(`uid=${uid} messages.upsert type=${type} count=${messages.length}`);
       for (const msg of messages) {
         try { await handleIncomingMessage(uid, sock, msg); }
-        catch (e) { logger.error({ err: e }, "message handler error"); }
+        catch (e) { log(`uid=${uid} handler error:`, (e as Error)?.message); }
       }
     });
 
@@ -325,10 +331,12 @@ async function handleIncomingMessage(uid: number, sock: WASocket, msg: proto.IWe
      they can talk to the assistant from their own WhatsApp without needing
      a second number. Outgoing messages to OTHER chats are ignored so we
      don't accidentally reply on their behalf. */
-  const ownJid = sock.user?.id ? sock.user.id.split(":")[0] + "@s.whatsapp.net" : null;
-  if (msg.key.fromMe) {
-    if (!ownJid || jid !== ownJid) return;
-  }
+  const rawOwn = sock.user?.id;
+  const ownNum = rawOwn ? rawOwn.split(":")[0].split("@")[0] : null;
+  const jidNum = jid.split("@")[0].split(":")[0];
+  const isSelfChat = !!ownNum && jidNum === ownNum;
+  log(`uid=${uid} msg from=${jid} fromMe=${msg.key.fromMe} ownNum=${ownNum} isSelf=${isSelfChat}`);
+  if (msg.key.fromMe && !isSelfChat) return;
 
   const msgId = `${jid}:${msg.key.id}`;
   const s = getState(uid);
