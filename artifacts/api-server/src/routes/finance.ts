@@ -39,11 +39,12 @@ async function ensurePmOwned(userId: number, pmId: number | null | undefined): P
 }
 
 function safeCell(v: any): string {
-  if (v === null || v === undefined) return "";
+  if (v === null || v === undefined) return '""';
   let s = String(v);
   // Prevent CSV formula injection (Excel/Sheets) — prefix risky leading chars with apostrophe
   if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  // Always wrap every cell in quotes (matches user's expected import/export format)
+  return `"${s.replace(/"/g, '""')}"`;
 }
 
 /* ─────────────── TAGS ─────────────── */
@@ -259,19 +260,24 @@ router.get("/tools/finance/entries/export.csv", async (req, res) => {
     .where(and(...where))
     .orderBy(desc(financeEntriesTable.date));
 
-  const lines = ["Date,Type,Amount,Details,Tag,PaymentMethod"];
+  // Header order matches the user-facing import format: Date, Type, Details, Amount (BDT), Tag, Payment Method
+  const header = ["Date", "Type", "Details", "Amount (BDT)", "Tag", "Payment Method"].map(safeCell).join(",");
+  const lines = [header];
   for (const r of rows) {
-    lines.push([r.e.date, r.e.type, r.e.amount, r.e.details || "", r.tag || "", r.pm || ""].map(safeCell).join(","));
+    lines.push([r.e.date, r.e.type, r.e.details || "", r.e.amount, r.tag || "", r.pm || ""].map(safeCell).join(","));
   }
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="finance-entries-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.setHeader("Content-Disposition", `attachment; filename="expenses-export-${new Date().toISOString().slice(0, 10)}.csv"`);
   res.send(lines.join("\n"));
 });
 
 router.get("/tools/finance/entries/template.csv", (_req, res) => {
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", 'attachment; filename="finance-template.csv"');
-  res.send("Date,Type,Amount,Details,Tag,PaymentMethod\n2026-01-15,expense,500,Lunch,Food,Cash\n2026-01-20,income,50000,Salary,Salary,Bank Transfer\n");
+  const header = ["Date", "Type", "Details", "Amount (BDT)", "Tag", "Payment Method"].map(safeCell).join(",");
+  const sample1 = ["2026-01-15", "expense", "Lunch", "500.00", "Food", "Cash"].map(safeCell).join(",");
+  const sample2 = ["2026-01-20", "income", "Salary", "50000.00", "Salary", "Bank Transfer"].map(safeCell).join(",");
+  res.send([header, sample1, sample2].join("\n") + "\n");
 });
 
 router.post("/tools/finance/entries/import", async (req, res) => {
@@ -280,12 +286,24 @@ router.post("/tools/finance/entries/import", async (req, res) => {
   if (!csv.trim()) { res.status(400).json({ error: "Empty CSV" }); return; }
   const rows = parseCsv(csv);
   if (rows.length < 2) { res.status(400).json({ error: "No data rows" }); return; }
-  const header = rows[0].map(h => h.trim().toLowerCase());
-  const idx = (n: string) => header.indexOf(n);
-  const iDate = idx("date"), iType = idx("type"), iAmount = idx("amount"),
-        iDetails = idx("details"), iTag = idx("tag"), iPm = idx("paymentmethod");
+  // Normalize header — accept both "Amount" / "Amount (BDT)" and "PaymentMethod" / "Payment Method" etc.
+  const normalize = (s: string) => s.trim().toLowerCase().replace(/\s+/g, "").replace(/\(.*?\)/g, "");
+  const header = rows[0].map(normalize);
+  const findIdx = (...candidates: string[]) => {
+    for (const c of candidates) {
+      const i = header.indexOf(c);
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const iDate = findIdx("date");
+  const iType = findIdx("type");
+  const iAmount = findIdx("amount", "amountbdt", "amounttk");
+  const iDetails = findIdx("details", "description", "note", "notes");
+  const iTag = findIdx("tag", "category");
+  const iPm = findIdx("paymentmethod", "payment", "method");
   if (iDate < 0 || iType < 0 || iAmount < 0) {
-    res.status(400).json({ error: "CSV must have Date, Type, Amount columns" });
+    res.status(400).json({ error: "CSV must have Date, Type, and Amount (BDT) columns" });
     return;
   }
 
