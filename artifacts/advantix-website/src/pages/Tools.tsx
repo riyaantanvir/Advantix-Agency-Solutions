@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { Link2, Video, ArrowRight, Zap, Sparkles, Headphones, Lock, Terminal, Share2, Wallet } from "lucide-react";
+import { Link2, Video, ArrowRight, Zap, Sparkles, Headphones, Lock, Terminal, Share2, Wallet, MessageCircle } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useToolsUser } from "@/context/ToolsUserContext";
 
@@ -78,6 +78,17 @@ const tools = [
     href: "/tools/finance",
     color: "text-emerald-400",
     bg: "bg-emerald-500/10",
+    badge: "New",
+    external: false,
+  },
+  {
+    slug: "whatsapp",
+    icon: MessageCircle,
+    name: "WhatsApp Assistant",
+    description: "Connect your WhatsApp by scanning a QR code and chat with the Advantix Assistant from any phone or group. Track expenses, check stats, shorten links — all via WhatsApp message.",
+    href: "/tools/whatsapp",
+    color: "text-green-400",
+    bg: "bg-green-500/10",
     badge: "New",
     external: false,
   },

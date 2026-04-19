@@ -42,3 +42,4 @@ export * from "./facebookPages";
 export * from "./facebookMessages";
 export * from "./facebookAutoReplyRules";
 export * from "./finance";
+export * from "./whatsappSessions";

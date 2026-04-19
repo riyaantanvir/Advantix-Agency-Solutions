@@ -77,6 +77,7 @@ const AssistantPage = lazy(() => import("@/pages/AssistantPage"));
 const SocialMediaTool = lazy(() => import("@/pages/SocialMediaTool"));
 const FacebookManager = lazy(() => import("@/pages/FacebookManager"));
 const FinancePage = lazy(() => import("@/pages/FinancePage"));
+const WhatsAppPage = lazy(() => import("@/pages/WhatsAppPage"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -153,6 +154,9 @@ function Router() {
               </Route>
               <Route path="/tools/finance">
                 <ToolGuard slug="finance"><FinancePage /></ToolGuard>
+              </Route>
+              <Route path="/tools/whatsapp">
+                <ToolGuard slug="whatsapp"><WhatsAppPage /></ToolGuard>
               </Route>
               <Route path="/tools" component={Tools} />
               <Route path="/tools/dashboard" component={ToolsDashboard} />

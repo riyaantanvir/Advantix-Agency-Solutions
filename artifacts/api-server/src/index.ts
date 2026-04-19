@@ -7,6 +7,7 @@ import { startSmmScheduler } from "./lib/smmPublisher.js";
 import { startTelegramBot } from "./lib/telegramBot.js";
 import { startFacebookScheduler } from "./lib/facebookScheduler.js";
 import { handleAgentWebSocket } from "./routes/advantixAssistant.js";
+import { resumeAllSessions as resumeWhatsAppSessions } from "./lib/whatsappService.js";
 
 const rawPort = process.env["PORT"];
 
@@ -59,6 +60,7 @@ async function start(): Promise<void> {
 
     startSmmScheduler().catch(e => logger.error({ err: e }, "SMM scheduler init failed"));
     startFacebookScheduler();
+    resumeWhatsAppSessions().catch(e => logger.error({ err: e }, "WhatsApp resume failed"));
     startTelegramBot().catch(e => logger.error({ err: e }, "Telegram bot init failed"));
   });
 }

@@ -209,6 +209,8 @@ async function fetchOpenRouterGenCost(generationId: string, apiKey: string): Pro
 }
 
 function userId(req: Request): number {
+  const internal = (req as any).internalToolUserId;
+  if (typeof internal === "number" && internal > 0) return internal;
   return (req.session as { toolUserId: number }).toolUserId;
 }
 
