@@ -7,6 +7,8 @@ import {
   Bot, User, Settings, X, Shield, Clock, Calendar, MessageSquare,
   Wrench, BarChart3, Activity, Sparkles, ChevronLeft, PenSquare, Menu,
   Paperclip, Link, List, Globe, Search, GitBranch, SearchCode, FolderSearch,
+  FolderPlus, Folder, Smartphone, Code2, Globe2, Cpu, BookOpen,
+  BrainCircuit, Pencil, ChevronUp, Plus,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -60,10 +62,74 @@ type StreamEvent = ToolStartEvent | ToolDoneEvent | ContentEvent | ThinkingEvent
 type Conversation = {
   id: number;
   title: string;
+  project_type: string;
+  instructions: string;
+  task_memory: string;
   created_at: string;
   updated_at: string;
   message_count: string;
 };
+
+/* ── Project type definitions ────────────────────────────────────────── */
+type ProjectTypeDef = {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  description: string;
+  defaultInstructions: string;
+};
+
+const PROJECT_TYPES: ProjectTypeDef[] = [
+  {
+    id: "flutter",
+    label: "Flutter App",
+    icon: Smartphone,
+    color: "text-blue-400",
+    description: "Mobile app with Flutter & Dart",
+    defaultInstructions: "This is a Flutter/Dart mobile app project.\nAlways use proper Dart null safety.\nFollow Flutter best practices and Material 3 guidelines.\nUse proper widget separation and state management.",
+  },
+  {
+    id: "web",
+    label: "Web App",
+    icon: Globe2,
+    color: "text-emerald-400",
+    description: "React, Vue, or any web frontend",
+    defaultInstructions: "This is a web application project.\nFollow modern web development best practices.\nUse TypeScript where possible.",
+  },
+  {
+    id: "backend",
+    label: "Backend / API",
+    icon: Cpu,
+    color: "text-violet-400",
+    description: "Node.js, Python, or server-side",
+    defaultInstructions: "This is a backend/API project.\nFocus on clean architecture, proper error handling, and security.\nUse environment variables for secrets.",
+  },
+  {
+    id: "python",
+    label: "Python Script",
+    icon: Code2,
+    color: "text-yellow-400",
+    description: "Python automation, data, AI",
+    defaultInstructions: "This is a Python project.\nUse proper virtual environments and requirements.txt.\nFollow PEP 8 style guidelines.",
+  },
+  {
+    id: "ai",
+    label: "AI / ML",
+    icon: BrainCircuit,
+    color: "text-pink-400",
+    description: "Machine learning or AI integration",
+    defaultInstructions: "This is an AI/ML project.\nFocus on model performance, data pipelines, and reproducibility.\nDocument experiments and results.",
+  },
+  {
+    id: "general",
+    label: "General",
+    icon: BookOpen,
+    color: "text-slate-400",
+    description: "Any other project or task",
+    defaultInstructions: "",
+  },
+];
 
 type ToolExecution = {
   id: string; tool: string; input: Record<string, unknown>;
@@ -972,11 +1038,24 @@ export default function AssistantPage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [newKeyForSidebar, setNewKeyForSidebar] = useState<string | null>(null);
 
-  /* ── Conversations ──────────────────────────────────────────────────────── */
+  /* ── Projects / Conversations ────────────────────────────────────────────── */
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [conversationId, setConversationId] = useState<number | null>(null);
+  const [activeProject, setActiveProject] = useState<Conversation | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [deletingConvId, setDeletingConvId] = useState<number | null>(null);
+
+  /* New project modal state */
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false);
+  const [newProjName, setNewProjName] = useState("");
+  const [newProjType, setNewProjType] = useState("flutter");
+  const [newProjInstructions, setNewProjInstructions] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
+
+  /* Memory panel */
+  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+  const [memoryEditValue, setMemoryEditValue] = useState("");
+  const [savingMemory, setSavingMemory] = useState(false);
 
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -1062,6 +1141,13 @@ export default function AssistantPage() {
     return loaded;
   }, []);
 
+  /* Sync activeProject when conversationId or conversations list changes */
+  useEffect(() => {
+    if (!conversationId) return;
+    const found = conversations.find(c => c.id === conversationId);
+    if (found) setActiveProject(found);
+  }, [conversationId, conversations]);
+
   /* ── Fetch conversations list ───────────────────────────────────────────── */
   const fetchConversations = useCallback(() => {
     fetch("/api/tools/assistant/conversations", { credentials: "include" })
@@ -1091,31 +1177,78 @@ export default function AssistantPage() {
     setHistoryLoaded(true); /* start with empty, user picks a conversation */
   }, [historyLoaded]);
 
-  /* ── Start a new chat ───────────────────────────────────────────────────── */
+  /* ── Open New Project modal ──────────────────────────────────────────────── */
   const newChat = useCallback(() => {
-    setMessages([]);
-    setConversationId(null);
-    setInput("");
-    inputRef.current?.focus();
+    const defaultType = PROJECT_TYPES.find(t => t.id === "flutter")!;
+    setNewProjName("");
+    setNewProjType("flutter");
+    setNewProjInstructions(defaultType.defaultInstructions);
+    setShowNewProjectModal(true);
   }, []);
 
-  /* ── Switch to a conversation ───────────────────────────────────────────── */
+  /* ── Create a new project ────────────────────────────────────────────────── */
+  const createProject = useCallback(async () => {
+    if (!newProjName.trim()) return;
+    setCreatingProject(true);
+    try {
+      const r = await fetch("/api/tools/assistant/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          title: newProjName.trim(),
+          project_type: newProjType,
+          instructions: newProjInstructions.trim(),
+        }),
+      });
+      const proj = await r.json() as Conversation;
+      setConversations(prev => [proj, ...prev]);
+      setConversationId(proj.id);
+      setActiveProject(proj);
+      setMessages([]);
+      setShowNewProjectModal(false);
+      inputRef.current?.focus();
+      if (window.innerWidth < 768) setSidebarOpen(false);
+    } finally {
+      setCreatingProject(false);
+    }
+  }, [newProjName, newProjType, newProjInstructions]);
+
+  /* ── Switch to a project ─────────────────────────────────────────────────── */
   const openConversation = useCallback((conv: Conversation) => {
     setConversationId(conv.id);
+    setActiveProject(conv);
     setMessages([]);
+    setShowMemoryPanel(false);
     loadConversationHistory(conv.id);
     if (window.innerWidth < 768) setSidebarOpen(false);
   }, [loadConversationHistory]);
 
-  /* ── Delete a conversation ──────────────────────────────────────────────── */
+  /* ── Delete a project ────────────────────────────────────────────────────── */
   const deleteConversation = useCallback(async (convId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setDeletingConvId(convId);
     await fetch(`/api/tools/assistant/conversations/${convId}`, { method: "DELETE", credentials: "include" });
     setConversations(prev => prev.filter(c => c.id !== convId));
-    if (conversationId === convId) { setMessages([]); setConversationId(null); }
+    if (conversationId === convId) { setMessages([]); setConversationId(null); setActiveProject(null); }
     setDeletingConvId(null);
   }, [conversationId]);
+
+  /* ── Save project memory ─────────────────────────────────────────────────── */
+  const saveMemory = useCallback(async () => {
+    if (!conversationId) return;
+    setSavingMemory(true);
+    await fetch(`/api/tools/assistant/conversations/${conversationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ task_memory: memoryEditValue }),
+    });
+    setActiveProject(prev => prev ? { ...prev, task_memory: memoryEditValue } : prev);
+    setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, task_memory: memoryEditValue } : c));
+    setSavingMemory(false);
+    setShowMemoryPanel(false);
+  }, [conversationId, memoryEditValue]);
 
   useEffect(() => {
     const poll = async () => {
@@ -1371,73 +1504,91 @@ export default function AssistantPage() {
   return (
     <div className="flex h-screen bg-background pt-16">
 
-      {/* ── Conversation Sidebar ────────────────────────────────────────────── */}
+      {/* ── Projects Sidebar ─────────────────────────────────────────────────── */}
       <AnimatePresence initial={false}>
         {sidebarOpen && (
           <motion.aside
             initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 256, opacity: 1 }}
+            animate={{ width: 260, opacity: 1 }}
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeInOut" }}
             className="h-full border-r border-border/30 bg-background/60 backdrop-blur-sm flex flex-col overflow-hidden shrink-0"
           >
             {/* Sidebar header */}
             <div className="flex items-center gap-2 px-3 py-3 border-b border-border/20 shrink-0">
-              <MessageSquare className="w-4 h-4 text-primary shrink-0" />
-              <span className="text-xs font-semibold text-foreground flex-1">Conversations</span>
+              <Folder className="w-4 h-4 text-primary shrink-0" />
+              <span className="text-xs font-semibold text-foreground flex-1">Projects</span>
               <button
                 onClick={newChat}
-                title="New chat"
-                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+                title="New project"
+                className="p-1 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
               >
-                <PenSquare className="w-3.5 h-3.5" />
+                <FolderPlus className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            {/* Conversation list */}
-            <div className="flex-1 overflow-y-auto py-1">
+            {/* Project list */}
+            <div className="flex-1 overflow-y-auto py-1.5 px-1.5 space-y-0.5">
               {conversations.length === 0 ? (
-                <div className="px-3 py-6 text-center text-xs text-muted-foreground/60">
-                  No conversations yet.<br />Start chatting to create one.
+                <div className="px-3 py-8 text-center">
+                  <FolderPlus className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+                  <div className="text-xs text-muted-foreground/60 font-medium">No projects yet</div>
+                  <div className="text-[10px] text-muted-foreground/40 mt-1">Create your first project</div>
+                  <button
+                    onClick={newChat}
+                    className="mt-3 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                  >
+                    + New Project
+                  </button>
                 </div>
               ) : (
-                conversations.map(conv => (
-                  <button
-                    key={conv.id}
-                    onClick={() => openConversation(conv)}
-                    className={`w-full text-left px-3 py-2.5 group flex items-start gap-2 transition-colors rounded-md mx-1 ${
-                      conversationId === conv.id
-                        ? "bg-primary/10 text-foreground"
-                        : "hover:bg-secondary/40 text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <MessageSquare className="w-3.5 h-3.5 mt-0.5 shrink-0 opacity-50" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium truncate leading-tight">{conv.title || "Untitled"}</div>
-                      <div className="text-[10px] text-muted-foreground/60 mt-0.5">{relativeTime(conv.updated_at)}</div>
-                    </div>
+                conversations.map(conv => {
+                  const ptDef = PROJECT_TYPES.find(t => t.id === conv.project_type) ?? PROJECT_TYPES[PROJECT_TYPES.length - 1];
+                  const PtIcon = ptDef.icon;
+                  const isActive = conversationId === conv.id;
+                  return (
                     <button
-                      onClick={e => deleteConversation(conv.id, e)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:text-red-400"
-                      title="Delete"
+                      key={conv.id}
+                      onClick={() => openConversation(conv)}
+                      className={`w-full text-left px-2.5 py-2 group flex items-start gap-2 transition-colors rounded-lg ${
+                        isActive
+                          ? "bg-primary/10 text-foreground"
+                          : "hover:bg-secondary/40 text-muted-foreground hover:text-foreground"
+                      }`}
                     >
-                      {deletingConvId === conv.id
-                        ? <Loader2 className="w-3 h-3 animate-spin" />
-                        : <Trash2 className="w-3 h-3" />}
+                      <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${isActive ? "bg-primary/15" : "bg-secondary/50"}`}>
+                        <PtIcon className={`w-3.5 h-3.5 ${ptDef.color}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-medium truncate leading-tight">{conv.title || "Untitled"}</div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className={`text-[9px] font-semibold uppercase tracking-wide ${ptDef.color} opacity-70`}>{ptDef.label}</span>
+                          <span className="text-[9px] text-muted-foreground/40">· {relativeTime(conv.updated_at)}</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={e => deleteConversation(conv.id, e)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:text-red-400 mt-0.5"
+                        title="Delete project"
+                      >
+                        {deletingConvId === conv.id
+                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                          : <Trash2 className="w-3 h-3" />}
+                      </button>
                     </button>
-                  </button>
-                ))
+                  );
+                })
               )}
             </div>
 
-            {/* New Chat CTA */}
-            <div className="p-2 border-t border-border/20 shrink-0">
+            {/* New Project CTA */}
+            <div className="p-2.5 border-t border-border/20 shrink-0">
               <button
                 onClick={newChat}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/50 border border-border/30 transition-colors"
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-primary bg-primary/8 hover:bg-primary/15 border border-primary/20 transition-colors"
               >
-                <PenSquare className="w-3.5 h-3.5" />
-                New Chat
+                <Plus className="w-3.5 h-3.5" />
+                New Project
               </button>
             </div>
           </motion.aside>
@@ -1459,11 +1610,44 @@ export default function AssistantPage() {
 
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-primary" />
-          <span className="font-display font-semibold text-foreground text-sm">Advantix Assistant</span>
-          <span className="text-[10px] text-primary bg-primary/8 px-1.5 py-0.5 rounded-md border border-primary/15 font-semibold tracking-wide">BETA</span>
+          {activeProject ? (
+            <>
+              {(() => {
+                const ptDef = PROJECT_TYPES.find(t => t.id === activeProject.project_type) ?? PROJECT_TYPES[PROJECT_TYPES.length - 1];
+                const PtIcon = ptDef.icon;
+                return <PtIcon className={`w-3.5 h-3.5 ${ptDef.color}`} />;
+              })()}
+              <span className="font-display font-semibold text-foreground text-sm truncate max-w-[180px]">{activeProject.title}</span>
+              <span className="text-[10px] text-primary bg-primary/8 px-1.5 py-0.5 rounded-md border border-primary/15 font-semibold tracking-wide">BETA</span>
+            </>
+          ) : (
+            <>
+              <span className="font-display font-semibold text-foreground text-sm">Advantix Assistant</span>
+              <span className="text-[10px] text-primary bg-primary/8 px-1.5 py-0.5 rounded-md border border-primary/15 font-semibold tracking-wide">BETA</span>
+            </>
+          )}
         </div>
 
         <div className="flex-1" />
+
+        {/* Memory button — only when project is active */}
+        {activeProject && (
+          <button
+            onClick={() => {
+              setMemoryEditValue(activeProject.task_memory || "");
+              setShowMemoryPanel(v => !v);
+            }}
+            title="Project Memory"
+            className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border transition-all ${
+              showMemoryPanel
+                ? "bg-violet-500/15 text-violet-300 border-violet-500/25"
+                : "bg-border/20 text-muted-foreground border-border/30 hover:text-foreground hover:bg-secondary/50"
+            }`}
+          >
+            <BrainCircuit className="w-3.5 h-3.5" />
+            Memory
+          </button>
+        )}
 
         {/* Connection pill */}
         <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border transition-all ${
@@ -1504,6 +1688,45 @@ export default function AssistantPage() {
           </div>
         )}
 
+        {/* ── Memory Panel ─────────────────────────────────────────────────── */}
+        <AnimatePresence>
+          {showMemoryPanel && activeProject && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              className="shrink-0 border-b border-violet-500/20 bg-violet-500/5 overflow-hidden"
+            >
+              <div className="px-4 py-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <BrainCircuit className="w-3.5 h-3.5 text-violet-400" />
+                  <span className="text-xs font-semibold text-violet-300">Project Memory</span>
+                  <span className="text-[10px] text-muted-foreground/50 ml-1">— আগের কাজের সারাংশ। AI এটা প্রতিটা message এ পড়বে।</span>
+                  <div className="flex-1" />
+                  <button
+                    onClick={saveMemory}
+                    disabled={savingMemory}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 transition-colors disabled:opacity-50"
+                  >
+                    {savingMemory ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                    Save
+                  </button>
+                  <button onClick={() => setShowMemoryPanel(false)} className="p-0.5 text-muted-foreground hover:text-foreground">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <textarea
+                  value={memoryEditValue}
+                  onChange={e => setMemoryEditValue(e.target.value)}
+                  placeholder="Project এ কী কী হয়েছে, কোন files আছে, কী করতে হবে — এখানে লেখো। AI প্রতিটা message এ এটা পড়বে।"
+                  className="w-full h-28 bg-background/50 border border-violet-500/20 rounded-lg px-3 py-2 text-xs text-foreground placeholder-muted-foreground/40 resize-none focus:outline-none focus:border-violet-500/40 leading-relaxed"
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* ── Messages ─────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto relative" ref={scrollContainerRef} onScroll={handleScrollContainer}>
           {/* Scroll-to-bottom floating button */}
@@ -1528,25 +1751,67 @@ export default function AssistantPage() {
               <div className="flex flex-col items-center justify-center min-h-[50vh] text-center gap-6 pb-4">
                 {/* Avatar + status */}
                 <div className="relative">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/15 flex items-center justify-center">
-                    <Sparkles className="w-7 h-7 text-primary" />
-                  </div>
+                  {activeProject ? (
+                    (() => {
+                      const ptDef = PROJECT_TYPES.find(t => t.id === activeProject.project_type) ?? PROJECT_TYPES[PROJECT_TYPES.length - 1];
+                      const PtIcon = ptDef.icon;
+                      return (
+                        <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/15 flex items-center justify-center`}>
+                          <PtIcon className={`w-7 h-7 ${ptDef.color}`} />
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/15 flex items-center justify-center">
+                      <Sparkles className="w-7 h-7 text-primary" />
+                    </div>
+                  )}
                   <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-background ${agentStatus.connected ? "bg-green-500" : "bg-muted"}`} />
                 </div>
 
-                {/* Greeting */}
-                <div className="space-y-1">
-                  <h3 className="font-display font-semibold text-foreground text-lg">
-                    {user?.name ? `Hi, ${user.name.split(" ")[0]}` : "Advantix Assistant"}
-                  </h3>
-                  <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
-                    {agentStatus.connected
-                      ? `Connected to ${agentStatus.info?.hostname}. Ask me anything — I can work directly on your machine.`
-                      : "Connect your local agent to let me work directly on your computer."}
-                  </p>
-                </div>
+                {/* Greeting / Project info */}
+                {activeProject ? (
+                  <div className="space-y-2 max-w-sm">
+                    <h3 className="font-display font-semibold text-foreground text-lg">{activeProject.title}</h3>
+                    {activeProject.instructions ? (
+                      <div className="text-left bg-secondary/20 border border-border/30 rounded-xl p-3 text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                        {activeProject.instructions}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {agentStatus.connected
+                          ? `Connected to ${agentStatus.info?.hostname}. Start working on your project!`
+                          : "Connect your local agent to work directly on this project."}
+                      </p>
+                    )}
+                    {activeProject.task_memory && (
+                      <div className="text-left mt-1">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <BrainCircuit className="w-3 h-3 text-violet-400" />
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-400/70">Memory</span>
+                        </div>
+                        <div className="bg-violet-500/5 border border-violet-500/15 rounded-lg p-2.5 text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                          {activeProject.task_memory}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <h3 className="font-display font-semibold text-foreground text-lg">
+                      {user?.name ? `Hi, ${user.name.split(" ")[0]}` : "Advantix Assistant"}
+                    </h3>
+                    <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
+                      Select a project from the sidebar or create a new one to get started.
+                    </p>
+                    <button onClick={newChat}
+                      className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all mx-auto">
+                      <FolderPlus className="w-3.5 h-3.5" /> New Project
+                    </button>
+                  </div>
+                )}
 
-                {!keyInfo?.exists && (
+                {!keyInfo?.exists && !activeProject && (
                   <button onClick={() => setShowSettings(true)}
                     className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all">
                     <Key className="w-3.5 h-3.5" /> Get started
@@ -1787,6 +2052,123 @@ export default function AssistantPage() {
         onRegenerate={handleRegenerate}
         user={user}
       />
+
+      {/* ── New Project Modal ───────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showNewProjectModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+            onClick={e => { if (e.target === e.currentTarget) setShowNewProjectModal(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="w-full max-w-lg bg-card border border-border/60 rounded-2xl shadow-2xl overflow-hidden"
+            >
+              {/* Modal header */}
+              <div className="flex items-center gap-3 px-5 py-4 border-b border-border/30">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <FolderPlus className="w-4 h-4 text-primary" />
+                </div>
+                <div>
+                  <h2 className="font-display font-semibold text-foreground text-sm">New Project</h2>
+                  <p className="text-[11px] text-muted-foreground">Project তৈরি করো এবং instructions দাও</p>
+                </div>
+                <div className="flex-1" />
+                <button onClick={() => setShowNewProjectModal(false)} className="p-1 text-muted-foreground hover:text-foreground rounded-lg">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="px-5 py-4 space-y-4">
+                {/* Project name */}
+                <div>
+                  <label className="text-xs font-semibold text-foreground/80 mb-1.5 block">Project Name</label>
+                  <input
+                    type="text"
+                    value={newProjName}
+                    onChange={e => setNewProjName(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && newProjName.trim()) createProject(); }}
+                    placeholder="e.g. My Flutter App, Trading Bot, Portfolio Website"
+                    className="w-full bg-background border border-border/50 rounded-xl px-3 py-2.5 text-sm text-foreground placeholder-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
+                    autoFocus
+                  />
+                </div>
+
+                {/* Project type */}
+                <div>
+                  <label className="text-xs font-semibold text-foreground/80 mb-2 block">Project Type</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {PROJECT_TYPES.map(pt => {
+                      const PtIcon = pt.icon;
+                      const isSelected = newProjType === pt.id;
+                      return (
+                        <button
+                          key={pt.id}
+                          onClick={() => {
+                            setNewProjType(pt.id);
+                            if (!newProjInstructions || newProjInstructions === (PROJECT_TYPES.find(t => t.id === newProjType)?.defaultInstructions ?? "")) {
+                              setNewProjInstructions(pt.defaultInstructions);
+                            }
+                          }}
+                          className={`flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl border transition-all text-center ${
+                            isSelected
+                              ? "bg-primary/10 border-primary/40 text-foreground"
+                              : "bg-secondary/20 border-border/30 text-muted-foreground hover:bg-secondary/40 hover:text-foreground"
+                          }`}
+                        >
+                          <PtIcon className={`w-4 h-4 ${isSelected ? pt.color : ""}`} />
+                          <span className="text-[11px] font-medium leading-tight">{pt.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Instructions */}
+                <div>
+                  <label className="text-xs font-semibold text-foreground/80 mb-1.5 block">
+                    Project Instructions
+                    <span className="ml-1 text-muted-foreground/50 font-normal">(AI সবসময় এটা মনে রাখবে)</span>
+                  </label>
+                  <textarea
+                    value={newProjInstructions}
+                    onChange={e => setNewProjInstructions(e.target.value)}
+                    rows={4}
+                    placeholder="Project কী করবে, কোথায় files আছে, কোন stack use হচ্ছে, কী করতে হবে — এখানে লেখো।"
+                    className="w-full bg-background border border-border/50 rounded-xl px-3 py-2.5 text-xs text-foreground placeholder-muted-foreground/40 resize-none focus:outline-none focus:border-primary/50 leading-relaxed transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Modal footer */}
+              <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border/30 bg-secondary/5">
+                <button
+                  onClick={() => setShowNewProjectModal(false)}
+                  className="px-4 py-2 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={createProject}
+                  disabled={!newProjName.trim() || creatingProject}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {creatingProject
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Creating…</>
+                    : <><FolderPlus className="w-3.5 h-3.5" /> Create Project</>
+                  }
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

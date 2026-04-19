@@ -329,45 +329,69 @@ router.get("/tools/assistant/status", requireToolUser, async (req: Request, res:
 /*  CONVERSATIONS                                                              */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
-/* GET /api/tools/assistant/conversations — list all conversations */
+/* GET /api/tools/assistant/conversations — list all projects */
 router.get("/tools/assistant/conversations", requireToolUser, async (req: Request, res: Response) => {
   const uid = userId(req);
   const r = await db.execute(sql`
     SELECT
-      c.id, c.title, c.created_at, c.updated_at,
+      c.id, c.title, c.project_type, c.instructions, c.task_memory, c.created_at, c.updated_at,
       COUNT(m.id) FILTER (WHERE m.role = 'user') AS message_count
     FROM agent_conversations c
     LEFT JOIN agent_messages m ON m.conversation_id = c.id
     WHERE c.user_id = ${uid}
-    GROUP BY c.id, c.title, c.created_at, c.updated_at
+    GROUP BY c.id, c.title, c.project_type, c.instructions, c.task_memory, c.created_at, c.updated_at
     ORDER BY c.updated_at DESC
     LIMIT 50
   `);
   res.json({ conversations: r.rows });
 });
 
-/* POST /api/tools/assistant/conversations — create a new conversation */
+/* POST /api/tools/assistant/conversations — create a new project */
 router.post("/tools/assistant/conversations", requireToolUser, async (req: Request, res: Response) => {
   const uid = userId(req);
+  const { title, project_type, instructions } = req.body as {
+    title?: string; project_type?: string; instructions?: string;
+  };
+  const name = (title ?? "New Project").slice(0, 120);
+  const type = (project_type ?? "general").slice(0, 60);
+  const instr = (instructions ?? "").slice(0, 4000);
   const r = await db.execute(sql`
-    INSERT INTO agent_conversations (user_id, title) VALUES (${uid}, 'New Chat') RETURNING id, title, created_at
+    INSERT INTO agent_conversations (user_id, title, project_type, instructions)
+    VALUES (${uid}, ${name}, ${type}, ${instr})
+    RETURNING id, title, project_type, instructions, task_memory, created_at
   `);
   res.json(r.rows[0]);
 });
 
-/* PATCH /api/tools/assistant/conversations/:id — rename */
+/* PATCH /api/tools/assistant/conversations/:id — update project */
 router.patch("/tools/assistant/conversations/:id", requireToolUser, async (req: Request, res: Response) => {
   const uid = userId(req);
   const cid = parseInt(req.params.id);
-  const { title } = req.body as { title: string };
-  if (!title?.trim()) { res.status(400).json({ error: "title required" }); return; }
-  await db.execute(sql`
-    UPDATE agent_conversations SET title = ${title.slice(0, 120)} WHERE id = ${cid} AND user_id = ${uid}
-  `);
+  const { title, instructions, task_memory } = req.body as {
+    title?: string; instructions?: string; task_memory?: string;
+  };
+  if (title !== undefined) {
+    await db.execute(sql`
+      UPDATE agent_conversations SET title = ${title.slice(0, 120)}, updated_at = now()
+      WHERE id = ${cid} AND user_id = ${uid}
+    `);
+  }
+  if (instructions !== undefined) {
+    await db.execute(sql`
+      UPDATE agent_conversations SET instructions = ${instructions.slice(0, 4000)}, updated_at = now()
+      WHERE id = ${cid} AND user_id = ${uid}
+    `);
+  }
+  if (task_memory !== undefined) {
+    await db.execute(sql`
+      UPDATE agent_conversations SET task_memory = ${task_memory.slice(0, 8000)}, updated_at = now()
+      WHERE id = ${cid} AND user_id = ${uid}
+    `);
+  }
   res.json({ ok: true });
 });
 
-/* DELETE /api/tools/assistant/conversations/:id — delete conversation + messages */
+/* DELETE /api/tools/assistant/conversations/:id — delete project + messages */
 router.delete("/tools/assistant/conversations/:id", requireToolUser, async (req: Request, res: Response) => {
   const uid = userId(req);
   const cid = parseInt(req.params.id);
@@ -646,10 +670,26 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
   let convId: number | null = rawConvId ?? null;
   if (!convId) {
     const newConv = await db.execute(sql`
-      INSERT INTO agent_conversations (user_id, title) VALUES (${uid}, 'New Chat') RETURNING id
+      INSERT INTO agent_conversations (user_id, title, project_type) VALUES (${uid}, 'New Project', 'general') RETURNING id
     `);
     convId = (newConv.rows[0] as { id: number }).id;
   }
+
+  /* ── Load project details (instructions + memory) ── */
+  let projectInstructions = "";
+  let projectMemory = "";
+  let projectType = "general";
+  try {
+    const prow = await db.execute(sql`
+      SELECT project_type, instructions, task_memory FROM agent_conversations WHERE id = ${convId} AND user_id = ${uid}
+    `);
+    if (prow.rows[0]) {
+      const p = prow.rows[0] as { project_type: string; instructions: string; task_memory: string };
+      projectType = p.project_type || "general";
+      projectInstructions = p.instructions?.trim() || "";
+      projectMemory = p.task_memory?.trim() || "";
+    }
+  } catch { /* non-fatal */ }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -674,9 +714,21 @@ router.post("/tools/assistant/chat", requireToolUser, async (req: Request, res: 
     liveProjectMap = `\n\nProject files (${files.length} .ts/.tsx/.dart):\n${files.join("\n")}`;
   } catch { /* non-fatal */ }
 
+  /* ── Build project context block ── */
+  let projectCtxBlock = "";
+  if (projectType && projectType !== "general") {
+    projectCtxBlock += `\nProject type: ${projectType}`;
+  }
+  if (projectInstructions) {
+    projectCtxBlock += `\n\n## PROJECT INSTRUCTIONS\n${projectInstructions}`;
+  }
+  if (projectMemory) {
+    projectCtxBlock += `\n\n## PROJECT MEMORY (tasks completed so far)\n${projectMemory}`;
+  }
+
   const sysContext = agentConnected && agentInfo
-    ? `Agent connected. OS: ${agentInfo.os}, Shell: ${agentInfo.shell}, CWD: ${agentInfo.cwd}, User: ${agentInfo.username}, VSCode: ${agentInfo.hasVscode}. Use tools to control the machine.${liveProjectMap}`
-    : `No agent connected. Tell the user to start the agent first. Answer questions but cannot run commands.${liveProjectMap}`;
+    ? `Agent connected. OS: ${agentInfo.os}, Shell: ${agentInfo.shell}, CWD: ${agentInfo.cwd}, User: ${agentInfo.username}, VSCode: ${agentInfo.hasVscode}. Use tools to control the machine.${projectCtxBlock}${liveProjectMap}`
+    : `No agent connected. Tell the user to start the agent first. Answer questions but cannot run commands.${projectCtxBlock}${liveProjectMap}`;
 
   try {
     /* ── Auto-title conversation from first user message ── */

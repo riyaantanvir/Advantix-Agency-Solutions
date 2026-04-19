@@ -907,6 +907,15 @@ export async function runMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE agent_messages ADD COLUMN IF NOT EXISTS conversation_id integer REFERENCES agent_conversations(id) ON DELETE SET NULL
   `);
+  await db.execute(sql`
+    ALTER TABLE agent_conversations ADD COLUMN IF NOT EXISTS project_type text NOT NULL DEFAULT 'general'
+  `);
+  await db.execute(sql`
+    ALTER TABLE agent_conversations ADD COLUMN IF NOT EXISTS instructions text NOT NULL DEFAULT ''
+  `);
+  await db.execute(sql`
+    ALTER TABLE agent_conversations ADD COLUMN IF NOT EXISTS task_memory text NOT NULL DEFAULT ''
+  `);
 
   // ── AI usage tracking ──────────────────────────────────────────────────────
   await db.execute(sql`
