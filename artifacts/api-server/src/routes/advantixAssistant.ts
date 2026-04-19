@@ -2,9 +2,13 @@ import { Router, type Request, type Response } from "express";
 import { createHash, randomBytes } from "crypto";
 import { execSync } from "child_process";
 import { db, shortUrlsTable, teamMembersTable, servicesTable, portfolioItemsTable, blogPostsTable, contestsTable } from "@workspace/db";
-import { smmUserKeysTable, smmScheduledPostsTable } from "@workspace/db/schema";
+import {
+  smmUserKeysTable, smmScheduledPostsTable,
+  financeTagsTable, financePaymentMethodsTable, financeEntriesTable,
+  financePlannedPaymentsTable, financeSubscriptionsTable, financeSettingsTable,
+} from "@workspace/db/schema";
 import { fetchAllPlatforms } from "../lib/smmService.js";
-import { sql, eq, desc, and } from "drizzle-orm";
+import { sql, eq, desc, and, gte, lte } from "drizzle-orm";
 import { requireToolUser } from "../middleware/toolAuth.js";
 import { requireAdmin } from "../middleware/auth.js";
 import { getAgentScript } from "../lib/agentScript.js";
@@ -706,6 +710,66 @@ const PLATFORM_TOOLS_DEF = [
           description: "If true, also runs flutter analyze / tsc --noEmit / python -m py_compile for error detection. Defaults to false (fast scan only).",
         },
       },
+    },
+  },
+
+  /* ── FINANCE TOOLS ───────────────────────────────────────────── */
+  {
+    name: "finance_summary",
+    description: "Get the user's finance summary: total income, total expense, net balance for a date range, plus a breakdown by tag (category). Use when user asks about spending, income, balance, or which categories they spend most on. If user says 'this month' / 'last month' / 'this year', compute the date range yourself before calling.",
+    input_schema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "Start date YYYY-MM-DD (inclusive). Omit for all time." },
+        to:   { type: "string", description: "End date YYYY-MM-DD (inclusive). Omit for all time." },
+      },
+    },
+  },
+  {
+    name: "finance_list_categories",
+    description: "List the user's finance tags (categories) and payment methods. ALWAYS call this BEFORE adding an entry so you can pick the closest matching existing category instead of creating a new one. Returns ids and names you must use in finance_add_entry.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "finance_add_entry",
+    description: "Add an income or expense entry for the user. If the user mentions a category name (e.g. 'food', 'transport'), FIRST call finance_list_categories, then pick the closest existing tag id by name (case-insensitive, includes Banglish). Only set tagName / paymentMethodName (instead of ids) when the user clearly asks for a brand-new category that doesn't exist — those will be created automatically. Default date is today if omitted.",
+    input_schema: {
+      type: "object",
+      properties: {
+        type:    { type: "string", enum: ["expense", "income"], description: "Whether this is an expense or income." },
+        amount:  { type: "number", description: "Amount in the user's currency (positive number)." },
+        date:    { type: "string", description: "Date YYYY-MM-DD. Omit for today." },
+        details: { type: "string", description: "Short description of the entry (e.g. 'Lunch at KFC')." },
+        tagId:   { type: "number", description: "Existing tag id from finance_list_categories. Preferred." },
+        tagName: { type: "string", description: "ONLY use if creating a new tag. Will be created if it doesn't exist." },
+        paymentMethodId:   { type: "number", description: "Existing payment method id from finance_list_categories. Preferred." },
+        paymentMethodName: { type: "string", description: "ONLY use if creating a new payment method." },
+      },
+      required: ["type", "amount"],
+    },
+  },
+  {
+    name: "finance_list_entries",
+    description: "List the user's finance entries with optional filters. Use to answer questions like 'show me my last 10 expenses' or 'what did I spend on food last week'.",
+    input_schema: {
+      type: "object",
+      properties: {
+        from:    { type: "string", description: "Start date YYYY-MM-DD" },
+        to:      { type: "string", description: "End date YYYY-MM-DD" },
+        type:    { type: "string", enum: ["expense", "income"] },
+        tagId:   { type: "number", description: "Filter by tag id (get from finance_list_categories)" },
+        paymentMethodId: { type: "number" },
+        limit:   { type: "number", description: "Max entries to return (default 20, max 100)" },
+      },
+    },
+  },
+  {
+    name: "finance_delete_entry",
+    description: "Delete a single finance entry by id. Use only after confirming with the user.",
+    input_schema: {
+      type: "object",
+      properties: { id: { type: "number", description: "Entry id to delete" } },
+      required: ["id"],
     },
   },
 ];
@@ -2177,6 +2241,174 @@ CRITICAL — Error handling and task persistence:
               stdout: `[HTTP ${resp.status} ${resp.statusText}] ${url}\nContent-Type: ${contentType}\n\n${truncated}`,
               stderr: "", exitCode: 0,
             };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "finance_summary") {
+          try {
+            const from = toolInput.from ? String(toolInput.from) : null;
+            const to = toolInput.to ? String(toolInput.to) : null;
+            const where: any[] = [eq(financeEntriesTable.userId, uid)];
+            if (from) where.push(gte(financeEntriesTable.date, from));
+            if (to) where.push(lte(financeEntriesTable.date, to));
+
+            const totals = await db.select({
+              type: financeEntriesTable.type,
+              sum: sql<string>`COALESCE(SUM(${financeEntriesTable.amount}), 0)`,
+            }).from(financeEntriesTable).where(and(...where)).groupBy(financeEntriesTable.type);
+
+            let income = 0, expense = 0;
+            for (const t of totals) {
+              if (t.type === "income") income = Number(t.sum);
+              if (t.type === "expense") expense = Number(t.sum);
+            }
+
+            const byTag = await db.select({
+              tagName: financeTagsTable.name,
+              sum: sql<string>`COALESCE(SUM(${financeEntriesTable.amount}), 0)`,
+            }).from(financeEntriesTable)
+              .leftJoin(financeTagsTable, and(eq(financeEntriesTable.tagId, financeTagsTable.id), eq(financeTagsTable.userId, uid)))
+              .where(and(...where, eq(financeEntriesTable.type, "expense")))
+              .groupBy(financeTagsTable.name);
+
+            const [settings] = await db.select().from(financeSettingsTable).where(eq(financeSettingsTable.userId, uid)).limit(1);
+            const sym = settings?.currencySymbol || "৳";
+            const fmt = (n: number) => `${sym} ${n.toLocaleString("en-IN")}`;
+            const range = from || to ? `${from || "…"} → ${to || "…"}` : "All time";
+            const lines = [
+              `📊 Finance Summary (${range})`,
+              `Income:  ${fmt(income)}`,
+              `Expense: ${fmt(expense)}`,
+              `Net:     ${fmt(income - expense)}`,
+              ``,
+              `Top expense categories:`,
+              ...byTag
+                .map(b => ({ name: b.tagName || "Untagged", n: Number(b.sum) }))
+                .filter(b => b.n > 0)
+                .sort((a, b) => b.n - a.n)
+                .slice(0, 10)
+                .map(b => `  • ${b.name}: ${fmt(b.n)}`),
+            ];
+            result = { id: toolId, stdout: lines.join("\n"), stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "finance_list_categories") {
+          try {
+            const tags = await db.select({ id: financeTagsTable.id, name: financeTagsTable.name })
+              .from(financeTagsTable).where(eq(financeTagsTable.userId, uid)).orderBy(financeTagsTable.name);
+            const pms = await db.select({ id: financePaymentMethodsTable.id, name: financePaymentMethodsTable.name })
+              .from(financePaymentMethodsTable).where(eq(financePaymentMethodsTable.userId, uid)).orderBy(financePaymentMethodsTable.name);
+            const out = JSON.stringify({ tags, paymentMethods: pms }, null, 2);
+            result = { id: toolId, stdout: out, stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "finance_add_entry") {
+          try {
+            const type = String(toolInput.type || "");
+            if (type !== "expense" && type !== "income") throw new Error("type must be 'expense' or 'income'");
+            const amount = Number(toolInput.amount);
+            if (!Number.isFinite(amount) || amount <= 0) throw new Error("amount must be a positive number");
+            const date = toolInput.date ? String(toolInput.date) : new Date().toISOString().slice(0, 10);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("date must be YYYY-MM-DD");
+            const details = toolInput.details ? String(toolInput.details).slice(0, 500) : null;
+
+            // Resolve tag
+            let tagId: number | null = null;
+            if (toolInput.tagId !== undefined && toolInput.tagId !== null) {
+              const id = Number(toolInput.tagId);
+              const [row] = await db.select({ id: financeTagsTable.id }).from(financeTagsTable)
+                .where(and(eq(financeTagsTable.id, id), eq(financeTagsTable.userId, uid))).limit(1);
+              if (!row) throw new Error(`tagId ${id} not found for this user`);
+              tagId = id;
+            } else if (toolInput.tagName) {
+              const name = String(toolInput.tagName).trim().slice(0, 60);
+              if (name) {
+                const [existing] = await db.select({ id: financeTagsTable.id }).from(financeTagsTable)
+                  .where(and(eq(financeTagsTable.userId, uid), sql`LOWER(${financeTagsTable.name}) = LOWER(${name})`)).limit(1);
+                if (existing) tagId = existing.id;
+                else {
+                  const [created] = await db.insert(financeTagsTable).values({ userId: uid, name }).returning({ id: financeTagsTable.id });
+                  tagId = created.id;
+                }
+              }
+            }
+
+            // Resolve payment method
+            let pmId: number | null = null;
+            if (toolInput.paymentMethodId !== undefined && toolInput.paymentMethodId !== null) {
+              const id = Number(toolInput.paymentMethodId);
+              const [row] = await db.select({ id: financePaymentMethodsTable.id }).from(financePaymentMethodsTable)
+                .where(and(eq(financePaymentMethodsTable.id, id), eq(financePaymentMethodsTable.userId, uid))).limit(1);
+              if (!row) throw new Error(`paymentMethodId ${id} not found for this user`);
+              pmId = id;
+            } else if (toolInput.paymentMethodName) {
+              const name = String(toolInput.paymentMethodName).trim().slice(0, 60);
+              if (name) {
+                const [existing] = await db.select({ id: financePaymentMethodsTable.id }).from(financePaymentMethodsTable)
+                  .where(and(eq(financePaymentMethodsTable.userId, uid), sql`LOWER(${financePaymentMethodsTable.name}) = LOWER(${name})`)).limit(1);
+                if (existing) pmId = existing.id;
+                else {
+                  const [created] = await db.insert(financePaymentMethodsTable).values({ userId: uid, name }).returning({ id: financePaymentMethodsTable.id });
+                  pmId = created.id;
+                }
+              }
+            }
+
+            const [entry] = await db.insert(financeEntriesTable).values({
+              userId: uid, date, type, amount: String(amount), details, tagId, paymentMethodId: pmId,
+            }).returning();
+
+            const [settings] = await db.select().from(financeSettingsTable).where(eq(financeSettingsTable.userId, uid)).limit(1);
+            const sym = settings?.currencySymbol || "৳";
+            result = { id: toolId, stdout: `✓ Added ${type}: ${sym} ${amount.toLocaleString("en-IN")} on ${date}${details ? ` — ${details}` : ""}${tagId ? ` (tagId=${tagId})` : ""}${pmId ? ` (pmId=${pmId})` : ""}\nEntry id: ${entry.id}`, stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "finance_list_entries") {
+          try {
+            const limit = Math.min(Math.max(Number(toolInput.limit) || 20, 1), 100);
+            const where: any[] = [eq(financeEntriesTable.userId, uid)];
+            if (toolInput.from) where.push(gte(financeEntriesTable.date, String(toolInput.from)));
+            if (toolInput.to) where.push(lte(financeEntriesTable.date, String(toolInput.to)));
+            if (toolInput.type === "expense" || toolInput.type === "income") where.push(eq(financeEntriesTable.type, String(toolInput.type)));
+            if (toolInput.tagId) where.push(eq(financeEntriesTable.tagId, Number(toolInput.tagId)));
+            if (toolInput.paymentMethodId) where.push(eq(financeEntriesTable.paymentMethodId, Number(toolInput.paymentMethodId)));
+
+            const rows = await db.select({
+              id: financeEntriesTable.id,
+              date: financeEntriesTable.date,
+              type: financeEntriesTable.type,
+              amount: financeEntriesTable.amount,
+              details: financeEntriesTable.details,
+              tag: financeTagsTable.name,
+              pm: financePaymentMethodsTable.name,
+            }).from(financeEntriesTable)
+              .leftJoin(financeTagsTable, and(eq(financeEntriesTable.tagId, financeTagsTable.id), eq(financeTagsTable.userId, uid)))
+              .leftJoin(financePaymentMethodsTable, and(eq(financeEntriesTable.paymentMethodId, financePaymentMethodsTable.id), eq(financePaymentMethodsTable.userId, uid)))
+              .where(and(...where))
+              .orderBy(desc(financeEntriesTable.date), desc(financeEntriesTable.id))
+              .limit(limit);
+
+            const [settings] = await db.select().from(financeSettingsTable).where(eq(financeSettingsTable.userId, uid)).limit(1);
+            const sym = settings?.currencySymbol || "৳";
+            const lines = rows.length === 0
+              ? ["No entries found."]
+              : rows.map(r => `[${r.id}] ${r.date} ${r.type === "expense" ? "−" : "+"}${sym} ${Number(r.amount).toLocaleString("en-IN")} ${r.tag ? `· ${r.tag}` : ""} ${r.pm ? `· ${r.pm}` : ""} ${r.details ? `— ${r.details}` : ""}`.trim());
+            result = { id: toolId, stdout: lines.join("\n"), stderr: "", exitCode: 0 };
+          } catch (err) {
+            result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
+          }
+        } else if (toolName === "finance_delete_entry") {
+          try {
+            const id = Number(toolInput.id);
+            if (!Number.isFinite(id)) throw new Error("id must be a number");
+            const deleted = await db.delete(financeEntriesTable)
+              .where(and(eq(financeEntriesTable.id, id), eq(financeEntriesTable.userId, uid)))
+              .returning({ id: financeEntriesTable.id });
+            if (deleted.length === 0) throw new Error(`Entry ${id} not found or not yours`);
+            result = { id: toolId, stdout: `✓ Deleted entry ${id}`, stderr: "", exitCode: 0 };
           } catch (err) {
             result = { id: toolId, stdout: "", stderr: String(err), exitCode: 1, error: String(err) };
           }
