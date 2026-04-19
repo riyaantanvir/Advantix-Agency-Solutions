@@ -29,6 +29,7 @@ type UserState = {
   lastError: string | null;
   busyJids: Set<string>; /* prevent overlapping replies per chat */
   busyMessages: Set<string>; /* dedup message processing */
+  sentMsgIds: Set<string>; /* IDs of messages WE sent — skip in handler to avoid self-loop in Message-Yourself chat */
   qrSubscribers: Set<(payload: object) => void>;
   connectInProgress: boolean; /* lock to prevent duplicate sockets */
   intentionalDisconnect: boolean; /* user-initiated disconnect — suppress auto-reconnect */
@@ -43,7 +44,7 @@ function getState(uid: number): UserState {
     s = {
       socket: null, qrPng: null, status: "disconnected",
       phone: null, displayName: null, lastError: null,
-      busyJids: new Set(), busyMessages: new Set(), qrSubscribers: new Set(),
+      busyJids: new Set(), busyMessages: new Set(), sentMsgIds: new Set(), qrSubscribers: new Set(),
       connectInProgress: false, intentionalDisconnect: false, generation: 0,
     };
     STATE.set(uid, s);
@@ -338,6 +339,14 @@ async function handleIncomingMessage(uid: number, sock: WASocket, msg: proto.IWe
   log(`uid=${uid} msg from=${jid} fromMe=${msg.key.fromMe} ownPn=${ownPn} ownLid=${ownLid} isSelf=${isSelfChat}`);
   if (msg.key.fromMe && !isSelfChat) return;
 
+  /* Critical: in self-chat the bot's OWN replies also come back as fromMe.
+     Skip anything we sent ourselves to break the infinite reply loop. */
+  const sState = getState(uid);
+  if (msg.key.id && sState.sentMsgIds.has(msg.key.id)) {
+    log(`uid=${uid} skipping our own sent msg ${msg.key.id}`);
+    return;
+  }
+
   const msgId = `${jid}:${msg.key.id}`;
   const s = getState(uid);
   if (s.busyMessages.has(msgId)) return;
@@ -389,9 +398,30 @@ async function handleIncomingMessage(uid: number, sock: WASocket, msg: proto.IWe
 
   if (!shouldReply || !cleanedText) return;
 
-  /* Per-chat queue: don't process two messages at the same time in same chat */
+  /* Helper: send a message AND remember its ID so our own messages.upsert
+     callback (which fires for fromMe in self-chat) skips it. */
+  const sendTracked = async (content: any, opts?: any) => {
+    const sent = await sock.sendMessage(jid, content, opts);
+    const id = sent?.key?.id;
+    if (id) {
+      s.sentMsgIds.add(id);
+      /* Cap memory: drop oldest after 500 entries */
+      if (s.sentMsgIds.size > 500) {
+        const first = s.sentMsgIds.values().next().value;
+        if (first) s.sentMsgIds.delete(first);
+      }
+    }
+    return sent;
+  };
+
+  /* Per-chat queue: don't process two messages at the same time in same chat.
+     For self-chat we just drop silently — sending the "এক মিনিট…" placeholder
+     itself triggers another upsert and would still loop even with ID tracking
+     under heavy concurrency. */
   if (s.busyJids.has(jid)) {
-    await sock.sendMessage(jid, { text: "⏳ এক মিনিট, আগের message এর reply দিচ্ছি…" }).catch(() => {});
+    if (!isSelfChat) {
+      await sendTracked({ text: "⏳ এক মিনিট, আগের message এর reply দিচ্ছি…" }).catch(() => {});
+    }
     return;
   }
   s.busyJids.add(jid);
@@ -403,9 +433,9 @@ async function handleIncomingMessage(uid: number, sock: WASocket, msg: proto.IWe
     const reply = await runAssistantForWhatsApp(uid, cleanedText);
 
     await sock.sendPresenceUpdate("paused", jid).catch(() => {});
-    await sock.sendMessage(jid, { text: reply || "(no reply)" }, { quoted: msg });
+    await sendTracked({ text: reply || "(no reply)" }, { quoted: msg });
   } catch (err) {
-    await sock.sendMessage(jid, { text: `⚠️ Error: ${String((err as Error)?.message ?? err)}` }, { quoted: msg }).catch(() => {});
+    await sendTracked({ text: `⚠️ Error: ${String((err as Error)?.message ?? err)}` }, { quoted: msg }).catch(() => {});
   } finally {
     s.busyJids.delete(jid);
   }
