@@ -910,16 +910,25 @@ export function startReminderScheduler(
      "eta save kore rakho"
      "mone rakho — Rana er number 01711..."
      "note kore rakho: Tuesday meeting moved to 5pm"  */
-export async function extractNoteIntent(userText: string, apiKey: string): Promise<{
+/* Same discriminated-union pattern as ReminderIntentResult so the call site
+   can tell apart "definitely not a note request" (let chat handle) from
+   "looked like a note but the LLM didn't confirm" (also let chat handle —
+   notes have no failure-fallback message, but keeping the shape consistent
+   makes the two extractors interchangeable in future logic). */
+export type NoteIntentResult = {
   category: NoteCategory;
   title: string;
   body: string;
-} | null> {
+};
+
+export async function extractNoteIntent(userText: string, apiKey: string): Promise<NoteIntentResult | null> {
   const text = userText.trim();
   if (!text) return null;
 
-  /* Cheap pre-filter to skip the LLM round-trip for normal chat. */
-  const looksLikeNote = /\b(save|remember|note|jot|store|keep|memori[sz]e|don'?t forget)\b/i.test(text)
+  /* Cheap pre-filter to skip the LLM round-trip for normal chat. Stricter
+     than the reminder prefilter — note keywords are less ambiguous, so we
+     keep this list tight to minimize false positives. */
+  const looksLikeNote = /\b(save|remember|note|jot|store|memori[sz]e|don'?t forget)\b/i.test(text)
     || /\bmone\s*rakh/i.test(text)            // "mone rakho"
     || /\bmne\s*rakh/i.test(text)
     || /\bnote\s*kor/i.test(text)             // "note kore rakho"
@@ -1055,16 +1064,29 @@ function mergePersonality(current: Personality, delta: Partial<Personality>): Pe
 
 /* ── Personality extraction ────────────────────────────────────────────── */
 
-const EXTRACT_SYSTEM = `You are a personality-profiler.
-Read the user's latest message (which may be in English, Bangla, or Banglish)
-and extract ONLY new long-term-useful facts about them — habits, preferences,
-likes, dislikes, communication style.
+const EXTRACT_SYSTEM = `You are a personality-profiler. Your job is to build a precise model of HOW the user communicates so an AI assistant can mirror them.
+
+Read the user's latest message (English, Bangla, or Banglish — most likely Banglish from a Bangladeshi tech founder) and extract ONLY new long-term-useful signal.
+
+What to capture:
+- "facts": durable identity facts ("runs Advantix Digital", "based in Bagerhat").
+- "habits": recurring behaviors ("works late nights", "uses voice messages often").
+- "likes" / "dislikes": preferences worth remembering long-term.
+- "style": ONE detailed sentence covering ALL of these dimensions when observable:
+    1. Language mix — pure English / pure Bangla / Banglish (which dominant?).
+    2. Formality — casual / blunt / formal / mixed.
+    3. Sentence length — short bursts / long flowing / mixed.
+    4. Emoji + punctuation — none / sparse / heavy / specific favorites (!! ?? 🔥).
+    5. Energy — calm / excitable / sarcastic / venting / playful.
+    6. Signature phrases or fillers ("bujhcho?", "ki bolo", "wtf", "bhai").
+    7. Address style — how they address the bot ("you", "tumi", "tui", name).
 
 Rules:
 - Output strict JSON, no prose, no markdown fences.
-- If nothing new is worth remembering, return all empty.
+- If nothing new is worth remembering, return all empty arrays and empty style string.
 - Each list item is a short third-person clause ("prefers concise replies").
-- "style" is one sentence describing their tone (or empty string).
+- The "style" sentence should be DESCRIPTIVE of the user, not prescriptive — e.g.
+  "Writes in casual Banglish, short blunt bursts, frequent !! and emojis when frustrated, addresses the bot as 'tumi', uses fillers like 'bhai' and 'wtf'."
 - Never include transient/contextual info (today's task, a question they asked).
 - Never include sensitive info (passwords, secrets, financial account numbers).
 
@@ -1405,6 +1427,17 @@ function buildSystemPrompt(
     "- Treat saved contacts, deals, projects, tasks and dates as authoritative facts.",
     "- When the user asks something like \"who is X?\" or \"what's the status of Y?\", check the knowledge base first.",
     "- If the user clearly tells you something worth remembering long-term (a person, a project, a deadline), just confirm naturally — e.g. 'Saved!' or 'Got it, I'll remember.' The system will auto-save it to the notes database; you do NOT need to ask the user to run /remember themselves.",
+    "",
+    "## Tone & voice — MIRROR the user",
+    "You are not a generic assistant. You are an evolving copy of THIS user. Your reply must feel like it came from someone who has known them for years.",
+    "- Match their language mix exactly. If they wrote Banglish, you reply in Banglish (not pure English, not pure Bangla). If they switched to English mid-sentence, you can too.",
+    "- Match their sentence length and rhythm. Short blunt bursts → short blunt bursts. Long flowing thoughts → flowing reply.",
+    "- Match their formality and energy. Casual/sarcastic/venting/excited — meet them where they are. Don't sound corporate or therapist-y.",
+    "- Match their emoji and punctuation density. If they don't use emojis, you don't either. If they use !! and 🔥, so can you.",
+    "- Reuse their signature phrases when natural ('bhai', 'bujhcho', 'wtf', etc.) — but don't force it.",
+    "- Never lecture, never moralize, never apologize unless you actually broke something. Don't open with 'As an AI…' or 'I understand your frustration'.",
+    "- If they vent or curse, acknowledge briefly and move to the fix. Don't soften their words back at them.",
+    "- The 'Communication style' line above is your ground truth — re-read it before every reply.",
   ].join("\n");
 }
 
