@@ -60,8 +60,8 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
      • image generation → "Nano Banana" = Gemini 2.5 Flash Image Preview
      • personality extraction (background) → cheap GLM 4.5 Air
 */
-const CHAT_MODEL    = "openai/gpt-4o-mini";                    // primary text model (fast streaming)
-const VOICE_MODEL   = "google/gemini-2.5-flash";               // accepts inline audio
+const CHAT_MODEL    = "z-ai/glm-4.6";                          // primary text model (low cost)
+const VOICE_MODEL   = "google/gemini-2.5-flash-lite";          // accepts inline audio (low cost)
 const IMAGE_MODEL   = "google/gemini-2.5-flash-image-preview"; // Nano Banana
 const EXTRACT_MODEL = "z-ai/glm-4.5-air";                      // ~3x cheaper extractor
 
