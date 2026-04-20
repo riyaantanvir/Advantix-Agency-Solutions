@@ -28,6 +28,33 @@ function ToolGuard({ slug, children }: { slug: string; children: React.ReactNode
   return <>{children}</>;
 }
 
+function MaintenanceGate({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  const { data } = useQuery<{ maintenanceMode: boolean; maintenanceMessage: string; siteName: string }>({
+    queryKey: ["general-settings"],
+    queryFn: () => fetch("/api/settings/general").then(r => r.ok ? r.json() : null),
+    staleTime: 60_000,
+    retry: false,
+  });
+  const path = location.split("?")[0].replace(/\/$/, "") || "/";
+  const bypass = path === "/login" || path === "/reset-password";
+  if (data?.maintenanceMode && !bypass) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-6">
+        <div className="max-w-md w-full text-center space-y-6">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
+            <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8 text-amber-400" stroke="currentColor" strokeWidth="2"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" /></svg>
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">{data.siteName || "Advantix"} — Under Maintenance</h1>
+          <p className="text-muted-foreground whitespace-pre-line">{data.maintenanceMessage || "We'll be back shortly."}</p>
+          <p className="text-xs text-muted-foreground/70">Thanks for your patience.</p>
+        </div>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
 function GoogleAnalytics() {
   const { data } = useQuery<{ googleAnalyticsId: string }>({
     queryKey: ["general-settings"],
@@ -201,10 +228,12 @@ function App() {
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <GoogleAnalytics />
               <PageTracker />
-              <Router />
-              <EmailCaptureModal />
-              <PushNotificationPrompt />
-              <StickyCTABar />
+              <MaintenanceGate>
+                <Router />
+                <EmailCaptureModal />
+                <PushNotificationPrompt />
+                <StickyCTABar />
+              </MaintenanceGate>
             </WouterRouter>
           </ToolsUserProvider>
           <Toaster />
