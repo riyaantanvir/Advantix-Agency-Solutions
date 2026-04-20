@@ -272,6 +272,50 @@ async function extractPersonalityDelta(userText: string, apiKey: string): Promis
 
 /* ── Chat ───────────────────────────────────────────────────────────────── */
 
+/* Default system prompt — friendly, casual, multilingual.
+   Kept in one place so cached prompt prefix stays stable across turns. */
+const DEFAULT_SYSTEM_PROMPT = `You are Personal GPT — a warm, friendly personal assistant who chats like a close friend.
+
+Tone:
+- Casual, encouraging, with light humor when it fits.
+- Keep things human: short sentences, natural pauses, the occasional emoji when it adds warmth (but don't overdo it).
+- Be empathetic. If the user sounds stressed, acknowledge it before solving.
+
+Language:
+- Reply in the same language the user used — English, Bangla (Bengali script), or Banglish (Bengali in Roman letters).
+- Match their register: if they're casual, you're casual.
+
+Behaviour:
+- Be concise by default. Expand only when the user asks or the topic genuinely needs it.
+- When you don't know something, say so cheerfully and offer to figure it out together.`;
+
+/**
+ * Build the full system prompt. When `includePersonality` is false the
+ * long-term personality profile is OMITTED entirely — used for group chats so
+ * other group members can't probe the bot for the owner's private facts. We
+ * also append an explicit privacy instruction in that mode.
+ */
+function buildSystemPrompt(
+  settings: { systemPrompt: string; personality: Personality },
+  includePersonality: boolean,
+): string {
+  const base = settings.systemPrompt.trim() || DEFAULT_SYSTEM_PROMPT;
+  if (!includePersonality) {
+    return [
+      base,
+      "",
+      "## Group chat mode",
+      "You are talking in a group chat. You have NO memory of past conversations and NO knowledge about any specific user. If asked about your owner, the operator, or any private details, politely say you don't share that information.",
+    ].join("\n");
+  }
+  return [
+    base,
+    "",
+    "## What you know about the user (long-term memory)",
+    renderPersonality(settings.personality),
+  ].join("\n");
+}
+
 function renderPersonality(p: Personality): string {
   const sections: string[] = [];
   if (p.style) sections.push(`Communication style: ${p.style}`);
@@ -281,6 +325,23 @@ function renderPersonality(p: Personality): string {
   if (p.dislikes.length) sections.push(`Dislikes:\n- ${p.dislikes.join("\n- ")}`);
   if (!sections.length) return "(No personality profile yet — learn from each turn.)";
   return sections.join("\n\n");
+}
+
+/* Build the OpenRouter messages array. The system message uses the
+   Anthropic-style content-block form with `cache_control: ephemeral` so that
+   providers which support prompt caching (Claude, Gemini, DeepSeek, and a
+   growing set on OpenRouter) only bill the system prompt + personality on the
+   first hit and serve subsequent turns from cache — exactly the user's request:
+   "old memories cached, new msg only burns tokens". For models that don't
+   support caching, OpenRouter just ignores the marker. */
+function buildMessages(systemPrompt: string, history: RecentTurn[]) {
+  return [
+    {
+      role: "system" as const,
+      content: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+    },
+    ...history.map(h => ({ role: h.role, content: h.content })),
+  ];
 }
 
 async function callChat(systemPrompt: string, history: RecentTurn[], apiKey: string): Promise<string> {
@@ -294,11 +355,8 @@ async function callChat(systemPrompt: string, history: RecentTurn[], apiKey: str
     body: JSON.stringify({
       model: CHAT_MODEL,
       max_tokens: 1500,
-      temperature: 0.7,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...history.map(h => ({ role: h.role, content: h.content })),
-      ],
+      temperature: 0.8,
+      messages: buildMessages(systemPrompt, history),
     }),
   });
   if (!res.ok) {
@@ -311,56 +369,133 @@ async function callChat(systemPrompt: string, history: RecentTurn[], apiKey: str
   return reply;
 }
 
+/**
+ * Streaming variant. Calls OpenRouter with `stream: true` and yields content
+ * chunks as they arrive. Returns the full assembled reply so the caller can
+ * persist it to the rolling window. Significantly improves perceived latency
+ * for the web UI — first token usually arrives in well under a second.
+ */
+async function callChatStream(
+  systemPrompt: string,
+  history: RecentTurn[],
+  apiKey: string,
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  const res = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://advantix.digital",
+    },
+    body: JSON.stringify({
+      model: CHAT_MODEL,
+      max_tokens: 1500,
+      temperature: 0.8,
+      stream: true,
+      messages: buildMessages(systemPrompt, history),
+    }),
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Chat API HTTP ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let full = "";
+
+  for (;;) {
+    if (signal?.aborted) {
+      try { await reader.cancel(); } catch { /* ignore */ }
+      throw new Error("Aborted");
+    }
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    /* OpenRouter streams SSE: each event is `data: {...}\n\n` and ends with
+       `data: [DONE]`. We parse line-by-line and tolerate partial frames. */
+    let nl: number;
+    while ((nl = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      try {
+        const parsed = JSON.parse(payload) as { choices?: { delta?: { content?: string } }[] };
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) {
+          full += delta;
+          onChunk(delta);
+        }
+      } catch {
+        /* tolerate keepalives / partial frames */
+      }
+    }
+  }
+
+  if (!full.trim()) throw new Error("Empty reply from chat model");
+  return full;
+}
+
 export type RunResult = { reply: string; personalityUpdated: boolean };
 
+export type TurnOptions = {
+  /** Source label for logs/audit. */
+  source: "web" | "telegram";
+  /**
+   * Whether this turn should write to the rolling window AND feed the
+   * personality extractor. Group chats run with `persist=false` so other
+   * group members can't leak their messages into the owner's personal memory
+   * or contaminate the personality profile (privacy boundary).
+   */
+  persist: boolean;
+};
+
 /**
- * Run one Personal GPT turn end-to-end. Caller passes the user text and where
- * it came from ("web" or "telegram"); we handle extraction → personality merge
- * → chat → rolling-window persistence. The full transcript is never archived.
+ * Run one Personal GPT turn end-to-end. The full transcript is never archived;
+ * only the rolling window is kept (and only when `persist` is true).
  */
-export async function runPersonalGptTurn(userText: string, source: "web" | "telegram"): Promise<RunResult> {
+export async function runPersonalGptTurn(userText: string, opts: TurnOptions): Promise<RunResult> {
   const apiKey = await getOpenRouterKey();
   if (!apiKey) throw new Error("OpenRouter API key not configured");
 
   const settings = await loadSettings();
   if (!settings.enabled) throw new Error("Personal GPT is disabled in settings");
 
-  /* Kick off extraction in parallel with chat — we don't want to slow the
-     reply waiting for personality analysis. */
-  const extractPromise = extractPersonalityDelta(userText, apiKey);
+  /* Personality extraction only runs for trusted/persistable turns. */
+  const extractPromise = opts.persist
+    ? extractPersonalityDelta(userText, apiKey)
+    : Promise.resolve<Partial<Personality>>({});
 
-  /* Build the system prompt: user-provided base + auto-curated personality. */
-  const fullSystemPrompt = [
-    settings.systemPrompt.trim() || "You are Personal GPT, a highly intelligent personal assistant.",
-    "",
-    "## What you know about the user (long-term memory)",
-    renderPersonality(settings.personality),
-    "",
-    `## Style rules`,
-    `- Reply naturally in the same language the user wrote (English, Bangla, or Banglish).`,
-    `- Use the personality profile above to tailor tone, vocabulary, and depth.`,
-    `- Be concise unless the user asks for detail.`,
-  ].join("\n");
-
-  const history = await loadRecentTurns();
+  /* For ephemeral (group) turns we deliberately use no history AND omit the
+     personality profile so the group conversation can't pull in or leak
+     private DM context. DM/web turns get the full memory. */
+  const fullSystemPrompt = buildSystemPrompt(settings, opts.persist);
+  const history = opts.persist ? await loadRecentTurns() : [];
   const turnHistory: RecentTurn[] = [...history, { role: "user", content: userText }];
 
   const reply = await callChat(fullSystemPrompt, turnHistory, apiKey);
 
-  /* Persist rolling window (best-effort — failures don't break the reply). */
-  await appendTurn("user", userText, source).catch(err =>
-    logger.warn({ err }, "Personal GPT: failed to append user turn"));
-  await appendTurn("assistant", reply, source).catch(err =>
-    logger.warn({ err }, "Personal GPT: failed to append assistant turn"));
+  if (opts.persist) {
+    await appendTurn("user", userText, opts.source).catch(err =>
+      logger.warn({ err }, "Personal GPT: failed to append user turn"));
+    await appendTurn("assistant", reply, opts.source).catch(err =>
+      logger.warn({ err }, "Personal GPT: failed to append assistant turn"));
+  }
 
-  /* Apply the extracted personality delta if any. */
   let personalityUpdated = false;
   try {
     const delta = await extractPromise;
     const hasDelta = (delta.facts?.length ?? 0) + (delta.habits?.length ?? 0)
                    + (delta.likes?.length ?? 0) + (delta.dislikes?.length ?? 0)
                    + (delta.style && delta.style.trim() ? 1 : 0) > 0;
-    if (hasDelta) {
+    if (hasDelta && opts.persist) {
       const merged = mergePersonality(settings.personality, delta);
       await updateSettings({ personality: merged });
       personalityUpdated = true;
@@ -372,14 +507,102 @@ export async function runPersonalGptTurn(userText: string, source: "web" | "tele
   return { reply, personalityUpdated };
 }
 
+/* ── Streaming chat (web) ───────────────────────────────────────────────── */
+
+export type StreamEvent =
+  | { type: "chunk"; text: string }
+  | { type: "done"; reply: string; personalityUpdated: boolean }
+  | { type: "error"; error: string };
+
+/**
+ * Run one Personal GPT turn with token-by-token streaming. The caller receives
+ * incremental chunks via `onEvent` so the UI can render text as it arrives.
+ * Persistence + personality merge happen at the end exactly like the
+ * non-streaming path.
+ */
+export async function runPersonalGptTurnStream(
+  userText: string,
+  source: "web" | "telegram",
+  onEvent: (e: StreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  try {
+    const apiKey = await getOpenRouterKey();
+    if (!apiKey) throw new Error("OpenRouter API key not configured");
+
+    const settings = await loadSettings();
+    if (!settings.enabled) throw new Error("Personal GPT is disabled in settings");
+
+    /* Streaming endpoint is web-only and always persists. */
+    const extractPromise = extractPersonalityDelta(userText, apiKey);
+    const fullSystemPrompt = buildSystemPrompt(settings, true);
+    const history = await loadRecentTurns();
+    const turnHistory: RecentTurn[] = [...history, { role: "user", content: userText }];
+
+    const reply = await callChatStream(fullSystemPrompt, turnHistory, apiKey, (chunk) => {
+      onEvent({ type: "chunk", text: chunk });
+    }, signal);
+
+    /* If the client cancelled mid-stream, skip persistence and personality
+       merge — those side effects shouldn't fire on aborted requests. */
+    if (signal?.aborted) return;
+
+    /* Persistence — best-effort. */
+    await appendTurn("user", userText, source).catch(err =>
+      logger.warn({ err }, "Personal GPT: failed to append user turn"));
+    await appendTurn("assistant", reply, source).catch(err =>
+      logger.warn({ err }, "Personal GPT: failed to append assistant turn"));
+
+    let personalityUpdated = false;
+    try {
+      const delta = await extractPromise;
+      const hasDelta = (delta.facts?.length ?? 0) + (delta.habits?.length ?? 0)
+                     + (delta.likes?.length ?? 0) + (delta.dislikes?.length ?? 0)
+                     + (delta.style && delta.style.trim() ? 1 : 0) > 0;
+      if (hasDelta) {
+        const merged = mergePersonality(settings.personality, delta);
+        await updateSettings({ personality: merged });
+        personalityUpdated = true;
+      }
+    } catch (err) {
+      logger.warn({ err }, "Personal GPT: personality merge failed");
+    }
+
+    onEvent({ type: "done", reply, personalityUpdated });
+  } catch (err) {
+    /* Don't emit an error event for client-initiated cancellations. */
+    if (signal?.aborted) return;
+    onEvent({ type: "error", error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
 /* ── Telegram bot ───────────────────────────────────────────────────────── */
 
 let pgBotInstance: TelegramBot | null = null;
+let pgBotUsername: string | null = null;
 
 /**
- * Start (or restart) the dedicated Personal GPT Telegram bot. Reads the bot
- * token + owner chat ID from `personal_gpt_settings`. If either is missing,
- * any running bot is stopped and we exit silently. Idempotent.
+ * Parse the configured chat-ID setting. Accepts a single ID or a
+ * comma-separated list; positive IDs are personal DMs, negative IDs are
+ * groups/supergroups. Anything malformed is silently dropped.
+ */
+function parseAllowedChatIds(raw: string | null): number[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(s => parseInt(s, 10))
+    .filter(n => Number.isFinite(n));
+}
+
+/**
+ * Start (or restart) the dedicated Personal GPT Telegram bot. Supports:
+ *   - Personal DM (positive chat ID): always responds.
+ *   - Groups/supergroups (negative chat ID): only responds when the bot is
+ *     mentioned (@botusername) or the user replies to a bot message — keeps it
+ *     non-spammy in shared chats.
+ * Token + chat ID(s) come from `personal_gpt_settings`. Idempotent.
  */
 export async function startPersonalGptBot(): Promise<void> {
   const settings = await loadSettings();
@@ -388,6 +611,7 @@ export async function startPersonalGptBot(): Promise<void> {
   if (pgBotInstance) {
     try { await pgBotInstance.stopPolling({ cancel: true }); } catch { /* ignore */ }
     pgBotInstance = null;
+    pgBotUsername = null;
   }
 
   if (!settings.enabled) {
@@ -395,18 +619,26 @@ export async function startPersonalGptBot(): Promise<void> {
     return;
   }
   if (!settings.telegramBotToken || !settings.telegramChatId) {
-    logger.info("Personal GPT bot not started: token or chat ID missing.");
+    logger.info("Personal GPT bot not started: token or chat ID(s) missing.");
     return;
   }
-  const ownerChatId = parseInt(settings.telegramChatId, 10);
-  if (!Number.isFinite(ownerChatId)) {
-    logger.warn("Personal GPT bot not started: chat ID is not a number.");
+  const allowedChatIds = parseAllowedChatIds(settings.telegramChatId);
+  if (!allowedChatIds.length) {
+    logger.warn("Personal GPT bot not started: no valid chat IDs.");
     return;
   }
 
   const bot = new TelegramBot(settings.telegramBotToken, { polling: true });
   pgBotInstance = bot;
-  logger.info(`Personal GPT Telegram bot started. Owner chat ID: ${ownerChatId}`);
+
+  /* Cache the bot's own username so we can detect mentions in groups. */
+  try {
+    const me = await bot.getMe();
+    pgBotUsername = me.username ?? null;
+  } catch (err) {
+    logger.warn({ err }, "Personal GPT: getMe() failed");
+  }
+  logger.info(`Personal GPT bot started as @${pgBotUsername ?? "?"} for chats: ${allowedChatIds.join(", ")}`);
 
   bot.on("polling_error", (err) => {
     logger.warn({ err: String(err) }, "Personal GPT bot polling error");
@@ -414,20 +646,59 @@ export async function startPersonalGptBot(): Promise<void> {
 
   bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
-    const text = msg.text?.trim();
-
-    /* Hard isolation — only the configured owner can use this bot. */
-    if (chatId !== ownerChatId) {
-      await bot.sendMessage(chatId, "⛔ Unauthorized.").catch(() => {});
-      return;
-    }
+    let text = msg.text?.trim();
     if (!text) return;
+
+    /* Allowed chats only — silently drop everything else (no "Unauthorized"
+       reply spam in random groups the bot may be added to). */
+    if (!allowedChatIds.includes(chatId)) return;
+
+    const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
+
+    /* In groups, only react to a direct entity-based mention of our bot or a
+       reply to one of our messages. Substring matching is unsafe — `@botname2`
+       or `@botnameLong` would false-trigger. We use Telegram message entities
+       which give us exact ranges. */
+    if (isGroup) {
+      const lowerName = (pgBotUsername ?? "").toLowerCase();
+      let mentionRange: { offset: number; length: number } | null = null;
+
+      if (lowerName && msg.entities) {
+        for (const ent of msg.entities) {
+          if (ent.type === "mention") {
+            const slice = text.slice(ent.offset, ent.offset + ent.length); // includes leading "@"
+            if (slice.toLowerCase() === `@${lowerName}`) {
+              mentionRange = { offset: ent.offset, length: ent.length };
+              break;
+            }
+          } else if (ent.type === "text_mention" && ent.user?.username?.toLowerCase() === lowerName) {
+            mentionRange = { offset: ent.offset, length: ent.length };
+            break;
+          }
+        }
+      }
+
+      const isReplyToBot = msg.reply_to_message?.from?.username === pgBotUsername;
+      if (!mentionRange && !isReplyToBot) return;
+
+      /* Strip the mention from the text so the model doesn't see it. */
+      if (mentionRange) {
+        text = (text.slice(0, mentionRange.offset) + text.slice(mentionRange.offset + mentionRange.length)).trim();
+      }
+      if (!text) {
+        await bot.sendMessage(chatId, "Hey! 👋 What can I help with?", {
+          reply_to_message_id: msg.message_id,
+        }).catch(() => {});
+        return;
+      }
+    }
 
     if (text === "/start") {
       await bot.sendMessage(chatId, "👋 Personal GPT is ready. Just message me.");
       return;
     }
-    if (text === "/clear") {
+    /* /clear only makes sense in DM (it nukes the personal rolling window). */
+    if (text === "/clear" && !isGroup) {
       await clearRecentTurns().catch(() => {});
       await bot.sendMessage(chatId, "✅ Short-term memory cleared.");
       return;
@@ -436,10 +707,13 @@ export async function startPersonalGptBot(): Promise<void> {
     await bot.sendChatAction(chatId, "typing").catch(() => {});
 
     try {
-      const { reply } = await runPersonalGptTurn(text, "telegram");
-      /* Telegram has a 4096-char hard limit per message; chunk if needed. */
+      /* Group turns are EPHEMERAL — they don't read or write personal history,
+         and they don't feed the personality extractor. This keeps other group
+         members from polluting the owner's private memory. DMs persist. */
+      const { reply } = await runPersonalGptTurn(text, { source: "telegram", persist: !isGroup });
+      const sendOpts = isGroup ? { reply_to_message_id: msg.message_id } : undefined;
       for (let i = 0; i < reply.length; i += 4000) {
-        await bot.sendMessage(chatId, reply.slice(i, i + 4000)).catch(() => {});
+        await bot.sendMessage(chatId, reply.slice(i, i + 4000), sendOpts).catch(() => {});
       }
     } catch (err) {
       logger.error({ err }, "Personal GPT Telegram turn failed");

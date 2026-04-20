@@ -136,34 +136,96 @@ function ChatPanel({ onPersonalityUpdated, toast }: {
     const userText = text.trim();
     if (!userText || sending) return;
 
+    const assistantId = `a${Date.now()}`;
     const userMsg: Message = { id: `u${Date.now()}`, role: "user", content: userText };
-    setMessages(prev => [...prev, userMsg]);
+    /* Add an empty assistant bubble up-front so streamed chunks can land into
+       it without a layout jump on every token. */
+    const placeholder: Message = { id: assistantId, role: "assistant", content: "" };
+    setMessages(prev => [...prev, userMsg, placeholder]);
     setInput("");
     setSending(true);
 
+    let buffered = "";
+    let personalityChanged = false;
+    let errored = false;
+
     try {
-      const res = await fetch("/api/admin/personal-gpt/chat", {
+      const res = await fetch("/api/admin/personal-gpt/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ message: userText }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
 
-      const reply: Message = { id: `a${Date.now()}`, role: "assistant", content: data.reply ?? "" };
-      setMessages(prev => [...prev, reply]);
+      /* Parse SSE: each event is `data: {...}\n\n`. We tolerate partial frames
+         and ignore comment heartbeats (lines starting with `:`). */
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuf = "";
 
-      if (data.personalityUpdated) onPersonalityUpdated();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        sseBuf += decoder.decode(value, { stream: true });
+
+        let nl: number;
+        while ((nl = sseBuf.indexOf("\n\n")) !== -1) {
+          const frame = sseBuf.slice(0, nl);
+          sseBuf = sseBuf.slice(nl + 2);
+          for (const line of frame.split("\n")) {
+            if (!line.startsWith("data:")) continue;
+            const payload = line.slice(5).trim();
+            if (!payload) continue;
+            try {
+              const evt = JSON.parse(payload) as
+                | { type: "chunk"; text: string }
+                | { type: "done"; reply: string; personalityUpdated: boolean }
+                | { type: "error"; error: string };
+
+              if (evt.type === "chunk") {
+                buffered += evt.text;
+                /* Functional update so React batches with concurrent renders. */
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantId ? { ...m, content: buffered } : m,
+                ));
+              } else if (evt.type === "done") {
+                personalityChanged = evt.personalityUpdated;
+                /* Reconcile in case the server's final text differs slightly
+                   from our chunk concatenation (whitespace, etc.). */
+                setMessages(prev => prev.map(m =>
+                  m.id === assistantId ? { ...m, content: evt.reply } : m,
+                ));
+              } else if (evt.type === "error") {
+                throw new Error(evt.error);
+              }
+            } catch (parseErr) {
+              if (parseErr instanceof Error && parseErr.message && !payload.startsWith(":")) {
+                throw parseErr;
+              }
+            }
+          }
+        }
+      }
+
+      if (personalityChanged) onPersonalityUpdated();
     } catch (err) {
+      errored = true;
       toast({
         variant: "destructive",
         title: "Chat failed",
         description: err instanceof Error ? err.message : "Try again",
       });
+      /* Drop the empty placeholder if we never got any text. */
+      if (!buffered) {
+        setMessages(prev => prev.filter(m => m.id !== assistantId));
+      }
     } finally {
       setSending(false);
-      textareaRef.current?.focus();
+      if (!errored) textareaRef.current?.focus();
     }
   }, [sending, toast, onPersonalityUpdated]);
 
@@ -552,16 +614,19 @@ function SettingsPanel({ settings, toast, qc }: {
               </p>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Owner Chat ID</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Allowed Chat IDs</label>
               <input
                 type="text"
                 value={tgChatId}
                 onChange={e => setTgChatId(e.target.value)}
-                placeholder="e.g. 123456789"
+                placeholder="e.g. 123456789, -1001234567890"
                 className="w-full px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-sm font-mono focus:outline-none focus:border-primary/50"
               />
               <p className="text-[11px] text-muted-foreground mt-1">
-                Only this chat ID can talk to the bot. Get it from @userinfobot on Telegram.
+                Comma-separated. Use your personal chat ID for DM, or a group ID
+                (negative number, e.g. <code>-1001234567890</code>) to enable in a group.
+                In groups, the bot only replies when you @mention or reply to it.
+                Get IDs from <code>@userinfobot</code> (DM) or <code>@RawDataBot</code> (groups).
               </p>
             </div>
           </div>
