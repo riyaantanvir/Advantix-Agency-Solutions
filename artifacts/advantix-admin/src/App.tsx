@@ -56,6 +56,7 @@ const PostComposer  = lazy(() => import("./pages/PostComposer"));
 const ImageStudio   = lazy(() => import("./pages/ImageStudio"));
 const AssistantUsage = lazy(() => import("./pages/AssistantUsage"));
 const AdminAssistant = lazy(() => import("./pages/AdminAssistant"));
+const PersonalGPT = lazy(() => import("./pages/PersonalGPT"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -338,6 +339,10 @@ function Router() {
 
       <Route path="/pm/assigned-comments">
         <ProtectedLayout><AssignedCommentsPage /></ProtectedLayout>
+      </Route>
+
+      <Route path="/personal-gpt">
+        <ProtectedLayout><PersonalGPT /></ProtectedLayout>
       </Route>
 
       <Route path="/admin-assistant">

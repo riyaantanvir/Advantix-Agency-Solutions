@@ -339,6 +339,42 @@ export async function runMigrations(): Promise<void> {
     )
   `);
 
+  /* ── Personal GPT (admin-only personal assistant) ──────────────────────────
+     Singleton settings row (id = 1) holds the system prompt, an auto-curated
+     personality profile (jsonb), and an optional dedicated Telegram bot token.
+     We deliberately do NOT persist the conversation transcript — only a tiny
+     rolling window of the most recent turns lives in `personal_gpt_recent`
+     for context, and the personality JSON for long-term memory. */
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS personal_gpt_settings (
+      id integer PRIMARY KEY,
+      system_prompt text NOT NULL DEFAULT '',
+      personality jsonb NOT NULL DEFAULT '{"facts":[],"habits":[],"likes":[],"dislikes":[],"style":""}'::jsonb,
+      telegram_bot_token text,
+      telegram_chat_id text,
+      enabled boolean NOT NULL DEFAULT true,
+      updated_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+  await db.execute(sql`
+    INSERT INTO personal_gpt_settings (id, system_prompt)
+    VALUES (1, 'You are Personal GPT, a highly intelligent personal assistant. You know the user well, adapt to their style, and reply concisely with depth when needed.')
+    ON CONFLICT (id) DO NOTHING
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS personal_gpt_recent (
+      id serial PRIMARY KEY,
+      role text NOT NULL,
+      content text NOT NULL,
+      source text NOT NULL DEFAULT 'web',
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_personal_gpt_recent_created_at
+      ON personal_gpt_recent (created_at DESC)
+  `);
+
   // ── AI tables ─────────────────────────────────────────────────────────────
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS ai_projects (

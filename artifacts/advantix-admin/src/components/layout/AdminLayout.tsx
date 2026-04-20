@@ -121,6 +121,7 @@ const navItems: NavItem[] = [
     ],
   },
   { path: "/admin-assistant", label: "Admin Assistant", icon: BotMessageSquare },
+  { path: "/personal-gpt", label: "Personal GPT", icon: Sparkles },
   { path: "/website-analytics", label: "Website Analytics", icon: BarChart2 },
   {
     label: "Generate Content",
