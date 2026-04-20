@@ -52,11 +52,18 @@ const MAX_ITEM_LENGTH = 160;
 const MAX_STYLE_LENGTH = 400;
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-/* GLM 4.6 via OpenRouter — main reasoning model for chat. */
-const CHAT_MODEL = "z-ai/glm-4.6";
-/* GLM 4.5 Air is ~3x cheaper than 4.6 and is a great fit for the small
-   structured-extraction job we use here. Keeps token cost down. */
-const EXTRACT_MODEL = "z-ai/glm-4.5-air";
+
+/* ── Model router ─────────────────────────────────────────────────────────
+   ONE OpenRouter API key, but the right model is auto-picked per input type:
+     • text  → GLM (default — chosen for cost+quality on Bangla/English)
+     • voice → Gemini 2.5 Flash (best multimodal for direct audio understanding)
+     • image generation → "Nano Banana" = Gemini 2.5 Flash Image Preview
+     • personality extraction (background) → cheap GLM 4.5 Air
+*/
+const CHAT_MODEL    = "z-ai/glm-4.6";                          // primary text model
+const VOICE_MODEL   = "google/gemini-2.5-flash";               // accepts inline audio
+const IMAGE_MODEL   = "google/gemini-2.5-flash-image-preview"; // Nano Banana
+const EXTRACT_MODEL = "z-ai/glm-4.5-air";                      // ~3x cheaper extractor
 
 /* How many CRM/knowledge notes to surface to the model per prompt. We sort by
    pinned-first then most-recently-updated and cap to keep the prompt short. */
@@ -397,6 +404,164 @@ async function extractPersonalityDelta(userText: string, apiKey: string): Promis
     logger.warn({ err }, "Personal GPT extractor failed");
     return {};
   }
+}
+
+/* ── Multi-modal: image generation + voice understanding ────────────────── */
+
+/* Detect "generate an image" intent in plain text. Triggers the image model
+   instead of the text model. Supports English + Bangla + Banglish keywords.
+   Explicit `/image …` always wins over heuristics. */
+const IMAGE_INTENT_RE = new RegExp(
+  [
+    "^/(image|img|draw|picture|chobi)\\b",
+    "\\b(generate|create|make|draw|design|render)\\s+(an?|the)?\\s*(image|picture|photo|illustration|drawing|art|logo|poster|mockup)",
+    "\\b(image|picture|photo|chobi)\\s+(banao|banaye?\\s*do|generate|create|make|draw)",
+    "\\b(banao|banaye?\\s*do|create|generate|draw|design)\\s+(ekta|aekta|akta|ekti|the|an?)?\\s*(image|picture|photo|chobi|illustration|logo|poster|design)",
+  ].join("|"),
+  "i",
+);
+function isImageRequest(text: string): boolean {
+  return IMAGE_INTENT_RE.test(text.trim());
+}
+/* Strip the `/image` (or aliases) prefix when present so the model sees a
+   clean prompt. */
+function extractImagePrompt(text: string): string {
+  return text.trim().replace(/^\/(image|img|draw|picture|chobi)\s+/i, "").trim();
+}
+
+/**
+ * Generate an image via OpenRouter using the Nano Banana model. The
+ * chat-completions endpoint with `modalities: ["image","text"]` returns
+ * the image inline in the assistant message. Returns the raw bytes plus
+ * any caption text the model produced.
+ */
+export async function generateImage(prompt: string): Promise<{ bytes: Buffer; mimeType: string; caption: string }> {
+  const apiKey = await getOpenRouterKey();
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured.");
+  if (!prompt.trim()) throw new Error("Image prompt is empty.");
+
+  const res = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://advantix.digital",
+      "X-Title": "Advantix Personal GPT",
+    },
+    body: JSON.stringify({
+      model: IMAGE_MODEL,
+      modalities: ["image", "text"],
+      messages: [{ role: "user", content: prompt.slice(0, 4000) }],
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Image generation failed: HTTP ${res.status} ${body.slice(0, 300)}`);
+  }
+  const data = await res.json() as {
+    choices?: { message?: { content?: string; images?: { image_url?: { url?: string } }[] } }[];
+  };
+  const msg = data.choices?.[0]?.message;
+  const imgUrl = msg?.images?.[0]?.image_url?.url;
+  if (!imgUrl) throw new Error("Model did not return an image.");
+
+  /* The image arrives as a `data:image/<type>;base64,<payload>` URL. */
+  const m = imgUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!m) throw new Error("Unexpected image URL format from model.");
+  return {
+    bytes: Buffer.from(m[2], "base64"),
+    mimeType: m[1],
+    caption: (msg?.content ?? "").trim(),
+  };
+}
+
+/**
+ * Send an audio clip + optional text to the multimodal voice model and get a
+ * text reply. Used when the user sends a Telegram voice/audio note. Audio is
+ * inlined as base64 — fine for typical voice-note sizes (under a few MB).
+ */
+export async function answerFromVoice(input: {
+  audioBase64: string;
+  audioFormat: "ogg" | "mp3" | "wav" | "m4a" | "webm";
+  systemPrompt: string;
+  history: RecentTurn[];
+  promptHint?: string;
+}): Promise<string> {
+  const apiKey = await getOpenRouterKey();
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured.");
+
+  /* OpenAI-compatible multimodal content blocks. The hint nudges the model
+     to actually answer the spoken question rather than just transcribe it. */
+  const userContent = [
+    { type: "text", text: input.promptHint ?? "Listen to this voice message and reply naturally, in the same language the user spoke." },
+    { type: "input_audio", input_audio: { data: input.audioBase64, format: input.audioFormat } },
+  ];
+
+  const messages = [
+    { role: "system", content: [{ type: "text", text: input.systemPrompt, cache_control: { type: "ephemeral" } }] },
+    ...input.history.map(t => ({ role: t.role, content: t.content })),
+    { role: "user", content: userContent },
+  ];
+
+  const res = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://advantix.digital",
+      "X-Title": "Advantix Personal GPT",
+    },
+    body: JSON.stringify({
+      model: VOICE_MODEL,
+      temperature: 0.8,
+      max_tokens: 1500,
+      messages,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Voice reply failed: HTTP ${res.status} ${body.slice(0, 300)}`);
+  }
+  const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+  const reply = data.choices?.[0]?.message?.content?.trim();
+  if (!reply) throw new Error("Voice model returned an empty reply.");
+  return reply;
+}
+
+/**
+ * Convenience: run a full voice turn the same way runPersonalGptTurn does for
+ * text — load settings, build system prompt with notes/personality, call the
+ * multimodal model, then persist & extract personality from a transcript hint
+ * if provided. Returns the reply.
+ */
+export async function runPersonalGptVoiceTurn(args: {
+  audioBase64: string;
+  audioFormat: "ogg" | "mp3" | "wav" | "m4a" | "webm";
+  source: "telegram" | "web";
+  persist: boolean;
+}): Promise<{ reply: string }> {
+  const settings = await loadSettings();
+  if (!settings.enabled) throw new Error("Personal GPT is disabled in settings");
+
+  const notes = args.persist ? await listNotes().catch(() => [] as Note[]) : [];
+  const fullSystemPrompt = buildSystemPrompt(settings, args.persist, notes);
+  const history = args.persist ? await loadRecentTurns() : [];
+
+  const reply = await answerFromVoice({
+    audioBase64: args.audioBase64,
+    audioFormat: args.audioFormat,
+    systemPrompt: fullSystemPrompt,
+    history,
+  });
+
+  if (args.persist) {
+    /* We don't have the transcript ourselves (model handled it internally),
+       so we record a placeholder for short-term context. The bot's reply is
+       still useful in history; the audio itself isn't replayable from text. */
+    await appendTurn("user", "🎤 (voice message)", args.source);
+    await appendTurn("assistant", reply, args.source);
+  }
+  return { reply };
 }
 
 /* ── Chat ───────────────────────────────────────────────────────────────── */
@@ -910,6 +1075,32 @@ export async function startPersonalGptBot(): Promise<void> {
       }
     }
 
+    /* Image generation intent — auto-routes to the Nano Banana model.
+       Works in DM and groups (when mentioned). Image gen never touches
+       personal memory either way. */
+    if (isImageRequest(text)) {
+      const prompt = extractImagePrompt(text);
+      if (!prompt) {
+        await bot.sendMessage(chatId, "Tell me what to draw, e.g. `/image a cyberpunk city at dusk`.", {
+          parse_mode: "Markdown",
+        }).catch(() => {});
+        return;
+      }
+      await bot.sendChatAction(chatId, "upload_photo").catch(() => {});
+      try {
+        const { bytes, caption } = await generateImage(prompt);
+        const sendOpts = {
+          caption: (caption || prompt).slice(0, 1000),
+          ...(isGroup ? { reply_to_message_id: msg.message_id } : {}),
+        };
+        await bot.sendPhoto(chatId, bytes, sendOpts);
+      } catch (err) {
+        logger.error({ err }, "Personal GPT image generation failed");
+        await bot.sendMessage(chatId, `⚠️ Image generation failed: ${String(err instanceof Error ? err.message : err).slice(0, 300)}`).catch(() => {});
+      }
+      return;
+    }
+
     await bot.sendChatAction(chatId, "typing").catch(() => {});
 
     try {
@@ -925,6 +1116,59 @@ export async function startPersonalGptBot(): Promise<void> {
       logger.error({ err }, "Personal GPT Telegram turn failed");
       await bot.sendMessage(chatId, `⚠️ ${String(err instanceof Error ? err.message : err).slice(0, 300)}`).catch(() => {});
     }
+  });
+
+  /* ── Voice / audio handler ─────────────────────────────────────────────
+     Downloads the audio, base64-encodes it, and routes to the multimodal
+     voice model. Same allowed-chat / group-ephemeral rules as text. */
+  const handleVoiceLike = async (msg: TelegramBot.Message, fileId: string, format: "ogg" | "mp3" | "wav" | "m4a" | "webm") => {
+    const chatId = msg.chat.id;
+    if (!allowedChatIds.includes(chatId)) return;
+    const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
+    /* In groups, only react if user replied to one of our messages — voice
+       notes don't carry @mentions, so reply-to is the only safe trigger. */
+    if (isGroup && msg.reply_to_message?.from?.username !== pgBotUsername) return;
+
+    await bot.sendChatAction(chatId, "typing").catch(() => {});
+    try {
+      const url = await bot.getFileLink(fileId);
+      const fileRes = await fetch(url);
+      if (!fileRes.ok) throw new Error(`Couldn't download voice (HTTP ${fileRes.status})`);
+      const buf = Buffer.from(await fileRes.arrayBuffer());
+      /* Telegram caps voice notes at 1 minute / a few MB; this is comfortably
+         under what the model accepts inline. */
+      if (buf.byteLength > 20 * 1024 * 1024) throw new Error("Voice clip too large.");
+      const audioBase64 = buf.toString("base64");
+
+      const { reply } = await runPersonalGptVoiceTurn({
+        audioBase64,
+        audioFormat: format,
+        source: "telegram",
+        persist: !isGroup,
+      });
+      const sendOpts = isGroup ? { reply_to_message_id: msg.message_id } : undefined;
+      for (let i = 0; i < reply.length; i += 4000) {
+        await bot.sendMessage(chatId, reply.slice(i, i + 4000), sendOpts).catch(() => {});
+      }
+    } catch (err) {
+      logger.error({ err }, "Personal GPT voice turn failed");
+      await bot.sendMessage(chatId, `⚠️ ${String(err instanceof Error ? err.message : err).slice(0, 300)}`).catch(() => {});
+    }
+  };
+
+  bot.on("voice", (msg) => {
+    if (msg.voice?.file_id) void handleVoiceLike(msg, msg.voice.file_id, "ogg");
+  });
+  bot.on("audio", (msg) => {
+    if (!msg.audio?.file_id) return;
+    /* Best-effort format pick from MIME type. Most uploads are mp3 or m4a. */
+    const mime = msg.audio.mime_type ?? "";
+    const fmt: "mp3" | "m4a" | "wav" | "ogg" =
+      /mp3|mpeg/i.test(mime) ? "mp3" :
+      /m4a|mp4|aac/i.test(mime) ? "m4a" :
+      /wav/i.test(mime) ? "wav" :
+      "ogg";
+    void handleVoiceLike(msg, msg.audio.file_id, fmt);
   });
 }
 
