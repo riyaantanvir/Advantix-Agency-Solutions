@@ -322,6 +322,7 @@ const GENERAL_DEFAULTS: Record<string, string> = {
   google_analytics_id:  "",
   maintenance_mode:     "false",
   maintenance_message:  "We're performing scheduled maintenance. We'll be back shortly.",
+  maintenance_live_at:  "",
 };
 
 async function getGeneralSettings() {
@@ -350,6 +351,7 @@ async function getGeneralSettings() {
     googleAnalyticsId:  map.google_analytics_id,
     maintenanceMode:    map.maintenance_mode === "true",
     maintenanceMessage: map.maintenance_message,
+    maintenanceLiveAt:  map.maintenance_live_at || "",
   };
 }
 
@@ -383,6 +385,7 @@ router.put("/admin/settings/general", requireAdmin, async (req, res) => {
     googleAnalyticsId:  "google_analytics_id",
     maintenanceMode:    "maintenance_mode",
     maintenanceMessage: "maintenance_message",
+    maintenanceLiveAt:  "maintenance_live_at",
   };
   for (const [jsKey, dbKey] of Object.entries(map)) {
     if (body[jsKey] !== undefined) {

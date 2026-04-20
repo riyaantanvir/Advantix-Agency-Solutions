@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect } from "react";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
@@ -28,9 +28,40 @@ function ToolGuard({ slug, children }: { slug: string; children: React.ReactNode
   return <>{children}</>;
 }
 
+function CountdownTimer({ targetMs }: { targetMs: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const diff = Math.max(0, targetMs - now);
+  const days = Math.floor(diff / 86_400_000);
+  const hours = Math.floor((diff % 86_400_000) / 3_600_000);
+  const minutes = Math.floor((diff % 3_600_000) / 60_000);
+  const seconds = Math.floor((diff % 60_000) / 1000);
+  const Box = ({ value, label }: { value: number; label: string }) => (
+    <div className="flex flex-col items-center">
+      <div className="min-w-[68px] sm:min-w-[88px] px-3 py-3 sm:py-4 rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 border border-primary/30 backdrop-blur-sm shadow-lg shadow-primary/5">
+        <div className="text-3xl sm:text-5xl font-bold tabular-nums bg-gradient-to-b from-foreground to-foreground/70 bg-clip-text text-transparent">
+          {String(value).padStart(2, "0")}
+        </div>
+      </div>
+      <div className="text-[10px] sm:text-xs uppercase tracking-widest text-muted-foreground mt-2 font-medium">{label}</div>
+    </div>
+  );
+  return (
+    <div className="flex items-center justify-center gap-2 sm:gap-3">
+      <Box value={days} label="Days" />
+      <Box value={hours} label="Hours" />
+      <Box value={minutes} label="Minutes" />
+      <Box value={seconds} label="Seconds" />
+    </div>
+  );
+}
+
 function MaintenanceGate({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { data } = useQuery<{ maintenanceMode: boolean; maintenanceMessage: string; siteName: string }>({
+  const { data } = useQuery<{ maintenanceMode: boolean; maintenanceMessage: string; siteName: string; maintenanceLiveAt: string }>({
     queryKey: ["general-settings"],
     queryFn: () => fetch("/api/settings/general").then(r => r.ok ? r.json() : null),
     staleTime: 60_000,
@@ -39,15 +70,56 @@ function MaintenanceGate({ children }: { children: React.ReactNode }) {
   const path = location.split("?")[0].replace(/\/$/, "") || "/";
   const bypass = path === "/login" || path === "/reset-password";
   if (data?.maintenanceMode && !bypass) {
+    const siteName = data.siteName || "Advantix";
+    const liveTs = data.maintenanceLiveAt ? new Date(data.maintenanceLiveAt).getTime() : 0;
+    const hasCountdown = liveTs > 0 && !Number.isNaN(liveTs) && liveTs > Date.now();
+    const liveDate = liveTs > 0 ? new Date(liveTs) : null;
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background px-6">
-        <div className="max-w-md w-full text-center space-y-6">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center">
-            <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8 text-amber-400" stroke="currentColor" strokeWidth="2"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" /></svg>
+      <div className="relative min-h-screen flex items-center justify-center bg-background px-6 py-12 overflow-hidden">
+        {/* glow background */}
+        <div className="pointer-events-none absolute inset-0 -z-10">
+          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full bg-primary/15 blur-3xl" />
+          <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-amber-500/10 blur-3xl" />
+        </div>
+
+        <div className="max-w-2xl w-full text-center space-y-7">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-xs font-semibold uppercase tracking-widest text-amber-400">
+            <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" /><span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" /></span>
+            Under Maintenance
           </div>
-          <h1 className="text-2xl font-bold text-foreground">{data.siteName || "Advantix"} — Under Maintenance</h1>
-          <p className="text-muted-foreground whitespace-pre-line">{data.maintenanceMessage || "We'll be back shortly."}</p>
-          <p className="text-xs text-muted-foreground/70">Thanks for your patience.</p>
+
+          <h1 className="text-4xl sm:text-6xl font-bold tracking-tight text-foreground">
+            We're <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">Building</span> Something Better
+          </h1>
+
+          <p className="text-base sm:text-lg text-muted-foreground whitespace-pre-line max-w-xl mx-auto leading-relaxed">
+            {data.maintenanceMessage || `${siteName} is performing scheduled maintenance. We'll be back shortly.`}
+          </p>
+
+          {hasCountdown && (
+            <div className="space-y-4 pt-4">
+              <p className="text-sm text-muted-foreground">
+                {siteName} will be live in
+              </p>
+              <CountdownTimer targetMs={liveTs} />
+              {liveDate && (
+                <p className="text-xs text-muted-foreground/80 pt-2">
+                  Estimated live time:{" "}
+                  <span className="text-foreground/90 font-medium">
+                    {liveDate.toLocaleString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                </p>
+              )}
+            </div>
+          )}
+
+          {liveTs > 0 && !hasCountdown && (
+            <p className="text-sm text-primary font-medium pt-2">We should be back online any moment now — try refreshing.</p>
+          )}
+
+          <div className="pt-6 text-xs text-muted-foreground/70">
+            Thanks for your patience. — Team {siteName}
+          </div>
         </div>
       </div>
     );

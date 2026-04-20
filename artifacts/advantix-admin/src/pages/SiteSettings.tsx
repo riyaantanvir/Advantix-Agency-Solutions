@@ -16,7 +16,7 @@ type GeneralSettings = {
   contactEmail: string; contactPhone: string; contactAddress: string;
   twitter: string; linkedin: string; facebook: string; instagram: string;
   metaDescription: string; googleAnalyticsId: string;
-  maintenanceMode: boolean; maintenanceMessage: string;
+  maintenanceMode: boolean; maintenanceMessage: string; maintenanceLiveAt: string;
 };
 
 const GENERAL_DEFAULTS: GeneralSettings = {
@@ -26,6 +26,7 @@ const GENERAL_DEFAULTS: GeneralSettings = {
   metaDescription: "Advantix Digital — a full-service digital agency.",
   googleAnalyticsId: "", maintenanceMode: false,
   maintenanceMessage: "We're performing scheduled maintenance. We'll be back shortly.",
+  maintenanceLiveAt: "",
 };
 
 /* ─── Reusable input component ──────────────────────────── */
@@ -310,6 +311,32 @@ export default function SiteSettings() {
               )}
               <Field label="Maintenance Message">
                 <textarea value={gen.maintenanceMessage} onChange={e => setG("maintenanceMessage", e.target.value)} rows={2} placeholder="We'll be back shortly…" className={`${inputCls} resize-none`} />
+              </Field>
+              <Field label="Site Goes Live At (optional — shows a countdown)">
+                <input
+                  type="datetime-local"
+                  value={(() => {
+                    if (!gen.maintenanceLiveAt) return "";
+                    const d = new Date(gen.maintenanceLiveAt);
+                    if (Number.isNaN(d.getTime())) return "";
+                    /* Format as YYYY-MM-DDTHH:mm in admin's local TZ for the input control */
+                    const pad = (n: number) => String(n).padStart(2, "0");
+                    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                  })()}
+                  onChange={e => {
+                    const v = e.target.value;
+                    if (!v) { setG("maintenanceLiveAt", ""); return; }
+                    /* datetime-local is timezone-less wall time → interpret in admin's
+                       local TZ then store as absolute UTC ISO so all viewers worldwide
+                       count down to the same moment. */
+                    const iso = new Date(v).toISOString();
+                    setG("maintenanceLiveAt", iso);
+                  }}
+                  className={inputCls}
+                />
+                <p className="text-[11px] text-muted-foreground mt-1.5">
+                  Pick the exact date &amp; time the site will be back online (in your local timezone). Visitors will see a live countdown. Leave empty to hide the timer.
+                </p>
               </Field>
               <SaveBtn onClick={() => genSave.mutate()} pending={genSave.isPending} />
             </div>
