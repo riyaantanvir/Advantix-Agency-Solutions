@@ -1023,6 +1023,136 @@ export async function runPersonalGptTurnStream(
   }
 }
 
+/* ── Auto-react (mood-aware emoji reactions on Telegram) ──────────────────
+   Telegram's Bot API allows reacting to a message with one of a fixed set of
+   "free" emojis. We let the cheap text model pick ONE emoji that fits the
+   mood/intent of the user's message — informed by what we already know about
+   them (personality summary), so reactions get more "you" over time. The model
+   may also reply with NONE when no reaction fits (e.g. a neutral question). */
+
+const TELEGRAM_FREE_REACTIONS = [
+  "👍", "👎", "❤", "🔥", "🥰", "👏", "😁", "🤔", "🤯", "😱",
+  "🤬", "😢", "🎉", "🤩", "🤮", "💩", "🙏", "👌", "🕊", "🤡",
+  "🥱", "🥴", "😍", "🐳", "❤‍🔥", "🌚", "🌭", "💯", "🤣", "⚡",
+  "🍌", "🏆", "💔", "🤨", "😐", "🍓", "🍾", "💋", "🖕", "😈",
+  "😴", "😭", "🤓", "👻", "👨‍💻", "👀", "🎃", "🙈", "😇", "😨",
+  "🤝", "✍", "🤗", "🫡", "🎅", "🎄", "☃", "💅", "🤪", "🗿",
+  "🆒", "💘", "🙉", "🦄", "😘", "💊", "🙊", "😎", "👾", "🤷‍♂",
+  "🤷", "🤷‍♀", "😡",
+];
+const REACTION_SET = new Set(TELEGRAM_FREE_REACTIONS);
+
+/**
+ * Ask the cheap text model to pick ONE Telegram-allowed emoji that an
+ * attentive personal assistant would react to this message with — given
+ * what we already know about the user. Returns null if the model says NONE
+ * or returns something unusable. Hard-capped to ~150ms-ish budget by the
+ * tiny prompt and `max_tokens: 8`.
+ */
+async function pickReaction(text: string, settings: { personality: Personality }): Promise<string | null> {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > 1500) return null;
+  const apiKey = await getOpenRouterKey();
+  if (!apiKey) return null;
+
+  const personalitySnippet = renderPersonality(settings.personality).slice(0, 600);
+
+  const sys = [
+    "You react to a user's chat message with ONE emoji, like an attentive personal assistant.",
+    "Pick from EXACTLY this set (Telegram free reactions):",
+    TELEGRAM_FREE_REACTIONS.join(" "),
+    "",
+    "Rules:",
+    "- Output only the single emoji character. No words, no quotes, no punctuation.",
+    "- If no reaction fits (neutral question, casual ack, command, code dump), output NONE.",
+    "- Match the message MOOD first (joy=🎉/🥰, agreement=👍, fire/excitement=🔥, sad=😢, frustrated=😡/🤬, gratitude=🙏, funny=🤣, love=❤, mind-blown=🤯, salute=🫡, etc).",
+    "- Use what you know about the user to make the reaction feel personal:",
+    personalitySnippet || "(no profile yet)",
+  ].join("\n");
+
+  try {
+    const res = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "HTTP-Referer": "https://advantix.digital",
+        "X-Title": "Advantix Personal GPT (reaction)",
+      },
+      body: JSON.stringify({
+        model: EXTRACT_MODEL,
+        max_tokens: 8,
+        temperature: 0.4,
+        messages: [
+          { role: "system", content: sys },
+          { role: "user", content: trimmed.slice(0, 1500) },
+        ],
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+    const raw = (data.choices?.[0]?.message?.content ?? "").trim();
+    if (!raw || /^none$/i.test(raw)) return null;
+
+    /* Take the first grapheme-ish chunk and check it against the allowlist.
+       Fall back to scanning the response for any allowed emoji. */
+    const direct = Array.from(raw)[0];
+    if (direct && REACTION_SET.has(direct)) return direct;
+    for (const e of TELEGRAM_FREE_REACTIONS) {
+      if (raw.includes(e)) return e;
+    }
+    return null;
+  } catch (err) {
+    logger.warn({ err }, "Personal GPT: pickReaction failed");
+    return null;
+  }
+}
+
+/**
+ * Set a single emoji reaction on a Telegram message. node-telegram-bot-api
+ * doesn't expose this typed method on every version, so we hit the raw HTTP
+ * endpoint. Failures are swallowed — a missing reaction must never break the
+ * primary reply.
+ */
+async function setTelegramReaction(token: string, chatId: number, messageId: number, emoji: string): Promise<void> {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/setMessageReaction`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        reaction: [{ type: "emoji", emoji }],
+        is_big: false,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      logger.debug({ status: res.status, body: body.slice(0, 200) }, "Personal GPT: setMessageReaction non-OK");
+    }
+  } catch (err) {
+    logger.debug({ err }, "Personal GPT: setMessageReaction threw");
+  }
+}
+
+/**
+ * Fire-and-forget: pick a mood-appropriate reaction for `text` and apply it
+ * to `messageId` in `chatId`. Designed to be called WITHOUT await — the model
+ * call + HTTP round-trip happens in the background while the main reply is
+ * being generated.
+ */
+function fireAutoReaction(token: string, chatId: number, messageId: number, text: string, settings: { personality: Personality }): void {
+  void (async () => {
+    try {
+      const emoji = await pickReaction(text, settings);
+      if (!emoji) return;
+      await setTelegramReaction(token, chatId, messageId, emoji);
+    } catch (err) {
+      logger.debug({ err }, "Personal GPT: fireAutoReaction failed");
+    }
+  })();
+}
+
 /* ── Telegram bot ───────────────────────────────────────────────────────── */
 
 let pgBotInstance: TelegramBot | null = null;
@@ -1280,6 +1410,13 @@ export async function startPersonalGptBot(): Promise<void> {
 
     await bot.sendChatAction(chatId, "typing").catch(() => {});
 
+    /* Auto-react in parallel with reply generation. Personality-aware so the
+       reaction style evolves as the AI learns more about the user. Only in
+       DMs — group reactions could be noisy / misread by other members. */
+    if (!isGroup && settings.telegramBotToken) {
+      fireAutoReaction(settings.telegramBotToken, chatId, msg.message_id, text, settings);
+    }
+
     try {
       /* Group turns are EPHEMERAL — they don't read or write personal history,
          and they don't feed the personality extractor. This keeps other group
@@ -1317,7 +1454,7 @@ export async function startPersonalGptBot(): Promise<void> {
       if (buf.byteLength > 20 * 1024 * 1024) throw new Error("Voice clip too large.");
       const audioBase64 = buf.toString("base64");
 
-      const { reply } = await runPersonalGptVoiceTurn({
+      const { reply, transcript } = await runPersonalGptVoiceTurn({
         audioBase64,
         audioFormat: format,
         source: "telegram",
@@ -1326,6 +1463,11 @@ export async function startPersonalGptBot(): Promise<void> {
       const sendOpts = isGroup ? { reply_to_message_id: msg.message_id } : undefined;
       for (let i = 0; i < reply.length; i += 4000) {
         await bot.sendMessage(chatId, reply.slice(i, i + 4000), sendOpts).catch(() => {});
+      }
+      /* React to the voice note based on what they actually said. Same DM-only
+         rule as text — group voice notes don't get reactions. */
+      if (!isGroup && transcript && settings.telegramBotToken) {
+        fireAutoReaction(settings.telegramBotToken, chatId, msg.message_id, transcript, settings);
       }
     } catch (err) {
       logger.error({ err }, "Personal GPT voice turn failed");
