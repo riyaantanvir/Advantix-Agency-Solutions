@@ -414,9 +414,9 @@ async function extractPersonalityDelta(userText: string, apiKey: string): Promis
 const IMAGE_INTENT_RE = new RegExp(
   [
     "^/(image|img|draw|picture|chobi)\\b",
-    "\\b(generate|create|make|draw|design|render)\\s+(an?|the)?\\s*(image|picture|photo|illustration|drawing|art|logo|poster|mockup)",
+    "\\b(generate|create|make|draw|design|render)\\s+(?:\\w+\\s+){0,5}?(image|picture|photo|illustration|drawing|art|logo|poster|mockup)",
     "\\b(image|picture|photo|chobi)\\s+(banao|banaye?\\s*do|generate|create|make|draw)",
-    "\\b(banao|banaye?\\s*do|create|generate|draw|design)\\s+(ekta|aekta|akta|ekti|the|an?)?\\s*(image|picture|photo|chobi|illustration|logo|poster|design)",
+    "\\b(banao|banaye?\\s*do|create|generate|draw|design)\\s+(?:\\w+\\s+){0,5}?(image|picture|photo|chobi|illustration|logo|poster|design)",
   ].join("|"),
   "i",
 );
