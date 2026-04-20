@@ -113,16 +113,45 @@ export default function ScreenRecorder() {
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const elapsedRef = useRef(0);
+  const blobUrlRef = useRef<string | null>(null);
+  /* WakeLockSentinel is widely supported but typings vary; use any */
+  const wakeLockRef = useRef<any>(null);
+  /* Guards against state updates / object URLs created in async media callbacks
+     (onstop, onerror, awaited wakeLock) firing after the component unmounts. */
+  const mountedRef = useRef(true);
 
   useEffect(() => {
     if (!loading && !user) navigate("/login");
   }, [user, loading]);
 
+  /* Unmount cleanup — stop recorder, stream, timer, wake lock; revoke latest blob URL.
+     Detach onstop/onerror first so the blob URL created in onstop after unmount
+     does not leak (we cannot revoke what we never see). */
   useEffect(() => () => {
-    stopTimer();
+    mountedRef.current = false;
+    if (timerRef.current) clearInterval(timerRef.current);
+    try {
+      const rec = recorderRef.current;
+      if (rec) {
+        rec.ondataavailable = null;
+        rec.onstop = null;
+        rec.onerror = null;
+        if (rec.state !== "inactive") rec.stop();
+      }
+    } catch { /* no-op */ }
     streamRef.current?.getTracks().forEach(t => t.stop());
-    if (blobUrl) URL.revokeObjectURL(blobUrl);
+    streamRef.current = null;
+    wakeLockRef.current?.release?.().catch(() => {});
+    wakeLockRef.current = null;
+    if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
   }, []);
+
+  /* Keep ref in sync so onstop sees the real final elapsed (no setState trick) */
+  useEffect(() => { elapsedRef.current = elapsed; }, [elapsed]);
+
+  /* Keep blobUrl ref in sync for the unmount cleanup above */
+  useEffect(() => { blobUrlRef.current = blobUrl; }, [blobUrl]);
 
   const stopTimer = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -130,9 +159,15 @@ export default function ScreenRecorder() {
 
   const stopRecording = useCallback(() => {
     stopTimer();
-    recorderRef.current?.stop();
+    try {
+      if (recorderRef.current && recorderRef.current.state !== "inactive") {
+        recorderRef.current.stop();
+      }
+    } catch { /* no-op */ }
     streamRef.current?.getTracks().forEach(t => t.stop());
     streamRef.current = null;
+    wakeLockRef.current?.release?.().catch(() => {});
+    wakeLockRef.current = null;
   }, []);
 
   const startTimer = useCallback(() => {
@@ -181,30 +216,81 @@ export default function ScreenRecorder() {
     const mime = getBestMimeType();
     setMimeType(mime);
 
-    const recorder = new MediaRecorder(stream, {
-      mimeType: mime || undefined,
-      videoBitsPerSecond: 1_200_000,
-    });
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(stream, {
+        mimeType: mime || undefined,
+        videoBitsPerSecond: 1_200_000,
+        audioBitsPerSecond: 128_000,
+      });
+    } catch (err) {
+      stream.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+      setState("idle");
+      setError("Your browser could not start the recorder. Try the latest Chrome or Edge.");
+      console.error("MediaRecorder constructor failed:", err);
+      return;
+    }
 
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    recorder.onerror = (e: Event) => {
+      console.error("MediaRecorder error:", e);
+      if (mountedRef.current) {
+        setError("Recorder hit an error and stopped. Your recording up to this point is saved below if any.");
+      }
+      stopRecording();
+    };
     recorder.onstop = () => {
-      setState("stopped");
       const recorded = new Blob(chunksRef.current, { type: mime || "video/webm" });
+      /* Save server-side telemetry regardless of mount state */
+      toolsApi.recordings.save(elapsedRef.current).catch(() => {});
+      if (!mountedRef.current) {
+        /* Component unmounted while recorder was stopping — drop the blob to
+           avoid leaking a never-revoked object URL. */
+        chunksRef.current = [];
+        return;
+      }
+      const url = URL.createObjectURL(recorded);
+      setState("stopped");
       setBlob(recorded);
-      setBlobUrl(URL.createObjectURL(recorded));
-      setElapsed(prev => {
-        toolsApi.recordings.save(prev).catch(() => {});
-        return prev;
-      });
+      setBlobUrl(url);
     };
     stream.getVideoTracks()[0].onended = () => {
       if (recorder.state !== "inactive") stopRecording();
     };
 
-    recorder.start(1000);
+    /* Start the recorder FIRST so an early track-ended (or wake-lock prompt)
+       can't race with start(). Wrap in try/catch in case the stream became
+       inactive between getDisplayMedia and now. */
+    try {
+      recorder.start(1000);
+    } catch (err) {
+      console.error("MediaRecorder.start failed:", err);
+      stream.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+      setState("idle");
+      setError("Could not start recording. The selected source may have been closed — please try again.");
+      return;
+    }
     recorderRef.current = recorder;
     setState("recording");
     startTimer();
+
+    /* Request a screen wake lock so the OS does not throttle / sleep mid-recording.
+       Fire-and-forget so it never blocks recording start. */
+    (async () => {
+      try {
+        const wl = (navigator as any).wakeLock;
+        if (wl?.request && mountedRef.current) {
+          const sentinel = await wl.request("screen");
+          if (mountedRef.current && recorderRef.current?.state === "recording") {
+            wakeLockRef.current = sentinel;
+          } else {
+            sentinel.release?.().catch(() => {});
+          }
+        }
+      } catch { /* no-op */ }
+    })();
   };
 
   const handleDownloadOriginal = () => {
