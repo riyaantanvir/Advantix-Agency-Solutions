@@ -767,6 +767,86 @@ export function startReminderScheduler(
   logger.info(`Personal GPT reminder scheduler started (poll every ${REMINDER_POLL_INTERVAL_MS / 1000}s, default chat ${defaultChatId})`);
 }
 
+/* ── Note-save intent ─────────────────────────────────────────────────────
+   Natural-language note saving so the user never has to type the
+   `/remember <category> <title> | <body>` ritual. Same pattern as
+   reminders: cheap regex pre-filter → small LLM extractor returning
+   strict JSON. Detects English + Banglish phrasings like:
+     "save this as a note"
+     "remember Sajjad is the CTO of Foo Ltd"
+     "eta save kore rakho"
+     "mone rakho — Rana er number 01711..."
+     "note kore rakho: Tuesday meeting moved to 5pm"  */
+export async function extractNoteIntent(userText: string, apiKey: string): Promise<{
+  category: NoteCategory;
+  title: string;
+  body: string;
+} | null> {
+  const text = userText.trim();
+  if (!text) return null;
+
+  /* Cheap pre-filter to skip the LLM round-trip for normal chat. */
+  const looksLikeNote = /\b(save|remember|note|jot|store|keep|memori[sz]e|don'?t forget)\b/i.test(text)
+    || /\bmone\s*rakh/i.test(text)            // "mone rakho"
+    || /\bmne\s*rakh/i.test(text)
+    || /\bnote\s*kor/i.test(text)             // "note kore rakho"
+    || /\bsave\s*kor/i.test(text)             // "save kore rakho"
+    || /\blikhe\s*rakh/i.test(text)           // "likhe rakho"
+    || /\beta\s+(save|note|mone)/i.test(text);
+  if (!looksLikeNote) return null;
+
+  const sysPrompt =
+    `You decide whether the user is asking to SAVE something to a long-term notes/CRM database. ` +
+    `Distinguish "save this fact" (yes) from "set a reminder for later" (no — that's a separate system) ` +
+    `and from regular questions/chat (no). The user may write in English, Bengali, or Banglish.\n` +
+    `Pick the best CATEGORY from: contact, deal, project, task, date, note.\n` +
+    `Reply with STRICT JSON only, no markdown:\n` +
+    `  {"isNote": true, "category": "<one of the above>", "title": "<≤80 char headline>", "body": "<full details, may be empty>"}\n` +
+    `  or {"isNote": false}\n` +
+    `Examples:\n` +
+    `  "save Sajjad as a contact, CTO at Foo Ltd, +8801711xxxxxxx" → {"isNote":true,"category":"contact","title":"Sajjad","body":"CTO at Foo Ltd, +8801711xxxxxxx"}\n` +
+    `  "mone rakho Rana er number 01711xxxxxxx" → {"isNote":true,"category":"contact","title":"Rana","body":"01711xxxxxxx"}\n` +
+    `  "note kore rakho: Bookcafe deal closes Friday" → {"isNote":true,"category":"deal","title":"Bookcafe deal closes Friday","body":""}\n` +
+    `  "remind me at 4pm" → {"isNote":false}\n` +
+    `  "what's the weather" → {"isNote":false}`;
+
+  const res = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://advantix.digital",
+    },
+    body: JSON.stringify({
+      model: EXTRACT_MODEL,
+      max_tokens: 300,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: sysPrompt },
+        { role: "user", content: text.slice(0, 2000) },
+      ],
+    }),
+  });
+  if (!res.ok) { logger.warn({ status: res.status }, "Note extractor HTTP error"); return null; }
+  const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+  const raw = data.choices?.[0]?.message?.content?.trim();
+  if (!raw) return null;
+  try {
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+    const parsed = JSON.parse(cleaned) as { isNote?: boolean; category?: string; title?: string; body?: string };
+    if (!parsed.isNote || !parsed.title?.trim()) return null;
+    return {
+      category: normalizeCategory(parsed.category),
+      title: parsed.title.trim().slice(0, 200),
+      body: (parsed.body ?? "").trim().slice(0, 4000),
+    };
+  } catch (err) {
+    logger.warn({ err, raw: raw.slice(0, 200) }, "Note extractor JSON parse failed");
+    return null;
+  }
+}
+
 /* Helper used by the bot handler to format an upcoming-reminders list. */
 export function formatRemindersList(reminders: Reminder[]): string {
   if (!reminders.length) return "No upcoming reminders. Just say something like _'remind me at 4pm about the meeting'_ to set one.";
@@ -1178,7 +1258,7 @@ function buildSystemPrompt(
     "## How to use the knowledge base",
     "- Treat saved contacts, deals, projects, tasks and dates as authoritative facts.",
     "- When the user asks something like \"who is X?\" or \"what's the status of Y?\", check the knowledge base first.",
-    "- If the user clearly tells you something worth remembering long-term (a person, a project, a deadline), suggest they save it with /remember in Telegram or via the Memory tab.",
+    "- If the user clearly tells you something worth remembering long-term (a person, a project, a deadline), just confirm naturally — e.g. 'Saved!' or 'Got it, I'll remember.' The system will auto-save it to the notes database; you do NOT need to ask the user to run /remember themselves.",
   ].join("\n");
 }
 
@@ -1911,6 +1991,36 @@ export async function startPersonalGptBot(): Promise<void> {
         }
       } catch (err) {
         logger.warn({ err }, "Reminder intent detection failed (falling back to normal chat)");
+      }
+    }
+
+    /* Note-save intent — same idea as reminders. If the user is asking to
+       save a person/deal/project/task/date/note to long-term memory, we
+       auto-create the row and confirm. DM only — group note saves would
+       leak business context to other group members. */
+    if (!isGroup) {
+      try {
+        const apiKeyForNote = await getOpenRouterKey();
+        if (apiKeyForNote) {
+          const noteIntent = await extractNoteIntent(text, apiKeyForNote);
+          if (noteIntent) {
+            const note = await addNote({
+              category: noteIntent.category,
+              title: noteIntent.title,
+              body: noteIntent.body,
+            });
+            const bodyLine = note.body ? `\n_${note.body.slice(0, 200)}${note.body.length > 200 ? "…" : ""}_` : "";
+            await bot.sendMessage(chatId,
+              `📝 Saved as *${note.category}* #${note.id}: *${note.title}*${bodyLine}\n\n_Open the Memory tab in admin to edit/pin/delete._`,
+              { parse_mode: "Markdown", reply_to_message_id: msg.message_id }
+            ).catch(() => {});
+            await appendTurn("user", text, "telegram").catch(() => {});
+            await appendTurn("assistant", `[Note saved — ${note.category}: ${note.title}]`, "telegram").catch(() => {});
+            return;
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, "Note intent detection failed (falling back to normal chat)");
       }
     }
 
