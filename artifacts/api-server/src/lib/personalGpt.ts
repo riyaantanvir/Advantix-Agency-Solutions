@@ -728,10 +728,19 @@ export function looksLikeReminderShape(text: string): boolean {
     || /\b(am|pm|এএম|পিএম|এ\.এম|পি\.এম)\b/i.test(text);
 }
 
-export async function extractReminderIntent(userText: string, apiKey: string): Promise<{
-  remindAt: string;
-  message: string;
-} | null> {
+/* Discriminated result so call sites can distinguish:
+   - null              → not a reminder request, let normal chat handle it
+   - { kind: "ok" }    → success, create the row
+   - { kind: "unparseable" } → LLM thought it was a reminder but couldn't
+                              lock a future time (past time, ambiguous, etc).
+                              Call site should show a clarifying message
+                              instead of letting the chat model hallucinate.
+*/
+export type ReminderIntentResult =
+  | { kind: "ok"; remindAt: string; message: string }
+  | { kind: "unparseable" };
+
+export async function extractReminderIntent(userText: string, apiKey: string): Promise<ReminderIntentResult | null> {
   const text = userText.trim();
   if (!text) return null;
 
@@ -793,7 +802,9 @@ export async function extractReminderIntent(userText: string, apiKey: string): P
   const raw = data.choices?.[0]?.message?.content?.trim();
   if (!raw) {
     logger.warn({ text: text.slice(0, 200) }, "Reminder extractor: empty LLM response");
-    return null;
+    /* Empty response after prefilter hit — treat as unparseable rather than
+       silent fall-through, since the prefilter thought there was intent. */
+    return { kind: "unparseable" };
   }
   logger.info({ raw: raw.slice(0, 400), text: text.slice(0, 200), nowLocal }, "Reminder extractor: raw LLM response");
   try {
@@ -801,23 +812,31 @@ export async function extractReminderIntent(userText: string, apiKey: string): P
        not to. Strip a single leading/trailing fence pair before parsing. */
     const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
     const parsed = JSON.parse(cleaned) as { isReminder?: boolean; remindAt?: string; message?: string };
-    if (!parsed.isReminder || !parsed.remindAt || !parsed.message) {
-      logger.warn({ parsed, text: text.slice(0, 200) }, "Reminder extractor: LLM said not a reminder OR missing fields");
+    /* Model explicitly said "not a reminder" — let normal chat handle it. */
+    if (!parsed.isReminder) {
+      logger.info({ text: text.slice(0, 120) }, "Reminder extractor: LLM said not a reminder");
       return null;
+    }
+    /* From here on, the model THINKS it's a reminder. If we can't lock a
+       valid future time, return "unparseable" so the call site can show a
+       clarifying message instead of pretending nothing happened. */
+    if (!parsed.remindAt || !parsed.message) {
+      logger.warn({ parsed, text: text.slice(0, 200) }, "Reminder extractor: missing remindAt or message");
+      return { kind: "unparseable" };
     }
     const when = new Date(parsed.remindAt);
     if (isNaN(when.getTime())) {
       logger.warn({ remindAt: parsed.remindAt, raw: raw.slice(0, 200) }, "Reminder extractor: invalid date returned");
-      return null;
+      return { kind: "unparseable" };
     }
     /* Reject reminders in the past (model occasionally hallucinates) — but
        allow a 60s grace window for "in 30 seconds" type requests. */
     if (when.getTime() < Date.now() - 60_000) {
       logger.warn({ remindAt: when.toISOString(), now: new Date().toISOString(), text: text.slice(0, 200) }, "Reminder extractor: rejected past time");
-      return null;
+      return { kind: "unparseable" };
     }
     logger.info({ remindAt: when.toISOString(), message: parsed.message.slice(0, 80) }, "Reminder extractor: parsed intent");
-    return { remindAt: when.toISOString(), message: parsed.message.trim().slice(0, MAX_REMINDER_TEXT) };
+    return { kind: "ok", remindAt: when.toISOString(), message: parsed.message.trim().slice(0, MAX_REMINDER_TEXT) };
   } catch (err) {
     logger.warn({ err, raw: raw.slice(0, 200) }, "Reminder extractor JSON parse failed");
     return null;
@@ -2098,7 +2117,7 @@ export async function startPersonalGptBot(): Promise<void> {
         const apiKeyForReminder = await getOpenRouterKey();
         if (apiKeyForReminder) {
           const intent = await extractReminderIntent(text, apiKeyForReminder);
-          if (intent) {
+          if (intent?.kind === "ok") {
             const r = await createReminder({
               message: intent.message,
               remindAt: intent.remindAt,
@@ -2115,11 +2134,10 @@ export async function startPersonalGptBot(): Promise<void> {
             await appendTurn("assistant", `[Reminder set for ${formatLocalTime(r.remindAt)}: ${r.message}]`, "telegram").catch(() => {});
             return;
           }
-          /* Prefilter said "looks like reminder" but extractor couldn't lock
-             a future time (past time, ambiguous phrasing, parse fail).
-             Tell the user explicitly so they don't trust a hallucinated
-             "set kore dilam" from the chat model. */
-          if (looksLikeReminderShape(text)) {
+          /* Only show the "couldn't parse" fallback if the LLM ALSO thought
+             this was a reminder request — otherwise (e.g. weather questions
+             that happened to contain "ajke") fall through to normal chat. */
+          if (intent?.kind === "unparseable") {
             await bot.sendMessage(chatId,
               `⏰ Reminder ta set korte parlam na — time tah past e chole geche ba bujhte parinai.\n\n` +
               `_Try:_ \`5 minute pore\`, \`kal sokal 9 tay\`, \`bikel 4:30 e\`, or pick from admin panel.`,
@@ -2257,7 +2275,7 @@ export async function startPersonalGptBot(): Promise<void> {
           const apiKeyForIntent = await getOpenRouterKey();
           if (apiKeyForIntent) {
             const reminderIntent = await extractReminderIntent(transcript, apiKeyForIntent);
-            if (reminderIntent) {
+            if (reminderIntent?.kind === "ok") {
               const reminder = await createReminder({
                 message: reminderIntent.message,
                 remindAt: reminderIntent.remindAt,
@@ -2266,10 +2284,10 @@ export async function startPersonalGptBot(): Promise<void> {
               });
               const whenLocal = formatLocalTime(reminder.remindAt);
               actionReply = `🔔 Reminder #${reminder.id} set for *${whenLocal}*: _${reminder.message}_\n\n_Cancel anytime with_ \`/unremind ${reminder.id}\``;
-            } else if (looksLikeReminderShape(transcript)) {
-              /* Prefilter detected reminder intent but extractor couldn't lock
-                 a future time. Override the model's "set kore dilam"
-                 hallucination with an explicit failure message. */
+            } else if (reminderIntent?.kind === "unparseable") {
+              /* LLM affirmed reminder intent but couldn't lock a future time.
+                 Override the chat model's "set kore dilam" hallucination
+                 with an explicit failure message. */
               actionReply = `⏰ Reminder ta set korte parlam na — time tah past e chole geche ba bujhte parinai.\n\n` +
                 `_Try:_ \`5 minute pore\`, \`kal sokal 9 tay\`, \`bikel 4:30 e\`, or set from admin panel.`;
             } else {
