@@ -601,6 +601,22 @@ export async function listPendingReminders(): Promise<Reminder[]> {
   return r.rows.map(row => rowToReminder(row as Record<string, unknown>));
 }
 
+/* Admin view: pending reminders (all, future and overdue) plus recent
+   fired/cancelled ones from the last 24 hours so the user can verify that
+   chat-triggered reminders actually got created and fired. */
+export async function listRemindersForAdmin(): Promise<Reminder[]> {
+  const r = await db.execute(sql`
+    SELECT * FROM personal_gpt_reminders
+    WHERE status = 'pending'
+       OR (status IN ('sent','cancelled','failed') AND COALESCE(fired_at, created_at) > NOW() - INTERVAL '24 hours')
+    ORDER BY
+      CASE status WHEN 'pending' THEN 0 ELSE 1 END,
+      remind_at ASC
+    LIMIT 200
+  `);
+  return r.rows.map(row => rowToReminder(row as Record<string, unknown>));
+}
+
 export async function cancelReminder(id: number): Promise<boolean> {
   const r = await db.execute(sql`
     UPDATE personal_gpt_reminders SET status = 'cancelled' WHERE id = ${id} AND status = 'pending'
@@ -642,11 +658,15 @@ export async function extractReminderIntent(userText: string, apiKey: string): P
     || /mone\s*kor(ay)?\s*d(a|i)o/i.test(text)
     || /\bmone\s*koray\b/i.test(text)
     || /\bmne\s*koray\b/i.test(text)
-    || /\balert\b/i.test(text)
     || /\bagamikal\b/i.test(text)
     || /\bajke\b/i.test(text)
-    || /\bekhon\b/i.test(text)
-    || /\bporshu\b/i.test(text);
+    || /\bporshu\b/i.test(text)
+    /* Catch casual time-only phrasings like "5 min pore", "10 minute por",
+       "kal sokal 9 tay", "bikel 4 tay test" — common Banglish reminder
+       shapes that didn't include the "remind"/"alert" keyword. */
+    || /\b\d+\s*(min|minute|ghonta|hour|hr|sec|second|din|day)\s*(pore|por|later|after)\b/i.test(text)
+    || /\b(kal|kaal|aj|aaj|aajke|ajke|ekhon|akhon|sokal|bikal|bikel|raat|rat|dupur|sondha|shondha)\b/i.test(text)
+    || /\b\d{1,2}([:.]\d{2})?\s*(ta|tay|baje|baja|am|pm|a\.m|p\.m)\b/i.test(text);
   if (!looksLikeReminder) return null;
 
   const nowLocal = new Date().toLocaleString("en-US", {

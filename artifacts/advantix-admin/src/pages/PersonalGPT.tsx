@@ -1130,8 +1130,10 @@ function RemindersPanel({ toast }: { toast: ReturnType<typeof useToast>["toast"]
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-violet-400" />
-              <h2 className="text-sm font-semibold text-foreground">Pending reminders</h2>
-              <span className="text-xs text-muted-foreground">({reminders.length})</span>
+              <h2 className="text-sm font-semibold text-foreground">Reminders</h2>
+              <span className="text-xs text-muted-foreground">
+                ({reminders.filter(r => r.status === "pending").length} pending · last 24h)
+              </span>
             </div>
             <button
               onClick={() => qc.invalidateQueries({ queryKey: ["personal-gpt-reminders"] })}
@@ -1147,47 +1149,65 @@ function RemindersPanel({ toast }: { toast: ReturnType<typeof useToast>["toast"]
             </div>
           ) : reminders.length === 0 ? (
             <div className="text-center py-12 text-sm text-muted-foreground">
-              No pending reminders. Ask the bot on Telegram or add one above.
+              No reminders yet. Ask the bot on Telegram (e.g. <span className="text-foreground/80">"5 min pore mone koray dio"</span>) or add one above.
             </div>
           ) : (
             <ul className="divide-y divide-border">
               {reminders.map(r => {
-                const overdue = new Date(r.remindAt).getTime() < Date.now();
+                const isPending = r.status === "pending";
+                const overdue = isPending && new Date(r.remindAt).getTime() < Date.now();
+                const statusMeta: Record<string, { label: string; cls: string }> = {
+                  pending:   { label: "pending",   cls: "bg-violet-500/15 text-violet-300" },
+                  sent:      { label: "fired",     cls: "bg-emerald-500/15 text-emerald-300" },
+                  cancelled: { label: "cancelled", cls: "bg-secondary/60 text-muted-foreground" },
+                  failed:    { label: "failed",    cls: "bg-rose-500/15 text-rose-300" },
+                };
+                const meta = statusMeta[r.status] ?? statusMeta.pending;
                 return (
-                  <li key={r.id} className="py-3 flex items-start gap-3">
+                  <li key={r.id} className={cn("py-3 flex items-start gap-3", !isPending && "opacity-70")}>
                     <div className={cn(
                       "mt-0.5 w-8 h-8 rounded-md flex items-center justify-center shrink-0 border",
-                      overdue
-                        ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
-                        : "bg-violet-500/10 border-violet-500/20 text-violet-300"
+                      r.status === "sent"      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
+                      r.status === "cancelled" ? "bg-secondary/40 border-border text-muted-foreground" :
+                      r.status === "failed"    ? "bg-rose-500/10 border-rose-500/20 text-rose-400" :
+                      overdue                  ? "bg-amber-500/10 border-amber-500/20 text-amber-400" :
+                                                  "bg-violet-500/10 border-violet-500/20 text-violet-300"
                     )}>
                       <Bell className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm text-foreground break-words">{r.message}</div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span className={cn("px-1.5 py-0.5 rounded font-medium", meta.cls)}>{meta.label}</span>
                         <span className="flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           {formatDhaka(r.remindAt)}
                         </span>
-                        <span className={cn(
-                          "px-1.5 py-0.5 rounded",
-                          overdue ? "bg-amber-500/15 text-amber-300" : "bg-secondary/60 text-foreground/70"
-                        )}>
-                          {relativeTime(r.remindAt)}
-                        </span>
+                        {isPending && (
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded",
+                            overdue ? "bg-amber-500/15 text-amber-300" : "bg-secondary/60 text-foreground/70"
+                          )}>
+                            {relativeTime(r.remindAt)}
+                          </span>
+                        )}
+                        {!isPending && r.firedAt && (
+                          <span className="text-muted-foreground/70">{relativeTime(r.firedAt)}</span>
+                        )}
                         <span className="text-muted-foreground/70">via {r.source}</span>
                         <span className="text-muted-foreground/70">#{r.id}</span>
                       </div>
                     </div>
-                    <button
-                      onClick={() => cancel.mutate(r.id)}
-                      disabled={cancel.isPending}
-                      className="shrink-0 p-1.5 text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-colors"
-                      title="Cancel reminder"
-                    >
-                      <XCircle className="w-4 h-4" />
-                    </button>
+                    {isPending && (
+                      <button
+                        onClick={() => cancel.mutate(r.id)}
+                        disabled={cancel.isPending}
+                        className="shrink-0 p-1.5 text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-colors"
+                        title="Cancel reminder"
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                    )}
                   </li>
                 );
               })}

@@ -29,6 +29,7 @@ import {
   NOTE_CATEGORIES,
   createReminder,
   listPendingReminders,
+  listRemindersForAdmin,
   cancelReminder,
   type Personality,
 } from "../lib/personalGpt.js";
@@ -309,7 +310,7 @@ router.delete("/admin/personal-gpt/notes/:id", requireAdmin, async (req: Request
 /* ── Reminders ──────────────────────────────────────────────────────────── */
 router.get("/admin/personal-gpt/reminders", requireAdmin, async (_req: Request, res: Response) => {
   try {
-    const reminders = await listPendingReminders();
+    const reminders = await listRemindersForAdmin();
     res.json({ reminders });
   } catch (err) {
     logger.error({ err }, "Personal GPT: failed to list reminders");
