@@ -1180,7 +1180,7 @@ export async function runPersonalGptVoiceTurn(args: {
   audioFormat: "ogg" | "mp3" | "wav" | "m4a" | "webm";
   source: "telegram" | "web";
   persist: boolean;
-}): Promise<{ reply: string }> {
+}): Promise<{ reply: string; transcript: string | null }> {
   const settings = await loadSettings();
   if (!settings.enabled) throw new Error("Personal GPT is disabled in settings");
 
@@ -1226,7 +1226,7 @@ export async function runPersonalGptVoiceTurn(args: {
       })();
     }
   }
-  return { reply };
+  return { reply, transcript: transcript ?? null };
 }
 
 /* ── Chat ───────────────────────────────────────────────────────────────── */
@@ -2144,6 +2144,7 @@ export async function startPersonalGptBot(): Promise<void> {
          tends to reply "ok I set it!" without anything actually happening,
          so we run the real action and override the reply with a verifiable
          confirmation. DM only — group voice notes never auto-create rows. */
+      logger.info({ chatId, hasTranscript: !!transcript, transcriptPreview: transcript?.slice(0, 120) ?? null }, "Personal GPT voice turn finished");
       let actionReply: string | null = null;
       if (!isGroup && transcript) {
         try {
