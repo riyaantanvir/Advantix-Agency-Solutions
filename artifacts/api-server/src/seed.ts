@@ -375,6 +375,24 @@ export async function runMigrations(): Promise<void> {
       ON personal_gpt_recent (created_at DESC)
   `);
 
+  /* Permanent archive — every turn ever exchanged with Personal GPT, on web
+     or Telegram. Never pruned. Powers the "Insights" view in the admin so
+     the user can scroll back through their entire history with the AI and
+     see how it's learning over time. */
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS personal_gpt_archive (
+      id serial PRIMARY KEY,
+      role text NOT NULL,
+      content text NOT NULL,
+      source text NOT NULL DEFAULT 'web',
+      created_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_personal_gpt_archive_created_at
+      ON personal_gpt_archive (created_at DESC)
+  `);
+
   /* Structured CRM/knowledge notes — long-term memory the bot uses to know
      business context (contacts, deals, projects, tasks, dates, plain notes).
      Auto-injected into the system prompt so every reply stays informed. */

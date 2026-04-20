@@ -47,8 +47,8 @@ const MAX_TURNS_EACH = 6;
 const RECENT_ROWS_KEEP = MAX_TURNS_EACH * 2;
 
 /* Soft caps so a runaway personality doesn't blow up the system prompt. */
-const MAX_LIST_ITEMS = 30;
-const MAX_ITEM_LENGTH = 160;
+const MAX_LIST_ITEMS = 200;
+const MAX_ITEM_LENGTH = 280;
 const MAX_STYLE_LENGTH = 400;
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -192,9 +192,14 @@ export async function loadRecentTurns(): Promise<RecentTurn[]> {
 }
 
 async function appendTurn(role: "user" | "assistant", content: string, source: string): Promise<void> {
+  /* Dual-write: rolling window (recent) for cheap context lookups + permanent
+     archive (never pruned) so the user can view their entire history later. */
   await db.execute(sql`
     INSERT INTO personal_gpt_recent (role, content, source) VALUES (${role}, ${content}, ${source})
   `);
+  await db.execute(sql`
+    INSERT INTO personal_gpt_archive (role, content, source) VALUES (${role}, ${content}, ${source})
+  `).catch(err => logger.warn({ err }, "Personal GPT: failed to append archive turn"));
   /* Prune anything beyond the rolling window. The id-desc OFFSET trick keeps
      the most recent N rows; everything older is deleted in one statement. */
   await db.execute(sql`
@@ -203,6 +208,97 @@ async function appendTurn(role: "user" | "assistant", content: string, source: s
       SELECT id FROM personal_gpt_recent ORDER BY id DESC LIMIT ${RECENT_ROWS_KEEP}
     )
   `);
+}
+
+export type ArchiveTurn = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  source: string;
+  createdAt: string;
+};
+
+export type ArchiveStats = {
+  total: number;
+  userTurns: number;
+  assistantTurns: number;
+  bySource: Record<string, number>;
+  firstAt: string | null;
+  lastAt: string | null;
+};
+
+/**
+ * Paginated browse of the permanent archive. Newest first. Optional `search`
+ * does a case-insensitive substring match against `content`.
+ */
+export async function loadArchive(opts: {
+  limit?: number;
+  offset?: number;
+  search?: string;
+} = {}): Promise<{ items: ArchiveTurn[]; total: number }> {
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const search = opts.search?.trim() ?? "";
+
+  const where = search
+    ? sql`WHERE content ILIKE ${"%" + search + "%"}`
+    : sql``;
+
+  const rowsRes = await db.execute(sql`
+    SELECT id, role, content, source, created_at
+    FROM personal_gpt_archive
+    ${where}
+    ORDER BY id DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `);
+  const countRes = await db.execute(sql`
+    SELECT COUNT(*)::int AS n FROM personal_gpt_archive ${where}
+  `);
+
+  const items = (rowsRes.rows as { id: number; role: string; content: string; source: string; created_at: Date | string }[])
+    .filter(r => r.role === "user" || r.role === "assistant")
+    .map(r => ({
+      id: r.id,
+      role: r.role as "user" | "assistant",
+      content: r.content,
+      source: r.source,
+      createdAt: typeof r.created_at === "string" ? r.created_at : r.created_at.toISOString(),
+    }));
+  const total = (countRes.rows[0] as { n?: number } | undefined)?.n ?? 0;
+  return { items, total };
+}
+
+export async function loadArchiveStats(): Promise<ArchiveStats> {
+  const r = await db.execute(sql`
+    SELECT
+      COUNT(*)::int                                                    AS total,
+      COUNT(*) FILTER (WHERE role = 'user')::int                       AS user_turns,
+      COUNT(*) FILTER (WHERE role = 'assistant')::int                  AS assistant_turns,
+      MIN(created_at)                                                  AS first_at,
+      MAX(created_at)                                                  AS last_at
+    FROM personal_gpt_archive
+  `);
+  const head = (r.rows[0] ?? {}) as {
+    total?: number; user_turns?: number; assistant_turns?: number;
+    first_at?: Date | string | null; last_at?: Date | string | null;
+  };
+  const sourceRes = await db.execute(sql`
+    SELECT source, COUNT(*)::int AS n FROM personal_gpt_archive GROUP BY source
+  `);
+  const bySource: Record<string, number> = {};
+  for (const row of sourceRes.rows as { source: string; n: number }[]) {
+    bySource[row.source] = row.n;
+  }
+  const iso = (v: Date | string | null | undefined): string | null =>
+    v == null ? null : (typeof v === "string" ? v : v.toISOString());
+  return {
+    total: head.total ?? 0,
+    userTurns: head.user_turns ?? 0,
+    assistantTurns: head.assistant_turns ?? 0,
+    bySource,
+    firstAt: iso(head.first_at),
+    lastAt: iso(head.last_at),
+  };
 }
 
 export async function clearRecentTurns(): Promise<void> {

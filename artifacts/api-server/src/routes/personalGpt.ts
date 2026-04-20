@@ -13,6 +13,8 @@ import {
   updateSettings,
   clearRecentTurns,
   loadRecentTurns,
+  loadArchive,
+  loadArchiveStats,
   runPersonalGptTurn,
   runPersonalGptTurnStream,
   startPersonalGptBot,
@@ -171,6 +173,31 @@ router.get("/admin/personal-gpt/history", requireAdmin, async (_req: Request, re
   } catch (err) {
     logger.error({ err }, "personal-gpt: load history failed");
     res.status(500).json({ error: "Failed to load history" });
+  }
+});
+
+/* ── GET full conversation archive (paginated, never pruned) ───────────── */
+router.get("/admin/personal-gpt/archive", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const search = typeof req.query.search === "string" ? req.query.search : undefined;
+    const result = await loadArchive({ limit, offset, search });
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "personal-gpt: load archive failed");
+    res.status(500).json({ error: "Failed to load archive" });
+  }
+});
+
+/* ── GET archive stats (total turns, by source, first/last seen) ────────── */
+router.get("/admin/personal-gpt/archive/stats", requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const stats = await loadArchiveStats();
+    res.json(stats);
+  } catch (err) {
+    logger.error({ err }, "personal-gpt: archive stats failed");
+    res.status(500).json({ error: "Failed to load stats" });
   }
 });
 
