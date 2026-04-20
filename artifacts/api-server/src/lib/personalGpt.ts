@@ -1143,7 +1143,7 @@ export async function startPersonalGptBot(): Promise<void> {
          and they don't feed the personality extractor. This keeps other group
          members from polluting the owner's private memory. DMs persist. */
       const { reply } = await runPersonalGptTurn(text, { source: "telegram", persist: !isGroup });
-      const sendOpts = isGroup ? { reply_to_message_id: msg.message_id } : undefined;
+      const sendOpts = { reply_to_message_id: msg.message_id };
       for (let i = 0; i < reply.length; i += 4000) {
         await bot.sendMessage(chatId, reply.slice(i, i + 4000), sendOpts).catch(() => {});
       }
