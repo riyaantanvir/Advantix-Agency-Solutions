@@ -1240,9 +1240,20 @@ function buildSystemPrompt(
   notes: Note[] = [],
 ): string {
   const base = settings.systemPrompt.trim() || DEFAULT_SYSTEM_PROMPT;
+  /* Inject the real wall-clock time so the model never hallucinates "ekhon
+     X baje". Single-tenant: owner is in Asia/Dhaka. Cheap (~40 chars) and
+     adds no extra API call. Format chosen to be unambiguous in any language. */
+  const nowDhaka = new Date().toLocaleString("en-US", {
+    timeZone: REMINDER_TZ,
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  });
+  const timeLine = `## Current time\nIt is now ${nowDhaka} (Asia/Dhaka). Use this — never guess the time or date.`;
   if (!includePersonality) {
     return [
       base,
+      "",
+      timeLine,
       "",
       "## Group chat mode",
       "You are talking in a group chat. You have NO memory of past conversations and NO knowledge about any specific user. If asked about your owner, the operator, or any private details, politely say you don't share that information.",
@@ -1250,6 +1261,8 @@ function buildSystemPrompt(
   }
   return [
     base,
+    "",
+    timeLine,
     "",
     "## What you know about the user (long-term memory)",
     renderPersonality(settings.personality),
