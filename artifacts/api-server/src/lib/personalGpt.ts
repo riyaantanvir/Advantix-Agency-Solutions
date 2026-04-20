@@ -64,6 +64,10 @@ const CHAT_MODEL    = "z-ai/glm-4.6";                          // primary text m
 const VOICE_MODEL   = "google/gemini-2.5-flash";               // accepts inline audio (best quality)
 const IMAGE_MODEL   = "google/gemini-2.5-flash-image";         // Nano Banana
 const EXTRACT_MODEL = "z-ai/glm-4.5-air";                      // ~3x cheaper extractor
+/* Reminder time parsing needs accurate Bengali numeral + relative-time
+   resolution; GLM-air struggles with "পাঁচটা পনেরো" → 5:15. Gemini Flash
+   is multilingual and fast — small premium worth it for correctness. */
+const REMINDER_EXTRACT_MODEL = "google/gemini-2.5-flash";
 
 /* How many CRM/knowledge notes to surface to the model per prompt. We sort by
    pinned-first then most-recently-updated and cap to keep the prompt short. */
@@ -685,16 +689,26 @@ export async function extractReminderIntent(userText: string, apiKey: string): P
 
   const sysPrompt =
     `You are a reminder intent extractor. Decide if the user is asking to be reminded at a specific time. ` +
-    `Current local time (${REMINDER_TZ}): ${nowLocal}. The user may write in English, Bengali, or Banglish ` +
-    `(romanized Bangla). Resolve relative phrases. If a time is given without AM/PM (e.g. "3:55"), pick ` +
+    `Current local time (${REMINDER_TZ}): ${nowLocal}. The user may write in English, Bengali (Bengali script), ` +
+    `or Banglish (romanized Bangla). Bengali numerals (০১২৩৪৫৬৭৮৯) map to (0123456789). ` +
+    `Bengali time words: "পাঁচটা" / "পাচটা" = 5 o'clock, "পনেরো" = 15, "পাঁচটা পনেরো" = 5:15, ` +
+    `"সাড়ে পাঁচটা" = 5:30, "এএম" = AM, "পিএম" = PM, "সকাল" = morning, "বিকেল/বিকাল" = afternoon, ` +
+    `"রাত" = night, "দুপুর" = noon, "আজকে/আজ" = today, "আগামীকাল/কাল" = tomorrow, "পরশু" = day after tomorrow, ` +
+    `"মিনিট পরে" = "minutes later", "ঘন্টা পরে" = "hours later", "একটু পরে" = "a bit later" (~30 min). ` +
+    `Resolve relative phrases. If a time is given without AM/PM (e.g. "3:55" or "পাঁচটা পনেরো"), pick ` +
     `whichever of AM/PM is in the FUTURE relative to now — prefer the same day, else next day. ` +
-    `Reply with STRICT JSON only, no markdown, no commentary:\n` +
-    `  {"isReminder": true, "remindAt": "<ISO 8601 with offset>", "message": "<short reminder text in user's language>"}\n` +
+    `If the resolved time would be in the past (already happened today), use TOMORROW at that time. ` +
+    `ALWAYS return isReminder:true if the user asks to set/create a reminder, even if time is fuzzy — ` +
+    `make your best guess at a future time. Reply with STRICT JSON only, no markdown, no commentary:\n` +
+    `  {"isReminder": true, "remindAt": "<ISO 8601 with +06:00 offset>", "message": "<short reminder text in user's language>"}\n` +
     `  or {"isReminder": false}\n` +
     `The "message" must be the THING to be reminded about (not the request itself). ` +
-    `Examples:\n` +
-    `  "remind me at 4pm tomorrow about the meeting" → {"isReminder":true,"remindAt":"...","message":"meeting"}\n` +
-    `  "amake 3.55 te bookcafe meeting er kotha mone koray dio" → {"isReminder":true,"remindAt":"...","message":"Bookcafe meeting"}\n` +
+    `Examples (assume current time is 5:10 AM Asia/Dhaka):\n` +
+    `  "remind me at 4pm tomorrow about the meeting" → {"isReminder":true,"remindAt":"<tomorrow>T16:00:00+06:00","message":"meeting"}\n` +
+    `  "amake 3.55 te bookcafe meeting er kotha mone koray dio" → {"isReminder":true,"remindAt":"...T15:55:00+06:00","message":"Bookcafe meeting"}\n` +
+    `  "পাঁচটা পনেরোতে একটা রিমাইন্ডার সেট করো test" → {"isReminder":true,"remindAt":"<today>T05:15:00+06:00","message":"test"}\n` +
+    `  "৫:১৫ এ test reminder" → {"isReminder":true,"remindAt":"<today>T05:15:00+06:00","message":"test"}\n` +
+    `  "5 minute pore namaz reminder" → {"isReminder":true,"remindAt":"<now+5min>","message":"namaz"}\n` +
     `  "what's the weather today" → {"isReminder":false}`;
 
   const res = await fetch(OPENROUTER_URL, {
@@ -705,8 +719,8 @@ export async function extractReminderIntent(userText: string, apiKey: string): P
       "HTTP-Referer": "https://advantix.digital",
     },
     body: JSON.stringify({
-      model: EXTRACT_MODEL,
-      max_tokens: 200,
+      model: REMINDER_EXTRACT_MODEL,
+      max_tokens: 300,
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [
@@ -721,13 +735,20 @@ export async function extractReminderIntent(userText: string, apiKey: string): P
   }
   const data = await res.json() as { choices?: { message?: { content?: string } }[] };
   const raw = data.choices?.[0]?.message?.content?.trim();
-  if (!raw) return null;
+  if (!raw) {
+    logger.warn({ text: text.slice(0, 200) }, "Reminder extractor: empty LLM response");
+    return null;
+  }
+  logger.info({ raw: raw.slice(0, 400), text: text.slice(0, 200), nowLocal }, "Reminder extractor: raw LLM response");
   try {
     /* The model occasionally wraps JSON in ```json fences despite being asked
        not to. Strip a single leading/trailing fence pair before parsing. */
     const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
     const parsed = JSON.parse(cleaned) as { isReminder?: boolean; remindAt?: string; message?: string };
-    if (!parsed.isReminder || !parsed.remindAt || !parsed.message) return null;
+    if (!parsed.isReminder || !parsed.remindAt || !parsed.message) {
+      logger.warn({ parsed, text: text.slice(0, 200) }, "Reminder extractor: LLM said not a reminder OR missing fields");
+      return null;
+    }
     const when = new Date(parsed.remindAt);
     if (isNaN(when.getTime())) {
       logger.warn({ remindAt: parsed.remindAt, raw: raw.slice(0, 200) }, "Reminder extractor: invalid date returned");
