@@ -16,6 +16,7 @@ import {
   runPersonalGptTurnStream,
   startPersonalGptBot,
   isPersonalGptBotRunning,
+  sendPersonalGptTestMessage,
   listNotes,
   addNote,
   updateNote,
@@ -226,6 +227,26 @@ router.delete("/admin/personal-gpt/notes/:id", requireAdmin, async (req: Request
   } catch (err) {
     logger.error({ err }, "personal-gpt: delete note failed");
     res.status(500).json({ error: "Failed to delete note" });
+  }
+});
+
+/* ── POST send a test message to the configured Telegram chat IDs ──────── */
+router.post("/admin/personal-gpt/telegram/test", requireAdmin, async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const result = await sendPersonalGptTestMessage();
+    if (result.delivered === 0) {
+      const detail = result.failed.map(f => `${f.chatId}: ${f.error}`).join("; ");
+      logger.warn({ failed: result.failed }, "personal-gpt: telegram test delivered to 0 chats");
+      res.status(502).json({
+        error: detail ? `Telegram rejected delivery — ${detail}` : "Failed to deliver to any chat",
+        failed: result.failed,
+      });
+      return;
+    }
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    logger.error({ err }, "personal-gpt: telegram test failed");
+    res.status(400).json({ error: err instanceof Error ? err.message : "Test failed" });
   }
 });
 

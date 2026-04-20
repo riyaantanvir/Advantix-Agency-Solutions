@@ -375,6 +375,7 @@ function SettingsPanel({ settings, toast, qc }: {
   const [savingPersonality, setSavingPersonality] = useState(false);
   const [savingTelegram, setSavingTelegram] = useState(false);
   const [restartingBot, setRestartingBot] = useState(false);
+  const [testingBot, setTestingBot] = useState(false);
 
   useEffect(() => {
     if (!settings) return;
@@ -416,6 +417,29 @@ function SettingsPanel({ settings, toast, qc }: {
   const removeItem = (key: keyof Personality, idx: number) => {
     if (key === "style") return;
     setPersonality(prev => ({ ...prev, [key]: (prev[key] as string[]).filter((_, i) => i !== idx) }));
+  };
+
+  const testBot = async () => {
+    setTestingBot(true);
+    try {
+      const res = await fetch("/api/admin/personal-gpt/telegram/test", {
+        method: "POST", credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed");
+      toast({
+        title: "Test message sent",
+        description: `Delivered to ${data.delivered} chat${data.delivered === 1 ? "" : "s"}. Check your Telegram.`,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Test failed",
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setTestingBot(false);
+    }
   };
 
   const restartBot = async () => {
@@ -644,6 +668,17 @@ function SettingsPanel({ settings, toast, qc }: {
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2 justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={testBot}
+              disabled={testingBot || !settings?.hasTelegramToken}
+              className="gap-1.5"
+              title={!settings?.hasTelegramToken ? "Save a bot token first" : "Send a test message to all configured chats"}
+            >
+              {testingBot ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              Send Test
+            </Button>
             <Button
               size="sm"
               variant="outline"

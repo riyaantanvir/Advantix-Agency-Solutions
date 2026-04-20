@@ -887,6 +887,41 @@ let pgBotInstance: TelegramBot | null = null;
 let pgBotUsername: string | null = null;
 
 /**
+ * Send a test message to all configured chat IDs to verify the Telegram
+ * connection works end-to-end (token valid + chat IDs reachable).
+ * Returns the number of chats successfully delivered to plus any errors.
+ */
+export async function sendPersonalGptTestMessage(): Promise<{
+  delivered: number;
+  failed: { chatId: number; error: string }[];
+}> {
+  const settings = await loadSettings();
+  if (!settings.telegramBotToken) throw new Error("Bot token is not configured.");
+  const chatIds = parseAllowedChatIds(settings.telegramChatId);
+  if (chatIds.length === 0) throw new Error("No allowed chat IDs configured.");
+
+  /* Use the running instance if available, otherwise create a one-shot client
+     (no polling) so we don't fight the long-poller for updates. */
+  const bot = pgBotInstance ?? new TelegramBot(settings.telegramBotToken, { polling: false });
+
+  const failed: { chatId: number; error: string }[] = [];
+  let delivered = 0;
+  for (const chatId of chatIds) {
+    try {
+      await bot.sendMessage(
+        chatId,
+        "✅ <b>Personal GPT — Test Message</b>\n\nYour Telegram connection is working. Send any message to chat with the bot.",
+        { parse_mode: "HTML" }
+      );
+      delivered += 1;
+    } catch (err) {
+      failed.push({ chatId, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return { delivered, failed };
+}
+
+/**
  * Parse the configured chat-ID setting. Accepts a single ID or a
  * comma-separated list; positive IDs are personal DMs, negative IDs are
  * groups/supergroups. Anything malformed is silently dropped.
