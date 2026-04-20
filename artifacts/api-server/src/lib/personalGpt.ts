@@ -1317,34 +1317,64 @@ export async function runPersonalGptVoiceTurn(args: {
   const settings = await loadSettings();
   if (!settings.enabled) throw new Error("Personal GPT is disabled in settings");
 
-  const notes = args.persist ? await listNotes().catch(() => [] as Note[]) : [];
-  const fullSystemPrompt = buildSystemPrompt(settings, args.persist, notes);
-  const history = args.persist ? await loadRecentTurns() : [];
+  /* Two-pass voice handling so that voice messages get the SAME features as
+     text — web search, reminder/note extraction, personality merge, etc.
+     Pass 1: transcribe-only (cheap, single voice-model call).
+     Pass 2: feed transcript through the regular text turn so wantsWebSearch
+             can flip on `:online` for "ajker news" / "ajke abohaowa" / etc.
+     If transcription fails, we fall back to the legacy single-shot path so
+     the user still gets *some* reply. */
+  let transcript: string | null = null;
+  try {
+    transcript = await transcribeVoiceOnly({
+      audioBase64: args.audioBase64,
+      audioFormat: args.audioFormat,
+    });
+  } catch (err) {
+    logger.warn({ err }, "Personal GPT voice: transcription failed, falling back to single-shot");
+  }
 
-  const { reply, transcript } = await answerFromVoice({
-    audioBase64: args.audioBase64,
-    audioFormat: args.audioFormat,
-    systemPrompt: fullSystemPrompt,
-    history,
-  });
+  if (transcript && transcript.trim()) {
+    /* Prefix the archive entry with 🎤 so the UI can show it as a voice
+       message, but pass the bare transcript to runPersonalGptTurn so the
+       web-search heuristic doesn't trip on the emoji. */
+    const userTextForChat = transcript.trim();
+    /* Manually persist the user turn with the 🎤 marker BEFORE delegating —
+       runPersonalGptTurn would otherwise persist the bare transcript. */
+    if (args.persist) {
+      await appendTurn("user", `🎤 ${userTextForChat}`, args.source).catch(err =>
+        logger.warn({ err }, "Personal GPT voice: failed to persist user turn"));
+    }
+    /* Delegate to the text path with persist:false so we don't double-save
+       the user turn. We DO still need the assistant turn persisted + the
+       personality merge — handle that here using the same helper logic. */
+    const apiKey = await getOpenRouterKey();
+    if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured.");
 
-  /* Persist the actual transcript (when available) so future turns get real
-     context AND the personality extractor has something to learn from. Falls
-     back to the placeholder only when the model failed to return one. */
-  if (args.persist) {
-    const userTurnContent = transcript ? `🎤 ${transcript}` : "🎤 (voice message)";
-    await appendTurn("user", userTurnContent, args.source);
-    await appendTurn("assistant", reply, args.source);
+    const { text: cleanedText, force } = parseSearchOverride(userTextForChat);
+    const useWeb = force !== null ? force : wantsWebSearch(cleanedText);
 
-    /* Fire-and-forget personality extraction on the transcript — same path
-       text turns use, so voice messages now contribute to the auto-curated
-       profile too. */
-    if (transcript) {
+    const extractPromise = args.persist
+      ? extractPersonalityDelta(cleanedText, apiKey)
+      : Promise.resolve<Partial<Personality>>({});
+
+    const notes = args.persist ? await listNotes().catch(() => [] as Note[]) : [];
+    let fullSystemPrompt = buildSystemPrompt(settings, args.persist, notes);
+    if (useWeb) {
+      fullSystemPrompt += "\n\n[Live web search is enabled for this turn. Use the fetched results to answer with up-to-date facts. Cite sources inline as [1], [2] when relevant.]";
+    }
+    const history = args.persist ? await loadRecentTurns() : [];
+    /* History already contains the 🎤-prefixed user turn we just appended,
+       so we don't add it again. */
+    const reply = await callChat(fullSystemPrompt, history, apiKey, useWeb);
+
+    if (args.persist) {
+      await appendTurn("assistant", reply, args.source).catch(err =>
+        logger.warn({ err }, "Personal GPT voice: failed to persist assistant turn"));
+      /* Fire-and-forget personality merge on the transcript. */
       void (async () => {
         try {
-          const apiKey = await getOpenRouterKey();
-          if (!apiKey) return;
-          const delta = await extractPersonalityDelta(transcript, apiKey);
+          const delta = await extractPromise;
           const hasDelta = (delta.facts?.length ?? 0) + (delta.habits?.length ?? 0)
                          + (delta.likes?.length ?? 0) + (delta.dislikes?.length ?? 0)
                          + (delta.style && delta.style.trim() ? 1 : 0) > 0;
@@ -1358,8 +1388,77 @@ export async function runPersonalGptVoiceTurn(args: {
         }
       })();
     }
+    logger.info({ useWeb, transcriptPreview: cleanedText.slice(0, 80) }, "Personal GPT voice turn finished");
+    return { reply, transcript };
   }
-  return { reply, transcript: transcript ?? null };
+
+  /* ── Fallback: transcription failed — use the legacy single-shot path so
+     the user still gets a reply, even if web-search routing is unavailable. */
+  const notes = args.persist ? await listNotes().catch(() => [] as Note[]) : [];
+  const fullSystemPrompt = buildSystemPrompt(settings, args.persist, notes);
+  const history = args.persist ? await loadRecentTurns() : [];
+  const { reply, transcript: t2 } = await answerFromVoice({
+    audioBase64: args.audioBase64,
+    audioFormat: args.audioFormat,
+    systemPrompt: fullSystemPrompt,
+    history,
+  });
+  if (args.persist) {
+    const userTurnContent = t2 ? `🎤 ${t2}` : "🎤 (voice message)";
+    await appendTurn("user", userTurnContent, args.source);
+    await appendTurn("assistant", reply, args.source);
+  }
+  return { reply, transcript: t2 ?? null };
+}
+
+/* Transcribe-only call — uses the multimodal voice model but asks for just
+   the verbatim text in JSON. Smaller token budget, lower temperature. */
+async function transcribeVoiceOnly(input: {
+  audioBase64: string;
+  audioFormat: "ogg" | "mp3" | "wav" | "m4a" | "webm";
+}): Promise<string> {
+  const apiKey = await getOpenRouterKey();
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured.");
+  const messages = [
+    {
+      role: "user",
+      content: [
+        { type: "text", text: `Transcribe this voice message verbatim, in the exact language(s) the speaker used. Respond with STRICT JSON only: {"transcript":"<the words>"} — no prose, no markdown.` },
+        { type: "input_audio", input_audio: { data: input.audioBase64, format: input.audioFormat } },
+      ],
+    },
+  ];
+  const res = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://advantix.digital",
+      "X-Title": "Advantix Personal GPT (transcribe)",
+    },
+    body: JSON.stringify({
+      model: VOICE_MODEL,
+      temperature: 0,
+      max_tokens: 600,
+      response_format: { type: "json_object" },
+      messages,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Voice transcription failed: HTTP ${res.status} ${body.slice(0, 300)}`);
+  }
+  const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+  const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
+  if (!raw) return "";
+  const cleaned = raw.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+  try {
+    const parsed = JSON.parse(cleaned) as { transcript?: unknown };
+    return typeof parsed.transcript === "string" ? parsed.transcript.trim() : "";
+  } catch {
+    /* Some models ignore json_object and return raw text — accept that. */
+    return cleaned;
+  }
 }
 
 /* ── Chat ───────────────────────────────────────────────────────────────── */
