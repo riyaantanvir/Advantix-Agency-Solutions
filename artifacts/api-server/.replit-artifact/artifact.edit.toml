@@ -1,0 +1,27 @@
+kind = "api"
+previewPath = "/"
+title = "Advantix Digital"
+version = "1.0.0"
+id = "3B4_FFSkEVBkAeYMFRJ2e"
+
+[[services]]
+localPort = 3000
+name = "web"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/api-server run dev"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+run = ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]
+
+[services.env]
+PORT = "3000"
+
+[services.production.env]
+PORT = "3000"
+NODE_ENV = "production"
+
+[services.production.health.startup]
+path = "/api/healthz"
