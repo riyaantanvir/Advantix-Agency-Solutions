@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Send, Trash2, Bot, User, Loader2, Sparkles, Settings as SettingsIcon, Save,
   Brain, MessageCircle, Plug, X, RefreshCw, Power, AlertCircle, CheckCircle2,
+  Pin, PinOff, BookMarked, Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,7 +56,7 @@ export default function PersonalGPT() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const [tab, setTab] = useState<"chat" | "settings">("chat");
+  const [tab, setTab] = useState<"chat" | "memory" | "settings">("chat");
 
   /* Settings load */
   const { data: settings, isLoading: settingsLoading } = useQuery<Settings>({
@@ -92,6 +93,15 @@ export default function PersonalGPT() {
             <MessageCircle className="w-3.5 h-3.5" /> Chat
           </button>
           <button
+            onClick={() => setTab("memory")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+              tab === "memory" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <BookMarked className="w-3.5 h-3.5" /> Memory
+          </button>
+          <button
             onClick={() => setTab("settings")}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
@@ -109,6 +119,8 @@ export default function PersonalGPT() {
         </div>
       ) : tab === "chat" ? (
         <ChatPanel onPersonalityUpdated={() => qc.invalidateQueries({ queryKey: ["personal-gpt-settings"] })} toast={toast} />
+      ) : tab === "memory" ? (
+        <MemoryPanel toast={toast} />
       ) : (
         <SettingsPanel settings={settings ?? null} toast={toast} qc={qc} />
       )}
@@ -670,6 +682,201 @@ function SettingsPanel({ settings, toast, qc }: {
           </div>
         </Card>
       </div>
+    </div>
+  );
+}
+
+/* ── Memory panel (CRM/knowledge notes) ─────────────────────────────────── */
+
+type Note = {
+  id: number;
+  category: "contact" | "deal" | "project" | "task" | "date" | "note";
+  title: string;
+  body: string;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const NOTE_CATS: Note["category"][] = ["contact", "deal", "project", "task", "date", "note"];
+
+const CAT_STYLES: Record<Note["category"], string> = {
+  contact: "bg-blue-500/10 text-blue-300 border-blue-500/20",
+  deal:    "bg-amber-500/10 text-amber-300 border-amber-500/20",
+  project: "bg-violet-500/10 text-violet-300 border-violet-500/20",
+  task:    "bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/20",
+  date:    "bg-rose-500/10 text-rose-300 border-rose-500/20",
+  note:    "bg-secondary text-muted-foreground border-border/50",
+};
+
+function MemoryPanel({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState<"all" | Note["category"]>("all");
+  const [draft, setDraft] = useState<{ category: Note["category"]; title: string; body: string }>({
+    category: "note", title: "", body: "",
+  });
+  const [adding, setAdding] = useState(false);
+
+  const { data, isLoading } = useQuery<{ notes: Note[] }>({
+    queryKey: ["personal-gpt-notes"],
+    queryFn: () => fetch("/api/admin/personal-gpt/notes", { credentials: "include" })
+      .then(r => { if (!r.ok) throw new Error("Load failed"); return r.json(); }),
+  });
+
+  const notes = (data?.notes ?? []).filter(n => filter === "all" || n.category === filter);
+
+  const addMutation = useMutation({
+    mutationFn: async () => {
+      if (!draft.title.trim()) throw new Error("Title required");
+      const r = await fetch("/api/admin/personal-gpt/notes", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(draft),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error ?? "Failed");
+      return d;
+    },
+    onSuccess: () => {
+      setDraft({ category: "note", title: "", body: "" });
+      setAdding(false);
+      qc.invalidateQueries({ queryKey: ["personal-gpt-notes"] });
+      toast({ title: "Note saved" });
+    },
+    onError: (err: Error) => toast({ variant: "destructive", title: "Save failed", description: err.message }),
+  });
+
+  const togglePin = async (n: Note) => {
+    await fetch(`/api/admin/personal-gpt/notes/${n.id}`, {
+      method: "PUT", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned: !n.pinned }),
+    });
+    qc.invalidateQueries({ queryKey: ["personal-gpt-notes"] });
+  };
+
+  const remove = async (n: Note) => {
+    if (!confirm(`Delete "${n.title}"?`)) return;
+    await fetch(`/api/admin/personal-gpt/notes/${n.id}`, {
+      method: "DELETE", credentials: "include",
+    });
+    qc.invalidateQueries({ queryKey: ["personal-gpt-notes"] });
+    toast({ title: "Deleted" });
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6 max-w-4xl mx-auto w-full space-y-6">
+      <Card className="p-5">
+        <div className="flex items-start gap-3 mb-4">
+          <BookMarked className="w-5 h-5 text-fuchsia-400 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <h3 className="font-semibold text-sm">Knowledge base</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Save contacts, deals, projects, tasks and dates here. The bot reads this on every reply,
+              so it always knows your business context. From Telegram, use{" "}
+              <code className="text-foreground">/remember &lt;category&gt; &lt;title&gt; | &lt;body&gt;</code>.
+            </p>
+          </div>
+          <Button size="sm" onClick={() => setAdding(v => !v)} className="gap-1.5">
+            <Plus className="w-3.5 h-3.5" /> New
+          </Button>
+        </div>
+
+        {adding && (
+          <div className="space-y-2 mb-4 p-3 rounded-lg bg-secondary/30 border border-border/50">
+            <div className="flex gap-2">
+              <select
+                value={draft.category}
+                onChange={e => setDraft(d => ({ ...d, category: e.target.value as Note["category"] }))}
+                className="px-2 py-1.5 bg-secondary/70 border border-border/50 rounded-md text-xs"
+              >
+                {NOTE_CATS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <input
+                type="text"
+                placeholder="Title (e.g. Sajjad — CTO at Foo)"
+                value={draft.title}
+                onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
+                className="flex-1 px-3 py-1.5 bg-secondary/70 border border-border/50 rounded-md text-sm focus:outline-none focus:border-primary/50"
+              />
+            </div>
+            <Textarea
+              placeholder="Optional details — phone, status, deadline, notes…"
+              value={draft.body}
+              onChange={e => setDraft(d => ({ ...d, body: e.target.value }))}
+              className="min-h-[80px] text-sm bg-secondary/70 border-border/50"
+            />
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
+              <Button size="sm" onClick={() => addMutation.mutate()} disabled={addMutation.isPending || !draft.title.trim()}>
+                {addMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Save
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-1.5 flex-wrap mb-3">
+          <button
+            onClick={() => setFilter("all")}
+            className={cn(
+              "text-xs px-2.5 py-1 rounded-md border transition-colors",
+              filter === "all" ? "bg-fuchsia-500/15 border-fuchsia-500/30 text-fuchsia-200" : "bg-secondary/40 border-border/50 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            All ({data?.notes.length ?? 0})
+          </button>
+          {NOTE_CATS.map(c => {
+            const count = (data?.notes ?? []).filter(n => n.category === c).length;
+            return (
+              <button
+                key={c}
+                onClick={() => setFilter(c)}
+                className={cn(
+                  "text-xs px-2.5 py-1 rounded-md border transition-colors",
+                  filter === c ? "bg-fuchsia-500/15 border-fuchsia-500/30 text-fuchsia-200" : "bg-secondary/40 border-border/50 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {c} ({count})
+              </button>
+            );
+          })}
+        </div>
+
+        {isLoading ? (
+          <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+        ) : notes.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-8">
+            No notes yet. Add one above or use <code>/remember</code> in Telegram.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {notes.map(n => (
+              <li key={n.id} className="p-3 rounded-lg bg-secondary/30 border border-border/50 flex gap-3 items-start">
+                <span className={cn("inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-mono uppercase border shrink-0 mt-0.5", CAT_STYLES[n.category])}>
+                  {n.category}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    {n.pinned && <Pin className="w-3 h-3 text-fuchsia-400 inline-block" />}
+                    <span className="font-medium text-sm">{n.title}</span>
+                    <span className="text-[10px] text-muted-foreground font-mono">#{n.id}</span>
+                  </div>
+                  {n.body && <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">{n.body}</p>}
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <button onClick={() => togglePin(n)} className="p-1.5 text-muted-foreground hover:text-fuchsia-400 transition-colors" title={n.pinned ? "Unpin" : "Pin"}>
+                    {n.pinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+                  </button>
+                  <button onClick={() => remove(n)} className="p-1.5 text-muted-foreground hover:text-rose-400 transition-colors" title="Delete">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }

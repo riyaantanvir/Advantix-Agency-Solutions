@@ -16,6 +16,11 @@ import {
   runPersonalGptTurnStream,
   startPersonalGptBot,
   isPersonalGptBotRunning,
+  listNotes,
+  addNote,
+  updateNote,
+  deleteNote,
+  NOTE_CATEGORIES,
   type Personality,
 } from "../lib/personalGpt.js";
 import { logger } from "../lib/logger.js";
@@ -164,6 +169,63 @@ router.post("/admin/personal-gpt/clear-recent", requireAdmin, async (_req: Reque
   } catch (err) {
     logger.error({ err }, "personal-gpt: clear recent failed");
     res.status(500).json({ error: "Failed to clear" });
+  }
+});
+
+/* ── CRM / knowledge notes (long-term memory the bot uses in prompts) ───── */
+router.get("/admin/personal-gpt/notes", requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    res.json({ notes: await listNotes() });
+  } catch (err) {
+    logger.error({ err }, "personal-gpt: list notes failed");
+    res.status(500).json({ error: "Failed to list notes" });
+  }
+});
+
+router.post("/admin/personal-gpt/notes", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const body = req.body as { category?: string; title?: string; body?: string; pinned?: boolean };
+    if (typeof body.title !== "string" || !body.title.trim()) {
+      res.status(400).json({ error: "title is required" }); return;
+    }
+    if (body.category !== undefined && !(NOTE_CATEGORIES as readonly string[]).includes(String(body.category))) {
+      res.status(400).json({ error: `category must be one of: ${NOTE_CATEGORIES.join(", ")}` }); return;
+    }
+    const note = await addNote({
+      category: body.category, title: body.title, body: body.body, pinned: body.pinned,
+    });
+    res.json({ note });
+  } catch (err) {
+    logger.error({ err }, "personal-gpt: add note failed");
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to add note" });
+  }
+});
+
+router.put("/admin/personal-gpt/notes/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) { res.status(400).json({ error: "invalid id" }); return; }
+    const body = req.body as { category?: string; title?: string; body?: string; pinned?: boolean };
+    if (body.category !== undefined && !(NOTE_CATEGORIES as readonly string[]).includes(String(body.category))) {
+      res.status(400).json({ error: `category must be one of: ${NOTE_CATEGORIES.join(", ")}` }); return;
+    }
+    await updateNote(id, body);
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "personal-gpt: update note failed");
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to update note" });
+  }
+});
+
+router.delete("/admin/personal-gpt/notes/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) { res.status(400).json({ error: "invalid id" }); return; }
+    await deleteNote(id);
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "personal-gpt: delete note failed");
+    res.status(500).json({ error: "Failed to delete note" });
   }
 });
 

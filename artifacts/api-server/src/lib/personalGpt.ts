@@ -52,10 +52,29 @@ const MAX_ITEM_LENGTH = 160;
 const MAX_STYLE_LENGTH = 400;
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-/* GLM 4.6 via OpenRouter — same family the user already uses elsewhere. */
+/* GLM 4.6 via OpenRouter — main reasoning model for chat. */
 const CHAT_MODEL = "z-ai/glm-4.6";
-/* Cheaper/faster model just for personality extraction. */
-const EXTRACT_MODEL = "z-ai/glm-4.6";
+/* GLM 4.5 Air is ~3x cheaper than 4.6 and is a great fit for the small
+   structured-extraction job we use here. Keeps token cost down. */
+const EXTRACT_MODEL = "z-ai/glm-4.5-air";
+
+/* How many CRM/knowledge notes to surface to the model per prompt. We sort by
+   pinned-first then most-recently-updated and cap to keep the prompt short. */
+const MAX_NOTES_IN_PROMPT = 40;
+
+/* Categories the user can file a note under. Free-form `note` is the default. */
+export const NOTE_CATEGORIES = ["contact", "deal", "project", "task", "date", "note"] as const;
+export type NoteCategory = (typeof NOTE_CATEGORIES)[number];
+
+export type Note = {
+  id: number;
+  category: NoteCategory;
+  title: string;
+  body: string;
+  pinned: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 
 const EMPTY_PERSONALITY: Personality = {
   facts: [], habits: [], likes: [], dislikes: [], style: "",
@@ -183,6 +202,98 @@ export async function clearRecentTurns(): Promise<void> {
   await db.execute(sql`DELETE FROM personal_gpt_recent`);
 }
 
+/* ── CRM / knowledge notes ──────────────────────────────────────────────── */
+
+function normalizeCategory(c: unknown): NoteCategory {
+  return typeof c === "string" && (NOTE_CATEGORIES as readonly string[]).includes(c)
+    ? (c as NoteCategory)
+    : "note";
+}
+
+function rowToNote(r: {
+  id: number; category: string; title: string; body: string;
+  pinned: boolean; created_at: Date | string; updated_at: Date | string;
+}): Note {
+  return {
+    id: r.id,
+    category: normalizeCategory(r.category),
+    title: r.title,
+    body: r.body,
+    pinned: Boolean(r.pinned),
+    createdAt: typeof r.created_at === "string" ? r.created_at : r.created_at.toISOString(),
+    updatedAt: typeof r.updated_at === "string" ? r.updated_at : r.updated_at.toISOString(),
+  };
+}
+
+export async function listNotes(): Promise<Note[]> {
+  const r = await db.execute(sql`
+    SELECT id, category, title, body, pinned, created_at, updated_at
+    FROM personal_gpt_notes
+    ORDER BY pinned DESC, updated_at DESC
+  `);
+  return (r.rows as Parameters<typeof rowToNote>[0][]).map(rowToNote);
+}
+
+export async function addNote(input: { category?: string; title: string; body?: string; pinned?: boolean }): Promise<Note> {
+  const category = normalizeCategory(input.category);
+  const title = input.title.trim().slice(0, 200);
+  if (!title) throw new Error("Note title is required");
+  const body = (input.body ?? "").trim().slice(0, 4000);
+  const pinned = Boolean(input.pinned);
+  const r = await db.execute(sql`
+    INSERT INTO personal_gpt_notes (category, title, body, pinned)
+    VALUES (${category}, ${title}, ${body}, ${pinned})
+    RETURNING id, category, title, body, pinned, created_at, updated_at
+  `);
+  return rowToNote((r.rows[0] as Parameters<typeof rowToNote>[0]));
+}
+
+export async function updateNote(id: number, patch: { category?: string; title?: string; body?: string; pinned?: boolean }): Promise<void> {
+  const sets: ReturnType<typeof sql>[] = [];
+  if (patch.category !== undefined) sets.push(sql`category = ${normalizeCategory(patch.category)}`);
+  if (patch.title !== undefined) {
+    const t = patch.title.trim().slice(0, 200);
+    if (!t) throw new Error("Note title cannot be empty");
+    sets.push(sql`title = ${t}`);
+  }
+  if (patch.body !== undefined) sets.push(sql`body = ${patch.body.trim().slice(0, 4000)}`);
+  if (patch.pinned !== undefined) sets.push(sql`pinned = ${Boolean(patch.pinned)}`);
+  if (!sets.length) return;
+  sets.push(sql`updated_at = now()`);
+  await db.execute(sql`UPDATE personal_gpt_notes SET ${sql.join(sets, sql`, `)} WHERE id = ${id}`);
+}
+
+export async function deleteNote(id: number): Promise<void> {
+  await db.execute(sql`DELETE FROM personal_gpt_notes WHERE id = ${id}`);
+}
+
+/* Render a compact, model-readable view of the user's notes. We cap to
+   MAX_NOTES_IN_PROMPT items to keep the prompt small. */
+function renderNotes(notes: Note[]): string {
+  if (!notes.length) return "(No notes yet — the user hasn't saved any business context.)";
+  const slice = notes.slice(0, MAX_NOTES_IN_PROMPT);
+  const byCat = new Map<NoteCategory, Note[]>();
+  for (const n of slice) {
+    const arr = byCat.get(n.category) ?? [];
+    arr.push(n);
+    byCat.set(n.category, arr);
+  }
+  const order: NoteCategory[] = ["contact", "deal", "project", "task", "date", "note"];
+  const blocks: string[] = [];
+  for (const cat of order) {
+    const items = byCat.get(cat);
+    if (!items?.length) continue;
+    const label = cat.charAt(0).toUpperCase() + cat.slice(1) + "s";
+    const lines = items.map(n => {
+      const pin = n.pinned ? "📌 " : "";
+      const body = n.body ? ` — ${n.body.replace(/\s+/g, " ").slice(0, 200)}` : "";
+      return `- ${pin}[#${n.id}] ${n.title}${body}`;
+    });
+    blocks.push(`### ${label}\n${lines.join("\n")}`);
+  }
+  return blocks.join("\n\n");
+}
+
 /* ── Personality merge ──────────────────────────────────────────────────── */
 
 /* Case-insensitive "is essentially the same item already present" check so we
@@ -234,7 +345,25 @@ Rules:
 Schema:
 {"facts":string[], "habits":string[], "likes":string[], "dislikes":string[], "style":string}`;
 
+/* Skip the personality extractor on trivial messages — short greetings, simple
+   acknowledgments, emoji-only messages, slash commands. These never contain
+   useful long-term info and would otherwise burn an LLM call per message. */
+const TRIVIAL_PATTERNS = [
+  /^[\s\p{Emoji}\p{P}]*$/u,                    // emoji / punctuation only
+  /^\/\w+/,                                     // slash command
+  /^(ok+|okay|k|kk|yes|no|nope|sure|thanks?|thx|ty|cool|nice|lol|lmao|hmm+|hi+|hello|hey|yo|bye|good|great|awesome|haha+|right|fine|got it|thank you)[!.\s]*$/i,
+  /^(achcha|accha|hmm|hae|jee|han|na|thik|thanks|dhonnobad|valo|bhalo)[!.\s]*$/i, // banglish
+];
+function isTrivialMessage(text: string): boolean {
+  const t = text.trim();
+  if (t.length === 0) return true;
+  if (t.length < 4) return true;
+  return TRIVIAL_PATTERNS.some(re => re.test(t));
+}
+
 async function extractPersonalityDelta(userText: string, apiKey: string): Promise<Partial<Personality>> {
+  /* Token-saving short-circuit. */
+  if (isTrivialMessage(userText)) return {};
   try {
     const res = await fetch(OPENROUTER_URL, {
       method: "POST",
@@ -298,6 +427,7 @@ Behaviour:
 function buildSystemPrompt(
   settings: { systemPrompt: string; personality: Personality },
   includePersonality: boolean,
+  notes: Note[] = [],
 ): string {
   const base = settings.systemPrompt.trim() || DEFAULT_SYSTEM_PROMPT;
   if (!includePersonality) {
@@ -313,6 +443,14 @@ function buildSystemPrompt(
     "",
     "## What you know about the user (long-term memory)",
     renderPersonality(settings.personality),
+    "",
+    "## Knowledge base / CRM (saved by the user — quote IDs like #12 if you reference one)",
+    renderNotes(notes),
+    "",
+    "## How to use the knowledge base",
+    "- Treat saved contacts, deals, projects, tasks and dates as authoritative facts.",
+    "- When the user asks something like \"who is X?\" or \"what's the status of Y?\", check the knowledge base first.",
+    "- If the user clearly tells you something worth remembering long-term (a person, a project, a deadline), suggest they save it with /remember in Telegram or via the Memory tab.",
   ].join("\n");
 }
 
@@ -474,9 +612,10 @@ export async function runPersonalGptTurn(userText: string, opts: TurnOptions): P
     : Promise.resolve<Partial<Personality>>({});
 
   /* For ephemeral (group) turns we deliberately use no history AND omit the
-     personality profile so the group conversation can't pull in or leak
-     private DM context. DM/web turns get the full memory. */
-  const fullSystemPrompt = buildSystemPrompt(settings, opts.persist);
+     personality profile + notes so group conversations can't pull in or leak
+     private context. DM/web turns get the full memory. */
+  const notes = opts.persist ? await listNotes().catch(() => [] as Note[]) : [];
+  const fullSystemPrompt = buildSystemPrompt(settings, opts.persist, notes);
   const history = opts.persist ? await loadRecentTurns() : [];
   const turnHistory: RecentTurn[] = [...history, { role: "user", content: userText }];
 
@@ -535,7 +674,8 @@ export async function runPersonalGptTurnStream(
 
     /* Streaming endpoint is web-only and always persists. */
     const extractPromise = extractPersonalityDelta(userText, apiKey);
-    const fullSystemPrompt = buildSystemPrompt(settings, true);
+    const notes = await listNotes().catch(() => [] as Note[]);
+    const fullSystemPrompt = buildSystemPrompt(settings, true, notes);
     const history = await loadRecentTurns();
     const turnHistory: RecentTurn[] = [...history, { role: "user", content: userText }];
 
@@ -694,14 +834,80 @@ export async function startPersonalGptBot(): Promise<void> {
     }
 
     if (text === "/start") {
-      await bot.sendMessage(chatId, "👋 Personal GPT is ready. Just message me.");
+      await bot.sendMessage(chatId,
+        "👋 Personal GPT is ready. Just message me.\n\n" +
+        "Commands (DM only):\n" +
+        "• /remember <category> <title> | <body>  — save to your knowledge base\n" +
+        "    categories: contact, deal, project, task, date, note (default: note)\n" +
+        "    examples:\n" +
+        "      /remember contact Sajjad | CTO at Foo Ltd, +880…\n" +
+        "      /remember task Send invoice to ACME by Friday\n" +
+        "• /notes [category]  — list saved notes\n" +
+        "• /forget <id>  — delete a note by its ID (e.g. /forget 12)\n" +
+        "• /clear  — wipe short-term chat memory\n",
+      );
       return;
     }
-    /* /clear only makes sense in DM (it nukes the personal rolling window). */
-    if (text === "/clear" && !isGroup) {
-      await clearRecentTurns().catch(() => {});
-      await bot.sendMessage(chatId, "✅ Short-term memory cleared.");
-      return;
+    /* /clear, /remember, /notes, /forget only make sense in DM. */
+    if (!isGroup) {
+      if (text === "/clear") {
+        await clearRecentTurns().catch(() => {});
+        await bot.sendMessage(chatId, "✅ Short-term memory cleared.");
+        return;
+      }
+      if (text.startsWith("/remember")) {
+        const rest = text.slice("/remember".length).trim();
+        if (!rest) {
+          await bot.sendMessage(chatId,
+            "Usage: /remember <category> <title> | <body>\n" +
+            "Example: /remember contact Sajjad | CTO at Foo Ltd, +880…",
+          );
+          return;
+        }
+        /* Optional first word = category if it matches. Body is anything after "|". */
+        const firstSpace = rest.indexOf(" ");
+        const maybeCat = firstSpace === -1 ? rest : rest.slice(0, firstSpace).toLowerCase();
+        const hasCat = (NOTE_CATEGORIES as readonly string[]).includes(maybeCat);
+        const afterCat = hasCat ? rest.slice(firstSpace + 1).trim() : rest;
+        const pipeIdx = afterCat.indexOf("|");
+        const title = (pipeIdx === -1 ? afterCat : afterCat.slice(0, pipeIdx)).trim();
+        const body = pipeIdx === -1 ? "" : afterCat.slice(pipeIdx + 1).trim();
+        if (!title) {
+          await bot.sendMessage(chatId, "⚠️ Note title is required.");
+          return;
+        }
+        try {
+          const note = await addNote({ category: hasCat ? maybeCat : "note", title, body });
+          await bot.sendMessage(chatId, `✅ Saved as ${note.category} #${note.id}: ${note.title}`);
+        } catch (err) {
+          await bot.sendMessage(chatId, `⚠️ ${String(err instanceof Error ? err.message : err)}`);
+        }
+        return;
+      }
+      if (text === "/notes" || text.startsWith("/notes ")) {
+        const filter = text.slice("/notes".length).trim().toLowerCase();
+        const all = await listNotes().catch(() => [] as Note[]);
+        const items = filter
+          ? all.filter(n => n.category === filter)
+          : all;
+        if (!items.length) {
+          await bot.sendMessage(chatId, filter ? `No notes in "${filter}".` : "No notes yet. Use /remember to add one.");
+          return;
+        }
+        const lines = items.slice(0, 50).map(n =>
+          `${n.pinned ? "📌 " : ""}#${n.id} [${n.category}] ${n.title}${n.body ? " — " + n.body.slice(0, 120) : ""}`,
+        );
+        const more = items.length > 50 ? `\n…and ${items.length - 50} more.` : "";
+        await bot.sendMessage(chatId, lines.join("\n") + more);
+        return;
+      }
+      const forgetMatch = text.match(/^\/forget\s+(\d+)\s*$/);
+      if (forgetMatch) {
+        const id = Number(forgetMatch[1]);
+        await deleteNote(id).catch(() => {});
+        await bot.sendMessage(chatId, `🗑️ Deleted note #${id}.`);
+        return;
+      }
     }
 
     await bot.sendChatAction(chatId, "typing").catch(() => {});

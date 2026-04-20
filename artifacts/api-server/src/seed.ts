@@ -375,6 +375,25 @@ export async function runMigrations(): Promise<void> {
       ON personal_gpt_recent (created_at DESC)
   `);
 
+  /* Structured CRM/knowledge notes — long-term memory the bot uses to know
+     business context (contacts, deals, projects, tasks, dates, plain notes).
+     Auto-injected into the system prompt so every reply stays informed. */
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS personal_gpt_notes (
+      id serial PRIMARY KEY,
+      category text NOT NULL DEFAULT 'note',
+      title text NOT NULL,
+      body text NOT NULL DEFAULT '',
+      pinned boolean NOT NULL DEFAULT false,
+      created_at timestamp DEFAULT now() NOT NULL,
+      updated_at timestamp DEFAULT now() NOT NULL
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_personal_gpt_notes_category
+      ON personal_gpt_notes (category, pinned DESC, updated_at DESC)
+  `);
+
   // ── AI tables ─────────────────────────────────────────────────────────────
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS ai_projects (
