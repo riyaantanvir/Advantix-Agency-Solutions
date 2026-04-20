@@ -642,17 +642,12 @@ function formatLocalTime(iso: string): string {
    resolve relative phrases ("tomorrow at 4", "in 30 min", "3:55 te"). The
    model is given the current local time + TZ so it can produce an absolute
    ISO timestamp. Returns null if the user is NOT asking for a reminder. */
-export async function extractReminderIntent(userText: string, apiKey: string): Promise<{
-  remindAt: string;
-  message: string;
-} | null> {
-  const text = userText.trim();
-  if (!text) return null;
-
-  /* Cheap pre-filter: skip the LLM round-trip entirely unless the message
-     looks reminder-shaped. Saves ~$0.0005 per chat turn AND latency. The
-     trigger list covers English + Banglish phrases. */
-  const looksLikeReminder = /\b(remind|reminder|alert|wake|notify|alarm)\b/i.test(text)
+/* Cheap regex pre-filter for "is this a reminder request?". Exported so the
+   text/voice handlers can also use it to give the user a clearer message
+   when extraction fails (vs. silently letting the chat model hallucinate
+   "set kore dilam"). Covers English + Banglish + Bengali script. */
+export function looksLikeReminderShape(text: string): boolean {
+  return /\b(remind|reminder|alert|wake|notify|alarm)\b/i.test(text)
     || /\b(at|by|in|after|before|on)\s+\d/i.test(text)
     || /\b(tomorrow|tonight|today|tmrw|next)\b/i.test(text)
     || /mone\s*kor(ay)?\s*d(a|i)o/i.test(text)
@@ -666,8 +661,21 @@ export async function extractReminderIntent(userText: string, apiKey: string): P
        shapes that didn't include the "remind"/"alert" keyword. */
     || /\b\d+\s*(min|minute|ghonta|hour|hr|sec|second|din|day)\s*(pore|por|later|after)\b/i.test(text)
     || /\b(kal|kaal|aj|aaj|aajke|ajke|ekhon|akhon|sokal|bikal|bikel|raat|rat|dupur|sondha|shondha)\b/i.test(text)
-    || /\b\d{1,2}([:.]\d{2})?\s*(ta|tay|baje|baja|am|pm|a\.m|p\.m)\b/i.test(text);
-  if (!looksLikeReminder) return null;
+    || /\b\d{1,2}([:.]\d{2})?\s*(ta|tay|baje|baja|am|pm|a\.m|p\.m)\b/i.test(text)
+    /* Bengali-script triggers — voice transcripts often come back in native
+       script ("রিমাইন্ডার", "মনে করিয়ে", "একটু পরে", "আজকে"). */
+    || /রিমাইন্ডার|মনে\s*করিয়ে|মনে\s*কর|আজকে|আগামীকাল|পরশু|একটু\s*পরে/.test(text)
+    || /\b(am|pm|এএম|পিএম|এ\.এম|পি\.এম)\b/i.test(text);
+}
+
+export async function extractReminderIntent(userText: string, apiKey: string): Promise<{
+  remindAt: string;
+  message: string;
+} | null> {
+  const text = userText.trim();
+  if (!text) return null;
+
+  if (!looksLikeReminderShape(text)) return null;
 
   const nowLocal = new Date().toLocaleString("en-US", {
     timeZone: REMINDER_TZ,
@@ -721,10 +729,17 @@ export async function extractReminderIntent(userText: string, apiKey: string): P
     const parsed = JSON.parse(cleaned) as { isReminder?: boolean; remindAt?: string; message?: string };
     if (!parsed.isReminder || !parsed.remindAt || !parsed.message) return null;
     const when = new Date(parsed.remindAt);
-    if (isNaN(when.getTime())) return null;
+    if (isNaN(when.getTime())) {
+      logger.warn({ remindAt: parsed.remindAt, raw: raw.slice(0, 200) }, "Reminder extractor: invalid date returned");
+      return null;
+    }
     /* Reject reminders in the past (model occasionally hallucinates) — but
        allow a 60s grace window for "in 30 seconds" type requests. */
-    if (when.getTime() < Date.now() - 60_000) return null;
+    if (when.getTime() < Date.now() - 60_000) {
+      logger.warn({ remindAt: when.toISOString(), now: new Date().toISOString(), text: text.slice(0, 200) }, "Reminder extractor: rejected past time");
+      return null;
+    }
+    logger.info({ remindAt: when.toISOString(), message: parsed.message.slice(0, 80) }, "Reminder extractor: parsed intent");
     return { remindAt: when.toISOString(), message: parsed.message.trim().slice(0, MAX_REMINDER_TEXT) };
   } catch (err) {
     logger.warn({ err, raw: raw.slice(0, 200) }, "Reminder extractor JSON parse failed");
@@ -2023,6 +2038,20 @@ export async function startPersonalGptBot(): Promise<void> {
             await appendTurn("assistant", `[Reminder set for ${formatLocalTime(r.remindAt)}: ${r.message}]`, "telegram").catch(() => {});
             return;
           }
+          /* Prefilter said "looks like reminder" but extractor couldn't lock
+             a future time (past time, ambiguous phrasing, parse fail).
+             Tell the user explicitly so they don't trust a hallucinated
+             "set kore dilam" from the chat model. */
+          if (looksLikeReminderShape(text)) {
+            await bot.sendMessage(chatId,
+              `⏰ Reminder ta set korte parlam na — time tah past e chole geche ba bujhte parinai.\n\n` +
+              `_Try:_ \`5 minute pore\`, \`kal sokal 9 tay\`, \`bikel 4:30 e\`, or pick from admin panel.`,
+              { parse_mode: "Markdown", reply_to_message_id: msg.message_id }
+            ).catch(() => {});
+            await appendTurn("user", text, "telegram").catch(() => {});
+            await appendTurn("assistant", `[Reminder NOT set — could not parse time]`, "telegram").catch(() => {});
+            return;
+          }
         }
       } catch (err) {
         logger.warn({ err }, "Reminder intent detection failed (falling back to normal chat)");
@@ -2160,6 +2189,12 @@ export async function startPersonalGptBot(): Promise<void> {
               });
               const whenLocal = formatLocalTime(reminder.remindAt);
               actionReply = `🔔 Reminder #${reminder.id} set for *${whenLocal}*: _${reminder.message}_\n\n_Cancel anytime with_ \`/unremind ${reminder.id}\``;
+            } else if (looksLikeReminderShape(transcript)) {
+              /* Prefilter detected reminder intent but extractor couldn't lock
+                 a future time. Override the model's "set kore dilam"
+                 hallucination with an explicit failure message. */
+              actionReply = `⏰ Reminder ta set korte parlam na — time tah past e chole geche ba bujhte parinai.\n\n` +
+                `_Try:_ \`5 minute pore\`, \`kal sokal 9 tay\`, \`bikel 4:30 e\`, or set from admin panel.`;
             } else {
               const noteIntent = await extractNoteIntent(transcript, apiKeyForIntent);
               if (noteIntent) {
