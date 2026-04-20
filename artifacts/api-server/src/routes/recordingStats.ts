@@ -2,8 +2,13 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { requireToolUser } from "../middleware/toolAuth.js";
+import { getEffectiveRecordingMaxSeconds } from "./toolPermissions.js";
 
 const router = Router();
+
+/* Small grace allows for client-side timer/network jitter without rejecting an
+   otherwise-legit recording that ended a moment past the cap. */
+const DURATION_GRACE_SECONDS = 5;
 
 router.post("/tools/recordings", requireToolUser, async (req, res) => {
   try {
@@ -11,13 +16,19 @@ router.post("/tools/recordings", requireToolUser, async (req, res) => {
     const userId = session.toolUserId!;
     const { durationSeconds } = req.body;
 
-    if (typeof durationSeconds !== "number" || durationSeconds < 0) {
+    if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || durationSeconds < 0) {
       return res.status(400).json({ error: "Invalid durationSeconds" });
     }
 
+    /* Enforce the per-user recording cap server-side so a tampered client
+       cannot persist a session longer than admin policy allows. We clamp
+       (rather than reject) so the recording is still accounted for. */
+    const maxSeconds = await getEffectiveRecordingMaxSeconds(userId);
+    const clamped = Math.min(Math.floor(durationSeconds), maxSeconds + DURATION_GRACE_SECONDS);
+
     await db.execute(sql`
       INSERT INTO recording_sessions (user_id, duration_seconds)
-      VALUES (${userId}, ${Math.floor(durationSeconds)})
+      VALUES (${userId}, ${clamped})
     `);
 
     return res.json({ ok: true });

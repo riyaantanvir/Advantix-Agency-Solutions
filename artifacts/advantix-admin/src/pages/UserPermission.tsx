@@ -32,6 +32,8 @@ type Tool = { slug: string; name: string; description: string };
 type ToolUser = {
   id: number; name: string; email: string; created_at: string;
   tools: Record<string, boolean>;
+  /* Per-user override; null = inherits the global default */
+  recordingMaxSeconds: number | null;
 };
 
 const TOOL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -132,50 +134,89 @@ function UserPermissionTab() {
   const [userTools, setUserTools] = useState<Record<number, Record<string, boolean>>>({});
   const [savingUser, setSavingUser] = useState<number | null>(null);
 
-  const { data: defData, isLoading: defLoading } = useQuery<{ tools: Tool[]; defaults: string[] }>({
+  const { data: defData, isLoading: defLoading } = useQuery<{ tools: Tool[]; defaults: string[]; recordingMaxSeconds: number }>({
     queryKey: ["tool-permission-defaults"],
     queryFn: () => fetch("/api/settings/tool-permissions/defaults", { credentials: "include" }).then(r => r.json()),
   });
   const [defaults, setDefaults] = useState<Record<string, boolean>>({});
+  /* Global default screen-recording limit, in MINUTES (UI unit; converted to
+     seconds on save). Empty string while loading so we don't briefly show 0. */
+  const [defaultRecordingMinutes, setDefaultRecordingMinutes] = useState<string>("");
 
   useEffect(() => {
     if (defData) {
       const map: Record<string, boolean> = {};
       defData.tools.forEach(t => { map[t.slug] = defData.defaults.includes(t.slug); });
       setDefaults(map);
+      const mins = Math.max(1, Math.round((defData.recordingMaxSeconds ?? 600) / 60));
+      setDefaultRecordingMinutes(String(mins));
     }
   }, [defData]);
 
   const defaultsSave = useMutation({
-    mutationFn: () => fetch("/api/admin/settings/tool-permissions/defaults", {
-      method: "PUT", credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ defaults: Object.keys(defaults).filter(k => defaults[k]) }),
-    }).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["tool-permission-defaults"] }); toast({ title: "Default permissions saved" }); },
+    mutationFn: () => {
+      const minsNum = parseInt(defaultRecordingMinutes, 10);
+      const seconds = Number.isFinite(minsNum) && minsNum > 0
+        ? Math.max(60, Math.min(4 * 60 * 60, minsNum * 60))
+        : undefined;
+      return fetch("/api/admin/settings/tool-permissions/defaults", {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          defaults: Object.keys(defaults).filter(k => defaults[k]),
+          ...(seconds !== undefined ? { recordingMaxSeconds: seconds } : {}),
+        }),
+      }).then(r => r.json());
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tool-permission-defaults"] });
+      qc.invalidateQueries({ queryKey: ["tool-permission-users"] });
+      toast({ title: "Default permissions saved" });
+    },
     onError: () => toast({ variant: "destructive", title: "Save failed" }),
   });
 
-  const { data: usersData, isLoading: usersLoading } = useQuery<{ users: ToolUser[]; allTools: Tool[] }>({
+  const { data: usersData, isLoading: usersLoading } = useQuery<{ users: ToolUser[]; allTools: Tool[]; defaultRecordingMaxSeconds: number }>({
     queryKey: ["tool-permission-users"],
     queryFn: () => fetch("/api/admin/tool-permissions/users", { credentials: "include" }).then(r => r.json()),
   });
 
+  /* Per-user recording limit, also in MINUTES. "" = inherit global default. */
+  const [userRecordingMinutes, setUserRecordingMinutes] = useState<Record<number, string>>({});
+
   useEffect(() => {
     if (usersData) {
       const map: Record<number, Record<string, boolean>> = {};
-      usersData.users.forEach(u => { map[u.id] = { ...u.tools }; });
+      const recMap: Record<number, string> = {};
+      usersData.users.forEach(u => {
+        map[u.id] = { ...u.tools };
+        recMap[u.id] = u.recordingMaxSeconds != null ? String(Math.round(u.recordingMaxSeconds / 60)) : "";
+      });
       setUserTools(map);
+      setUserRecordingMinutes(recMap);
     }
   }, [usersData]);
 
   const saveUserPerms = async (userId: number) => {
     setSavingUser(userId);
     try {
+      const raw = (userRecordingMinutes[userId] ?? "").trim();
+      let recordingMaxSeconds: number | null | undefined;
+      if (raw === "") {
+        recordingMaxSeconds = null; // inherit default
+      } else {
+        const m = parseInt(raw, 10);
+        recordingMaxSeconds = Number.isFinite(m) && m > 0
+          ? Math.max(60, Math.min(4 * 60 * 60, m * 60))
+          : undefined; // bad input — leave existing value alone
+      }
       await fetch(`/api/admin/tool-permissions/users/${userId}`, {
         method: "PUT", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tools: userTools[userId] }),
+        body: JSON.stringify({
+          tools: userTools[userId],
+          ...(recordingMaxSeconds !== undefined ? { recordingMaxSeconds } : {}),
+        }),
       });
       qc.invalidateQueries({ queryKey: ["tool-permission-users"] });
       toast({ title: "User permissions updated" });
@@ -225,6 +266,31 @@ function UserPermissionTab() {
         <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Enabled for new users</span>
           <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-secondary border border-border/50 inline-block" /> Disabled for new users</span>
+        </div>
+
+        {/* Default Screen Recorder time limit */}
+        <div className="mt-5 pt-5 border-t border-border/40">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0">
+              <Video className="w-4 h-4 text-purple-400" />
+            </div>
+            <div className="flex-1 min-w-[180px]">
+              <p className="text-sm font-medium text-foreground">Screen Recorder time limit</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Default cap on every recording for users without an override</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={240}
+                value={defaultRecordingMinutes}
+                onChange={e => setDefaultRecordingMinutes(e.target.value)}
+                className="w-20 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-sm text-foreground text-right focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                placeholder="10"
+              />
+              <span className="text-xs text-muted-foreground">minutes</span>
+            </div>
+          </div>
         </div>
       </Card>
 
@@ -293,6 +359,35 @@ function UserPermissionTab() {
                             }))} />
                         ))}
                       </div>
+
+                      {/* Per-user Screen Recorder time limit override */}
+                      <div className="flex items-center gap-3 flex-wrap p-3 mb-4 rounded-xl border border-border/40 bg-secondary/20">
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0">
+                          <Video className="w-4 h-4 text-purple-400" />
+                        </div>
+                        <div className="flex-1 min-w-[160px]">
+                          <p className="text-sm font-medium text-foreground">Screen Recorder limit</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Leave empty to use the global default
+                            {usersData?.defaultRecordingMaxSeconds
+                              ? ` (${Math.round(usersData.defaultRecordingMaxSeconds / 60)} min)`
+                              : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            max={240}
+                            value={userRecordingMinutes[user.id] ?? ""}
+                            onChange={e => setUserRecordingMinutes(prev => ({ ...prev, [user.id]: e.target.value }))}
+                            className="w-20 px-3 py-2 bg-card border border-border/50 rounded-lg text-sm text-foreground text-right focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+                            placeholder="default"
+                          />
+                          <span className="text-xs text-muted-foreground">minutes</span>
+                        </div>
+                      </div>
+
                       <div className="flex justify-end">
                         <button onClick={() => saveUserPerms(user.id)} disabled={savingUser === user.id}
                           className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-60">

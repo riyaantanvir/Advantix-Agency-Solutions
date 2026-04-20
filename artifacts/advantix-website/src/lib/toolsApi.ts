@@ -130,6 +130,7 @@ export const toolsApi = {
       }),
     stats: () =>
       request<{ totalRecordings: number; totalSeconds: number }>("/tools/recordings/stats"),
+    getLimit: () => request<{ maxSeconds: number }>("/tools/recording-limit"),
   },
   urls: {
     list: () => request<ShortUrl[]>("/tools/urls"),

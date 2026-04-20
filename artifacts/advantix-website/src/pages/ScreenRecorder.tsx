@@ -13,7 +13,9 @@ import { toBlobURL, fetchFile } from "@ffmpeg/util";
 import { toolsApi } from "@/lib/toolsApi";
 
 const expo = [0.22, 1, 0.36, 1] as const;
-const MAX_SECONDS = 120 * 60; // 2 hours — effectively no limit
+/* Default cap until the server tells us this user's actual limit. 10 minutes
+   matches the platform default; the real value loads from /tools/recording-limit. */
+const DEFAULT_MAX_SECONDS = 10 * 60;
 
 function getBestMimeType(): string {
   const candidates = [
@@ -49,9 +51,9 @@ function fmtBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function LiveIndicator({ elapsed, onStop }: { elapsed: number; onStop: () => void }) {
-  const remaining = MAX_SECONDS - elapsed;
-  const pct = elapsed / MAX_SECONDS;
+function LiveIndicator({ elapsed, maxSeconds, onStop }: { elapsed: number; maxSeconds: number; onStop: () => void }) {
+  const remaining = maxSeconds - elapsed;
+  const pct = elapsed / maxSeconds;
   const urgent = remaining < 60;
 
   return (
@@ -71,7 +73,7 @@ function LiveIndicator({ elapsed, onStop }: { elapsed: number; onStop: () => voi
       <div className="text-left">
         <p className="text-xs font-bold text-foreground leading-none mb-0.5">Recording</p>
         <p className={`text-xs font-mono tabular-nums leading-none ${urgent ? "text-orange-400" : "text-muted-foreground"}`}>
-          {fmtTime(elapsed)} / {fmtTime(MAX_SECONDS)}
+          {fmtTime(elapsed)} / {fmtTime(maxSeconds)}
         </p>
       </div>
       <div className="relative w-8 h-8 shrink-0">
@@ -101,6 +103,11 @@ export default function ScreenRecorder() {
 
   const [state, setState] = useState<State>("idle");
   const [elapsed, setElapsed] = useState(0);
+  const [maxSeconds, setMaxSeconds] = useState<number>(DEFAULT_MAX_SECONDS);
+  /* True until the user's effective recording cap has loaded from the server.
+     We disable the Start button while this is pending so a user with a stricter
+     cap (e.g. 2 min) cannot exploit the 10 min default by clicking quickly. */
+  const [limitLoading, setLimitLoading] = useState(true);
   const [withAudio, setWithAudio] = useState(true);
   const [blob, setBlob] = useState<Blob | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -124,6 +131,21 @@ export default function ScreenRecorder() {
   useEffect(() => {
     if (!loading && !user) navigate("/login");
   }, [user, loading]);
+
+  /* Load this user's recording time limit (admin-configurable per user, with
+     a global default). If the request fails, we keep the safe DEFAULT cap. */
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    setLimitLoading(true);
+    toolsApi.recordings.getLimit()
+      .then(({ maxSeconds: m }) => {
+        if (!cancelled && Number.isFinite(m) && m > 0) setMaxSeconds(m);
+      })
+      .catch(() => { /* keep default */ })
+      .finally(() => { if (!cancelled) setLimitLoading(false); });
+    return () => { cancelled = true; };
+  }, [user]);
 
   /* Unmount cleanup — stop recorder, stream, timer, wake lock; revoke latest blob URL.
      Detach onstop/onerror first so the blob URL created in onstop after unmount
@@ -173,11 +195,11 @@ export default function ScreenRecorder() {
   const startTimer = useCallback(() => {
     timerRef.current = setInterval(() => {
       setElapsed(prev => {
-        if (prev + 1 >= MAX_SECONDS) { stopRecording(); return MAX_SECONDS; }
+        if (prev + 1 >= maxSeconds) { stopRecording(); return maxSeconds; }
         return prev + 1;
       });
     }, 1000);
-  }, [stopRecording]);
+  }, [stopRecording, maxSeconds]);
 
   const startRecording = async () => {
     setError("");
@@ -445,11 +467,13 @@ export default function ScreenRecorder() {
                   size="lg"
                   className="w-full h-14 text-base font-semibold bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/20 gap-3"
                   onClick={startRecording}
-                  disabled={state === "requesting"}
+                  disabled={state === "requesting" || limitLoading}
                 >
-                  {state === "requesting"
-                    ? <><Loader2 className="w-5 h-5 animate-spin" /> Waiting for permission…</>
-                    : <><span className="w-3 h-3 rounded-full bg-red-400" /> Start Recording</>}
+                  {limitLoading
+                    ? <><Loader2 className="w-5 h-5 animate-spin" /> Loading limit…</>
+                    : state === "requesting"
+                      ? <><Loader2 className="w-5 h-5 animate-spin" /> Waiting for permission…</>
+                      : <><span className="w-3 h-3 rounded-full bg-red-400" /> Start Recording</>}
                 </Button>
               </Card>
               <p className="text-xs text-center text-muted-foreground">
@@ -468,11 +492,11 @@ export default function ScreenRecorder() {
                 </div>
                 <h2 className="text-xl font-display font-bold mb-1">Recording in Progress</h2>
                 <p className="text-4xl font-mono font-bold tabular-nums text-red-400 mt-4 mb-2">{fmtTime(elapsed)}</p>
-                <p className="text-sm text-muted-foreground mb-8">{fmtTime(MAX_SECONDS - elapsed)} remaining</p>
+                <p className="text-sm text-muted-foreground mb-8">{fmtTime(Math.max(0, maxSeconds - elapsed))} remaining</p>
                 <div className="w-full h-2 bg-secondary rounded-full mb-8 overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all duration-1000 ${elapsed / MAX_SECONDS > 0.8 ? "bg-orange-400" : "bg-red-500"}`}
-                    style={{ width: `${(elapsed / MAX_SECONDS) * 100}%` }}
+                    className={`h-full rounded-full transition-all duration-1000 ${elapsed / maxSeconds > 0.8 ? "bg-orange-400" : "bg-red-500"}`}
+                    style={{ width: `${Math.min(100, (elapsed / maxSeconds) * 100)}%` }}
                   />
                 </div>
                 <Button size="lg" variant="destructive" className="w-full h-14 text-base font-semibold gap-3" onClick={stopRecording}>
@@ -592,7 +616,7 @@ export default function ScreenRecorder() {
       </div>
 
       <AnimatePresence>
-        {state === "recording" && <LiveIndicator elapsed={elapsed} onStop={stopRecording} />}
+        {state === "recording" && <LiveIndicator elapsed={elapsed} maxSeconds={maxSeconds} onStop={stopRecording} />}
       </AnimatePresence>
     </div>
   );

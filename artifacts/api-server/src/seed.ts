@@ -183,6 +183,14 @@ export async function runMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS reset_token text,
       ADD COLUMN IF NOT EXISTS reset_token_expires timestamp
   `);
+
+  /* Per-user override for the maximum allowed Screen Recorder duration
+     (in seconds). NULL = use the global default site_setting
+     `default_recording_max_seconds` (which itself defaults to 600 = 10 min). */
+  await db.execute(sql`
+    ALTER TABLE tool_users
+      ADD COLUMN IF NOT EXISTS recording_max_seconds integer
+  `);
   await db.execute(sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_tool_users_google_id
     ON tool_users(google_id) WHERE google_id IS NOT NULL
