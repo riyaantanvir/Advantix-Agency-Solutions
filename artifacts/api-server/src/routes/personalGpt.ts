@@ -12,6 +12,7 @@ import {
   loadSettings,
   updateSettings,
   clearRecentTurns,
+  loadRecentTurns,
   runPersonalGptTurn,
   runPersonalGptTurnStream,
   startPersonalGptBot,
@@ -159,6 +160,17 @@ router.post("/admin/personal-gpt/chat/stream", requireAdmin, async (req: Request
   } finally {
     clearInterval(heartbeat);
     res.end();
+  }
+});
+
+/* ── GET recent conversation history (for restoring chat UI on reload) ─── */
+router.get("/admin/personal-gpt/history", requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const turns = await loadRecentTurns();
+    res.json({ turns });
+  } catch (err) {
+    logger.error({ err }, "personal-gpt: load history failed");
+    res.status(500).json({ error: "Failed to load history" });
   }
 });
 

@@ -180,7 +180,7 @@ export async function updateSettings(patch: {
   await db.execute(sql`UPDATE personal_gpt_settings SET ${setClause} WHERE id = 1`);
 }
 
-async function loadRecentTurns(): Promise<RecentTurn[]> {
+export async function loadRecentTurns(): Promise<RecentTurn[]> {
   const r = await db.execute(sql`
     SELECT role, content FROM personal_gpt_recent
     ORDER BY id DESC LIMIT ${RECENT_ROWS_KEEP}

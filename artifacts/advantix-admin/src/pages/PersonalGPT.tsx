@@ -140,6 +140,27 @@ function ChatPanel({ onPersonalityUpdated, toast }: {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  /* Restore the recent conversation window from the server on mount so the
+     chat picks up exactly where it left off (across page reloads, and even
+     including turns that happened on Telegram). */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/personal-gpt/history", { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json() as { turns?: { role: "user" | "assistant"; content: string }[] };
+        if (cancelled || !data.turns?.length) return;
+        setMessages(data.turns.map((t, i) => ({
+          id: `h${i}-${t.role}`,
+          role: t.role,
+          content: t.content,
+        })));
+      } catch { /* silent — empty chat is fine */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
