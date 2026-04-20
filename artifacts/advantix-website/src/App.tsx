@@ -59,16 +59,70 @@ function CountdownTimer({ targetMs }: { targetMs: number }) {
   );
 }
 
+const PASS_STORAGE_KEY = "advantix_maintenance_pass";
+
 function MaintenanceGate({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { data } = useQuery<{ maintenanceMode: boolean; maintenanceMessage: string; siteName: string; maintenanceLiveAt: string }>({
+  const { data } = useQuery<{ maintenanceMode: boolean; maintenanceMessage: string; siteName: string; maintenanceLiveAt: string; maintenancePassEnabled: boolean }>({
     queryKey: ["general-settings"],
     queryFn: () => fetch("/api/settings/general").then(r => r.ok ? r.json() : null),
     staleTime: 60_000,
     retry: false,
   });
+
+  /* Re-verify any locally stored pass against the server on each load so
+     admins can revoke a code at any time by changing it. */
+  const storedCode = typeof window !== "undefined" ? localStorage.getItem(PASS_STORAGE_KEY) || "" : "";
+  const { data: passOk } = useQuery<{ ok: boolean }>({
+    queryKey: ["maintenance-pass-revalidate", storedCode],
+    queryFn: () => storedCode
+      ? fetch("/api/maintenance/pass-verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: storedCode }),
+        }).then(async r => {
+          const j = await r.json().catch(() => ({ ok: false }));
+          if (!r.ok || !j.ok) localStorage.removeItem(PASS_STORAGE_KEY);
+          return j;
+        })
+      : Promise.resolve({ ok: false }),
+    enabled: !!storedCode && !!data?.maintenanceMode,
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const [showPassModal, setShowPassModal] = useState(false);
+  const [passInput, setPassInput] = useState("");
+  const [passError, setPassError] = useState("");
+  const [passSubmitting, setPassSubmitting] = useState(false);
+
+  const submitPass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passInput.trim()) return;
+    setPassSubmitting(true);
+    setPassError("");
+    try {
+      const r = await fetch("/api/maintenance/pass-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: passInput.trim() }),
+      });
+      const j = await r.json().catch(() => ({ ok: false, error: "Network error" }));
+      if (r.ok && j.ok) {
+        localStorage.setItem(PASS_STORAGE_KEY, passInput.trim());
+        window.location.reload();
+      } else {
+        setPassError(j.error || "Invalid code");
+      }
+    } catch {
+      setPassError("Could not verify — try again");
+    } finally {
+      setPassSubmitting(false);
+    }
+  };
+
   const path = location.split("?")[0].replace(/\/$/, "") || "/";
-  const bypass = path === "/login" || path === "/reset-password";
+  const bypass = path === "/login" || path === "/reset-password" || passOk?.ok === true;
   if (data?.maintenanceMode && !bypass) {
     const siteName = data.siteName || "Advantix";
     const liveTs = data.maintenanceLiveAt ? new Date(data.maintenanceLiveAt).getTime() : 0;
@@ -120,7 +174,64 @@ function MaintenanceGate({ children }: { children: React.ReactNode }) {
           <div className="pt-6 text-xs text-muted-foreground/70">
             Thanks for your patience. — Team {siteName}
           </div>
+
+          {/* Only show the pass button when the server actually has a code set
+              — verify endpoint will respond with "disabled" otherwise, leading
+              to a dead-end UX. The probe call below is cheap and cached. */}
+          {data.maintenancePassEnabled && (
+            <div className="pt-2">
+              <button
+                onClick={() => { setShowPassModal(true); setPassError(""); setPassInput(""); }}
+                className="text-xs text-muted-foreground hover:text-primary transition-colors underline underline-offset-4 decoration-dotted"
+              >
+                Do you have a priority pass?
+              </button>
+            </div>
+          )}
         </div>
+
+        {showPassModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4" onClick={() => setShowPassModal(false)}>
+            <form
+              onSubmit={submitPass}
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-sm bg-card border border-border rounded-2xl shadow-2xl p-6 space-y-5"
+            >
+              <div className="space-y-1.5">
+                <h2 className="text-lg font-semibold text-foreground">Priority Pass</h2>
+                <p className="text-xs text-muted-foreground">Enter your access code to view the site.</p>
+              </div>
+              <input
+                type="text"
+                autoFocus
+                value={passInput}
+                onChange={e => setPassInput(e.target.value)}
+                placeholder="Enter code"
+                className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20 tracking-wider"
+                autoComplete="off"
+              />
+              {passError && (
+                <p className="text-xs text-red-400 font-medium">{passError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPassModal(false)}
+                  className="flex-1 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground bg-secondary/40 hover:bg-secondary/60 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={passSubmitting || !passInput.trim()}
+                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-primary-foreground bg-primary hover:bg-primary/90 rounded-xl transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {passSubmitting ? "Checking…" : "Unlock"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
     );
   }

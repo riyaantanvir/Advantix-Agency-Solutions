@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { requireAdmin } from "../middleware/auth.js";
 import { sendBulkEmails } from "../services/resendMailer.js";
 import { buildBlogNotificationEmail } from "../services/blogEmailTemplate.js";
@@ -320,9 +321,11 @@ const GENERAL_DEFAULTS: Record<string, string> = {
   social_instagram:     "",
   meta_description:     "Advantix Digital — a full-service digital agency.",
   google_analytics_id:  "",
-  maintenance_mode:     "false",
-  maintenance_message:  "We're performing scheduled maintenance. We'll be back shortly.",
-  maintenance_live_at:  "",
+  maintenance_mode:        "false",
+  maintenance_message:     "We're performing scheduled maintenance. We'll be back shortly.",
+  maintenance_live_at:     "",
+  maintenance_pass_enabled:"false",
+  maintenance_pass_code:   "",
 };
 
 async function getGeneralSettings() {
@@ -349,9 +352,12 @@ async function getGeneralSettings() {
     instagram:          map.social_instagram,
     metaDescription:    map.meta_description,
     googleAnalyticsId:  map.google_analytics_id,
-    maintenanceMode:    map.maintenance_mode === "true",
-    maintenanceMessage: map.maintenance_message,
-    maintenanceLiveAt:  map.maintenance_live_at || "",
+    maintenanceMode:         map.maintenance_mode === "true",
+    maintenanceMessage:      map.maintenance_message,
+    maintenanceLiveAt:       map.maintenance_live_at || "",
+    maintenancePassEnabled:  map.maintenance_pass_enabled === "true",
+    /* NOTE: maintenance_pass_code is intentionally NOT exposed via the public
+       getter. Admin endpoints below read it directly from the DB. */
   };
 }
 
@@ -383,9 +389,11 @@ router.put("/admin/settings/general", requireAdmin, async (req, res) => {
     instagram:          "social_instagram",
     metaDescription:    "meta_description",
     googleAnalyticsId:  "google_analytics_id",
-    maintenanceMode:    "maintenance_mode",
-    maintenanceMessage: "maintenance_message",
-    maintenanceLiveAt:  "maintenance_live_at",
+    maintenanceMode:        "maintenance_mode",
+    maintenanceMessage:     "maintenance_message",
+    maintenanceLiveAt:      "maintenance_live_at",
+    maintenancePassEnabled: "maintenance_pass_enabled",
+    maintenancePassCode:    "maintenance_pass_code",
   };
   for (const [jsKey, dbKey] of Object.entries(map)) {
     if (body[jsKey] !== undefined) {
@@ -393,6 +401,67 @@ router.put("/admin/settings/general", requireAdmin, async (req, res) => {
     }
   }
   res.json(await getGeneralSettings());
+});
+
+/* ── Maintenance Priority Pass (admin) ─────────────────────
+   Code is kept server-side only and never returned via the
+   public /settings/general endpoint. Visitors verify by POSTing
+   their code to /maintenance/pass-verify (constant-time compare). */
+
+router.get("/admin/settings/maintenance-pass", requireAdmin, async (_req, res) => {
+  const r = await db.execute(sql`
+    SELECT key, value FROM site_settings
+    WHERE key IN ('maintenance_pass_enabled', 'maintenance_pass_code')
+  `);
+  const map: Record<string, string> = {};
+  for (const row of r.rows as { key: string; value: string }[]) map[row.key] = row.value;
+  res.json({
+    enabled: map.maintenance_pass_enabled === "true",
+    code:    map.maintenance_pass_code || "",
+  });
+});
+
+router.put("/admin/settings/maintenance-pass", requireAdmin, async (req, res) => {
+  const body = req.body as { enabled?: boolean; code?: string };
+  const upsert = async (key: string, value: string) => {
+    await db.execute(sql`
+      INSERT INTO site_settings (key, value) VALUES (${key}, ${value})
+      ON CONFLICT (key) DO UPDATE SET value = ${value}, updated_at = now()
+    `);
+  };
+  if (typeof body.enabled === "boolean") {
+    await upsert("maintenance_pass_enabled", body.enabled ? "true" : "false");
+  }
+  if (typeof body.code === "string") {
+    await upsert("maintenance_pass_code", body.code.trim().slice(0, 100));
+  }
+  res.json({ ok: true });
+});
+
+/* Public verify — used by the maintenance page to check a visitor's code */
+router.post("/maintenance/pass-verify", async (req, res) => {
+  const submitted = String((req.body as { code?: string })?.code || "").trim();
+  if (!submitted) return res.status(400).json({ ok: false, error: "Code required" });
+
+  const r = await db.execute(sql`
+    SELECT key, value FROM site_settings
+    WHERE key IN ('maintenance_pass_enabled', 'maintenance_pass_code')
+  `);
+  const map: Record<string, string> = {};
+  for (const row of r.rows as { key: string; value: string }[]) map[row.key] = row.value;
+
+  const enabled = map.maintenance_pass_enabled === "true";
+  const expected = (map.maintenance_pass_code || "").trim();
+  if (!enabled || !expected) return res.status(403).json({ ok: false, error: "Priority pass disabled" });
+
+  /* True constant-time compare: hash both sides to a fixed length so length
+     itself does not leak via timing, then use Node's timingSafeEqual. */
+  const a = createHash("sha256").update(submitted).digest();
+  const b = createHash("sha256").update(expected).digest();
+  const ok = timingSafeEqual(a, b);
+
+  if (!ok) return res.status(401).json({ ok: false, error: "Invalid code" });
+  res.json({ ok: true });
 });
 
 export default router;

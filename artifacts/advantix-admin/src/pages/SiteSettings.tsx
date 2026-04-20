@@ -17,6 +17,7 @@ type GeneralSettings = {
   twitter: string; linkedin: string; facebook: string; instagram: string;
   metaDescription: string; googleAnalyticsId: string;
   maintenanceMode: boolean; maintenanceMessage: string; maintenanceLiveAt: string;
+  maintenancePassEnabled: boolean; maintenancePassCode: string;
 };
 
 const GENERAL_DEFAULTS: GeneralSettings = {
@@ -27,6 +28,7 @@ const GENERAL_DEFAULTS: GeneralSettings = {
   googleAnalyticsId: "", maintenanceMode: false,
   maintenanceMessage: "We're performing scheduled maintenance. We'll be back shortly.",
   maintenanceLiveAt: "",
+  maintenancePassEnabled: false, maintenancePassCode: "",
 };
 
 /* ─── Reusable input component ──────────────────────────── */
@@ -144,7 +146,16 @@ export default function SiteSettings() {
     queryFn: () => fetch("/api/settings/general", { credentials: "include" }).then(r => r.json()),
   });
   const [gen, setGen] = useState<GeneralSettings>(GENERAL_DEFAULTS);
-  useEffect(() => { if (general) setGen(general); }, [general]);
+  useEffect(() => { if (general) setGen(g => ({ ...g, ...general })); }, [general]);
+
+  /* Pass code is admin-only and not exposed via the public general endpoint */
+  const { data: passData } = useQuery<{ enabled: boolean; code: string }>({
+    queryKey: ["maintenance-pass"],
+    queryFn: () => fetch("/api/admin/settings/maintenance-pass", { credentials: "include" }).then(r => r.json()),
+  });
+  useEffect(() => {
+    if (passData) setGen(g => ({ ...g, maintenancePassEnabled: passData.enabled, maintenancePassCode: passData.code }));
+  }, [passData]);
   const setG = (k: keyof GeneralSettings, v: any) => setGen(f => ({ ...f, [k]: v }));
 
   const genSave = useMutation({
@@ -312,6 +323,39 @@ export default function SiteSettings() {
               <Field label="Maintenance Message">
                 <textarea value={gen.maintenanceMessage} onChange={e => setG("maintenanceMessage", e.target.value)} rows={2} placeholder="We'll be back shortly…" className={`${inputCls} resize-none`} />
               </Field>
+              {/* ── Priority Pass ── */}
+              <div className="pt-2 mt-2 border-t border-border/40">
+                <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-xl border border-border/40">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Enable Priority Pass</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Show a "Do you have a priority pass?" button on the maintenance page so VIPs can bypass with a code</p>
+                  </div>
+                  <button
+                    onClick={() => setG("maintenancePassEnabled", !gen.maintenancePassEnabled)}
+                    className={`relative inline-flex items-center h-6 w-11 rounded-full transition-colors focus:outline-none ${gen.maintenancePassEnabled ? "bg-primary" : "bg-secondary"}`}
+                  >
+                    <span className={`inline-block w-4 h-4 bg-white rounded-full shadow transform transition-transform ${gen.maintenancePassEnabled ? "translate-x-6" : "translate-x-1"}`} />
+                  </button>
+                </div>
+                {gen.maintenancePassEnabled && (
+                  <div className="mt-4">
+                    <Field label="Priority Pass Code">
+                      <input
+                        type="text"
+                        value={gen.maintenancePassCode}
+                        onChange={e => setG("maintenancePassCode", e.target.value)}
+                        placeholder="e.g. ADV-VIP-2026"
+                        className={inputCls}
+                        autoComplete="off"
+                      />
+                      <p className="text-[11px] text-muted-foreground mt-1.5">
+                        Share this code with people you want to allow in. Anyone entering this code on the maintenance page will see the full site. Change it any time to revoke access.
+                      </p>
+                    </Field>
+                  </div>
+                )}
+              </div>
+
               <Field label="Site Goes Live At (optional — shows a countdown)">
                 <input
                   type="datetime-local"
