@@ -4,6 +4,7 @@ import {
   Send, Trash2, Bot, User, Loader2, Sparkles, Settings as SettingsIcon, Save,
   Brain, MessageCircle, Plug, X, RefreshCw, Power, AlertCircle, CheckCircle2,
   Pin, PinOff, BookMarked, Plus, History, Search, Send as SendIcon, MessagesSquare,
+  Download, Upload, Database,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -639,6 +640,9 @@ function SettingsPanel({ settings, toast, qc }: {
           </div>
         </Card>
 
+        {/* Backup & Restore */}
+        <BackupRestoreCard toast={toast} qc={qc} />
+
         {/* Telegram */}
         <Card className="p-5">
           <div className="flex items-center gap-3 mb-4">
@@ -1095,5 +1099,159 @@ function InsightsPanel({ toast }: { toast: (o: { title: string; description?: st
         )}
       </Card>
     </div>
+  );
+}
+
+/* ── Backup & Restore card — export everything, import to restore ───────── */
+function BackupRestoreCard({ toast, qc }: {
+  toast: ReturnType<typeof useToast>["toast"];
+  qc: ReturnType<typeof useQueryClient>;
+}) {
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [mode, setMode] = useState<"replace" | "merge">("replace");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch("/api/admin/personal-gpt/export", { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      /* Trigger a browser download of the JSON file. */
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const cd = res.headers.get("Content-Disposition") ?? "";
+      const m = cd.match(/filename="([^"]+)"/);
+      a.download = m?.[1] ?? `personal-gpt-backup-${new Date().toISOString().slice(0, 19)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: "Backup downloaded", description: "Keep this file safe — it's your AI's brain." });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Export failed", description: err instanceof Error ? err.message : "Try again" });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const doImport = async (file: File) => {
+    if (mode === "replace") {
+      const ok = window.confirm(
+        "Restore mode: REPLACE\n\nThis will wipe everything the AI has learned (personality, all notes, full conversation archive) and restore it to exactly what's in this backup file.\n\nContinue?"
+      );
+      if (!ok) return;
+    }
+    setImporting(true);
+    try {
+      const text = await file.text();
+      let parsed: unknown;
+      try { parsed = JSON.parse(text); }
+      catch { throw new Error("File is not valid JSON"); }
+      const res = await fetch("/api/admin/personal-gpt/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ mode, backup: parsed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      toast({
+        title: `Restored (${data.mode})`,
+        description: `Personality ${data.personalityRestored ? "✓" : "—"} · Notes: ${data.notesImported} · Archive turns: ${data.archiveImported}`,
+      });
+      /* Refresh everything that could have changed. */
+      qc.invalidateQueries({ queryKey: ["personal-gpt-settings"] });
+      qc.invalidateQueries({ queryKey: ["pgpt-archive"] });
+      qc.invalidateQueries({ queryKey: ["pgpt-archive-stats"] });
+      qc.invalidateQueries({ queryKey: ["personal-gpt-notes"] });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Import failed", description: err instanceof Error ? err.message : "Try again" });
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center">
+          <Database className="w-4 h-4 text-amber-400" />
+        </div>
+        <div className="flex-1">
+          <h3 className="font-semibold text-sm">Backup & Restore</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Export everything the AI knows about you (personality, knowledge base, full chat history) as one JSON file. Import any time to bring it back — no retraining needed.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className="flex flex-wrap gap-2 items-center">
+          <Button size="sm" variant="outline" disabled={exporting} onClick={doExport} className="gap-1.5">
+            {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+            Export backup (.json)
+          </Button>
+        </div>
+
+        <div className="border-t border-border pt-4 space-y-3">
+          <div>
+            <div className="text-xs font-medium text-foreground mb-2">Restore mode</div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setMode("replace")}
+                className={cn(
+                  "flex-1 text-left px-3 py-2 rounded-md border text-xs transition-colors",
+                  mode === "replace"
+                    ? "border-fuchsia-500/40 bg-fuchsia-500/10 text-foreground"
+                    : "border-border bg-secondary/40 text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <div className="font-semibold">Replace (recommended)</div>
+                <div className="opacity-80 mt-0.5">Wipe and restore the AI to exactly the snapshot.</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("merge")}
+                className={cn(
+                  "flex-1 text-left px-3 py-2 rounded-md border text-xs transition-colors",
+                  mode === "merge"
+                    ? "border-fuchsia-500/40 bg-fuchsia-500/10 text-foreground"
+                    : "border-border bg-secondary/40 text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <div className="font-semibold">Merge</div>
+                <div className="opacity-80 mt-0.5">Add to what's already there. Keeps current data.</div>
+              </button>
+            </div>
+          </div>
+
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (f) void doImport(f);
+            }}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={importing}
+            onClick={() => fileRef.current?.click()}
+            className="gap-1.5"
+          >
+            {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            Import backup…
+          </Button>
+        </div>
+      </div>
+    </Card>
   );
 }

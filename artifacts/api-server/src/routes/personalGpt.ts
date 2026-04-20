@@ -6,7 +6,7 @@
  * flag — so the secret cannot leak via XSS or browser dev-tools.
  */
 
-import { Router, type Request, type Response } from "express";
+import express, { Router, type Request, type Response } from "express";
 import { requireAdmin } from "../middleware/auth.js";
 import {
   loadSettings,
@@ -15,6 +15,8 @@ import {
   loadRecentTurns,
   loadArchive,
   loadArchiveStats,
+  exportAll,
+  importAll,
   runPersonalGptTurn,
   runPersonalGptTurnStream,
   startPersonalGptBot,
@@ -198,6 +200,37 @@ router.get("/admin/personal-gpt/archive/stats", requireAdmin, async (_req: Reque
   } catch (err) {
     logger.error({ err }, "personal-gpt: archive stats failed");
     res.status(500).json({ error: "Failed to load stats" });
+  }
+});
+
+/* ── GET full backup (personality + notes + archive) as JSON download ──── */
+router.get("/admin/personal-gpt/export", requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const backup = await exportAll();
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="personal-gpt-backup-${stamp}.json"`);
+    res.send(JSON.stringify(backup, null, 2));
+  } catch (err) {
+    logger.error({ err }, "personal-gpt: export failed");
+    res.status(500).json({ error: "Export failed" });
+  }
+});
+
+/* ── POST restore from a backup blob ────────────────────────────────────── */
+/* The default global JSON body limit (2mb) is far too small for a full
+   personal archive — power users will easily produce 10–50 MB exports. We
+   apply a generous 100mb limit on this single route. */
+const importBodyParser = express.json({ limit: "100mb" });
+router.post("/admin/personal-gpt/import", requireAdmin, importBodyParser, async (req: Request, res: Response) => {
+  try {
+    const mode = req.body?.mode === "merge" ? "merge" : "replace";
+    const backup = req.body?.backup ?? req.body;
+    const result = await importAll(backup, mode);
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "personal-gpt: import failed");
+    res.status(400).json({ error: err instanceof Error ? err.message : "Import failed" });
   }
 });
 

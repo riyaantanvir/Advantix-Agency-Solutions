@@ -305,6 +305,172 @@ export async function clearRecentTurns(): Promise<void> {
   await db.execute(sql`DELETE FROM personal_gpt_recent`);
 }
 
+/* ── Backup / restore ──────────────────────────────────────────────────────
+   The user wants a single JSON file that captures EVERYTHING the AI has
+   learned: their personality profile, every CRM/knowledge note, and the
+   permanent conversation archive. Exported as a versioned object so future
+   schema changes can be migrated. Import runs in `replace` mode by default
+   so a restore brings the AI back to exactly the state it was in. */
+
+export type PersonalGptBackup = {
+  version: 1;
+  exportedAt: string;
+  personality: Personality;
+  notes: Array<Pick<Note, "category" | "title" | "body" | "pinned" | "createdAt" | "updatedAt">>;
+  archive: ArchiveTurn[];
+};
+
+export async function exportAll(): Promise<PersonalGptBackup> {
+  const settings = await loadSettings();
+  const notes = await listNotes();
+  /* Pull the entire archive in one shot — no pagination. For very large
+     archives this is fine because export is a manual user action, not a hot
+     path. */
+  const r = await db.execute(sql`
+    SELECT id, role, content, source, created_at
+    FROM personal_gpt_archive
+    ORDER BY id ASC
+  `);
+  const archive: ArchiveTurn[] = (r.rows as { id: number; role: string; content: string; source: string; created_at: Date | string }[])
+    .filter(row => row.role === "user" || row.role === "assistant")
+    .map(row => ({
+      id: row.id,
+      role: row.role as "user" | "assistant",
+      content: row.content,
+      source: row.source,
+      createdAt: typeof row.created_at === "string" ? row.created_at : row.created_at.toISOString(),
+    }));
+
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    personality: settings.personality,
+    notes: notes.map(n => ({
+      category: n.category, title: n.title, body: n.body, pinned: n.pinned,
+      createdAt: n.createdAt, updatedAt: n.updatedAt,
+    })),
+    archive,
+  };
+}
+
+export type ImportMode = "replace" | "merge";
+export type ImportResult = {
+  mode: ImportMode;
+  personalityRestored: boolean;
+  notesImported: number;
+  archiveImported: number;
+};
+
+/**
+ * Restore from a backup blob. In `replace` mode (default) the AI is wiped
+ * back to a clean slate first, so the result is *exactly* what was exported
+ * — no leftover learned data. In `merge` mode personality lists are unioned,
+ * notes are appended, and archive turns are appended.
+ */
+export async function importAll(backup: unknown, mode: ImportMode = "replace"): Promise<ImportResult> {
+  if (!backup || typeof backup !== "object") throw new Error("Backup is empty or not an object");
+  const b = backup as Partial<PersonalGptBackup>;
+  if (b.version !== 1) throw new Error(`Unsupported backup version: ${String(b.version)}`);
+
+  const personality = normalizePersonality(b.personality ?? EMPTY_PERSONALITY);
+  const notes = Array.isArray(b.notes) ? b.notes : [];
+  const archive = Array.isArray(b.archive) ? b.archive : [];
+
+  const result: ImportResult = { mode, personalityRestored: false, notesImported: 0, archiveImported: 0 };
+
+  /* Wrap the whole restore in a transaction. If ANY step fails (bad row,
+     connection drop, malformed JSON), we roll back so the user is never left
+     with a half-wiped database. Especially critical for `replace` mode which
+     starts with destructive DELETEs. */
+  await db.transaction(async (tx) => {
+    /* Compute the personality to write — `replace` uses the backup as-is,
+       `merge` unions lists with whatever's already there. */
+    let personalityToWrite: Personality = personality;
+    if (mode === "merge") {
+      const curRows = await tx.execute(sql`SELECT personality FROM personal_gpt_settings WHERE id = 1`);
+      const curRaw = (curRows.rows[0] as { personality?: unknown } | undefined)?.personality;
+      const cur = normalizePersonality(curRaw ?? EMPTY_PERSONALITY);
+      const mergeLists = (incoming: string[], current: string[]) => {
+        const seen = new Set(current.map(s => s.toLowerCase()));
+        const out = [...current];
+        for (const item of incoming) if (!seen.has(item.toLowerCase())) { out.push(item); seen.add(item.toLowerCase()); }
+        return out;
+      };
+      personalityToWrite = normalizePersonality({
+        style: personality.style || cur.style,
+        facts: mergeLists(personality.facts, cur.facts),
+        habits: mergeLists(personality.habits, cur.habits),
+        likes: mergeLists(personality.likes, cur.likes),
+        dislikes: mergeLists(personality.dislikes, cur.dislikes),
+      });
+    }
+
+    if (mode === "replace") {
+      /* Full wipe — bring the AI back to exactly the snapshot. */
+      await tx.execute(sql`DELETE FROM personal_gpt_archive`);
+      await tx.execute(sql`DELETE FROM personal_gpt_recent`);
+      await tx.execute(sql`DELETE FROM personal_gpt_notes`);
+    }
+
+    /* Update the personality JSONB on the singleton settings row. We do this
+       inside the transaction (raw, so we don't depend on updateSettings which
+       holds its own connection) to keep the restore truly atomic. */
+    await tx.execute(sql`
+      UPDATE personal_gpt_settings
+      SET personality = ${JSON.stringify(personalityToWrite)}::jsonb
+      WHERE id = 1
+    `);
+    result.personalityRestored = true;
+
+    /* Re-insert notes. We don't try to preserve the old `id` (it's a serial),
+       but we do preserve created_at / updated_at so timeline order survives. */
+    for (const n of notes) {
+      if (!n || typeof n !== "object") continue;
+      const title = String((n as { title?: unknown }).title ?? "").trim().slice(0, 200);
+      if (!title) continue;
+      const category = normalizeCategory((n as { category?: unknown }).category);
+      const body = String((n as { body?: unknown }).body ?? "").trim().slice(0, 4000);
+      const pinned = Boolean((n as { pinned?: unknown }).pinned);
+      const createdAt = parseTs((n as { createdAt?: unknown }).createdAt);
+      const updatedAt = parseTs((n as { updatedAt?: unknown }).updatedAt);
+      await tx.execute(sql`
+        INSERT INTO personal_gpt_notes (category, title, body, pinned, created_at, updated_at)
+        VALUES (${category}, ${title}, ${body}, ${pinned},
+                COALESCE(${createdAt}, now()), COALESCE(${updatedAt}, now()))
+      `);
+      result.notesImported++;
+    }
+
+    /* Re-insert archive turns, preserving timestamps. We DON'T try to keep the
+       original ids — serial doesn't allow that without messing with the
+       sequence. The recent-turn rolling window will be naturally rebuilt as
+       soon as the user sends new messages. */
+    for (const t of archive) {
+      if (!t || typeof t !== "object") continue;
+      const role = (t as { role?: unknown }).role;
+      if (role !== "user" && role !== "assistant") continue;
+      const content = String((t as { content?: unknown }).content ?? "");
+      if (!content) continue;
+      const source = String((t as { source?: unknown }).source ?? "web").slice(0, 100);
+      const createdAt = parseTs((t as { createdAt?: unknown }).createdAt);
+      await tx.execute(sql`
+        INSERT INTO personal_gpt_archive (role, content, source, created_at)
+        VALUES (${role}, ${content}, ${source}, COALESCE(${createdAt}, now()))
+      `);
+      result.archiveImported++;
+    }
+  });
+
+  return result;
+}
+
+/* Coerce a value into a Date for INSERT, or null if it isn't a valid timestamp. */
+function parseTs(v: unknown): Date | null {
+  if (typeof v !== "string" && !(v instanceof Date)) return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /* ── CRM / knowledge notes ──────────────────────────────────────────────── */
 
 function normalizeCategory(c: unknown): NoteCategory {
