@@ -721,11 +721,22 @@ export async function generateImage(prompt: string): Promise<{ bytes: Buffer; mi
     throw new Error(`Image generation failed: HTTP ${res.status} ${body.slice(0, 300)}`);
   }
   const data = await res.json() as {
-    choices?: { message?: { content?: string; images?: { image_url?: { url?: string } }[] } }[];
+    choices?: { message?: { content?: string; refusal?: string; images?: { image_url?: { url?: string } }[] } }[];
   };
   const msg = data.choices?.[0]?.message;
   const imgUrl = msg?.images?.[0]?.image_url?.url;
-  if (!imgUrl) throw new Error("Model did not return an image.");
+  if (!imgUrl) {
+    /* Common case: the model refused to generate (real people, sensitive
+       content, etc.) and instead returned a plain-text explanation. Surface
+       it so the user understands WHY no image came back, instead of a
+       generic "Model did not return an image." */
+    const explanation = (msg?.refusal || msg?.content || "").trim();
+    if (explanation) {
+      const short = explanation.length > 400 ? explanation.slice(0, 400) + "…" : explanation;
+      throw new Error(`Image model refused: ${short}`);
+    }
+    throw new Error("Model did not return an image (no content + no refusal text).");
+  }
 
   /* The image arrives as a `data:image/<type>;base64,<payload>` URL. */
   const m = imgUrl.match(/^data:([^;]+);base64,(.+)$/);
