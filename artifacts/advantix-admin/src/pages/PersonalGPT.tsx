@@ -1013,10 +1013,11 @@ function relativeTime(iso: string): string {
 }
 
 /* Build a `YYYY-MM-DDTHH:mm` value for <input type="datetime-local"> set to
-   "now + 1h" expressed in Asia/Dhaka wall time, so the prefilled value is
-   consistent with how we interpret submissions (Dhaka, not browser local). */
+   "now + 5 min" expressed in Asia/Dhaka wall time. Small offset so the user
+   sees the actual current time and can tweak forward without confusion,
+   while still defaulting to a valid (future) reminder. */
 function defaultRemindAtLocal(): string {
-  const target = new Date(Date.now() + 60 * 60_000);
+  const target = new Date(Date.now() + 5 * 60_000);
   /* en-CA gives the YYYY-MM-DD HH:mm format we want; we only swap the space
      for a `T` to match the input element's expected value format. */
   const parts = new Intl.DateTimeFormat("en-CA", {
