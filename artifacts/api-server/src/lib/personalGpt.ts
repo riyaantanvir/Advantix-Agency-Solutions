@@ -955,7 +955,46 @@ function buildMessages(systemPrompt: string, history: RecentTurn[]) {
   ];
 }
 
-async function callChat(systemPrompt: string, history: RecentTurn[], apiKey: string): Promise<string> {
+/* ── Web-search intent detector ──────────────────────────────────────────
+   When the user asks for real-time / online info (English or Banglish), we
+   flip on OpenRouter's `:online` suffix which transparently appends a web
+   search to ANY model — so the same GLM 4.6 keeps the personality voice
+   while gaining fresh facts. False-positives are cheap (~$0.004/request),
+   false-negatives leave the user with stale info, so the trigger list
+   leans intentionally generous.
+
+   Heuristic only — the user can also force it ON/OFF with explicit
+   `/search` and `/nosearch` prefixes, which we strip before the model
+   sees the text. */
+const WEB_SEARCH_TRIGGERS = [
+  /\bsearch\b/i, /\bonline\b/i, /\bgoogle\b/i, /\binternet\b/i, /\bweb\b/i,
+  /\bnews\b/i, /\blatest\b/i, /\brecent\b/i, /\bcurrent\b/i, /\btoday('s)?\b/i,
+  /\bright now\b/i, /\breal[\s-]?time\b/i, /\blive (score|match|price|rate)\b/i,
+  /\bweather\b/i, /\bforecast\b/i, /\bstock( price)?\b/i, /\bexchange rate\b/i,
+  /\bwhat'?s happening\b/i, /\bwho won\b/i, /\bbreaking\b/i,
+  /\bkhoj\b/i, /\bkhuje\b/i, /\bkhujte\b/i, /\bkhuje d(a|i)o\b/i,
+  /\bkhabor\b/i, /\bkhobor\b/i, /\bajke(r)?\b/i, /\bekhonkar\b/i,
+  /\babohaowa\b/i, /\bbristi\b/i, /\bdam koto\b/i, /\brate koto\b/i,
+];
+function wantsWebSearch(text: string): boolean {
+  if (!text) return false;
+  return WEB_SEARCH_TRIGGERS.some(rx => rx.test(text));
+}
+
+/* Strip `/search` / `/nosearch` (and Bengali equivalents) prefixes from the
+   user's text and return both the cleaned text and an explicit override.
+   Returns `null` for `force` if the user didn't override anything. */
+function parseSearchOverride(text: string): { text: string; force: boolean | null } {
+  const m = text.match(/^\s*\/(no)?search\b\s*/i);
+  if (m) {
+    return { text: text.slice(m[0].length), force: !m[1] };
+  }
+  return { text, force: null };
+}
+
+async function callChat(
+  systemPrompt: string, history: RecentTurn[], apiKey: string, useWeb = false,
+): Promise<string> {
   const res = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
@@ -964,7 +1003,7 @@ async function callChat(systemPrompt: string, history: RecentTurn[], apiKey: str
       "HTTP-Referer": "https://advantix.digital",
     },
     body: JSON.stringify({
-      model: CHAT_MODEL,
+      model: useWeb ? `${CHAT_MODEL}:online` : CHAT_MODEL,
       max_tokens: 1500,
       temperature: 0.8,
       messages: buildMessages(systemPrompt, history),
@@ -992,6 +1031,7 @@ async function callChatStream(
   apiKey: string,
   onChunk: (text: string) => void,
   signal?: AbortSignal,
+  useWeb = false,
 ): Promise<string> {
   const res = await fetch(OPENROUTER_URL, {
     method: "POST",
@@ -1001,7 +1041,7 @@ async function callChatStream(
       "HTTP-Referer": "https://advantix.digital",
     },
     body: JSON.stringify({
-      model: CHAT_MODEL,
+      model: useWeb ? `${CHAT_MODEL}:online` : CHAT_MODEL,
       max_tokens: 1500,
       temperature: 0.8,
       stream: true,
@@ -1079,6 +1119,13 @@ export async function runPersonalGptTurn(userText: string, opts: TurnOptions): P
   const settings = await loadSettings();
   if (!settings.enabled) throw new Error("Personal GPT is disabled in settings");
 
+  /* Detect (or honour an explicit override) whether this turn needs live web
+     search. We strip the override prefix BEFORE persisting so the archive
+     doesn't fill up with `/search` noise. */
+  const { text: cleanedText, force } = parseSearchOverride(userText);
+  const useWeb = force !== null ? force : wantsWebSearch(cleanedText);
+  userText = cleanedText;
+
   /* Personality extraction only runs for trusted/persistable turns. */
   const extractPromise = opts.persist
     ? extractPersonalityDelta(userText, apiKey)
@@ -1088,11 +1135,14 @@ export async function runPersonalGptTurn(userText: string, opts: TurnOptions): P
      personality profile + notes so group conversations can't pull in or leak
      private context. DM/web turns get the full memory. */
   const notes = opts.persist ? await listNotes().catch(() => [] as Note[]) : [];
-  const fullSystemPrompt = buildSystemPrompt(settings, opts.persist, notes);
+  let fullSystemPrompt = buildSystemPrompt(settings, opts.persist, notes);
+  if (useWeb) {
+    fullSystemPrompt += "\n\n[Live web search is enabled for this turn. Use the fetched results to answer with up-to-date facts. Cite sources inline as [1], [2] when relevant.]";
+  }
   const history = opts.persist ? await loadRecentTurns() : [];
   const turnHistory: RecentTurn[] = [...history, { role: "user", content: userText }];
 
-  const reply = await callChat(fullSystemPrompt, turnHistory, apiKey);
+  const reply = await callChat(fullSystemPrompt, turnHistory, apiKey, useWeb);
 
   if (opts.persist) {
     await appendTurn("user", userText, opts.source).catch(err =>
@@ -1145,16 +1195,24 @@ export async function runPersonalGptTurnStream(
     const settings = await loadSettings();
     if (!settings.enabled) throw new Error("Personal GPT is disabled in settings");
 
+    /* Same web-search intent detection as the non-streaming path. */
+    const { text: cleanedText, force } = parseSearchOverride(userText);
+    const useWeb = force !== null ? force : wantsWebSearch(cleanedText);
+    userText = cleanedText;
+
     /* Streaming endpoint is web-only and always persists. */
     const extractPromise = extractPersonalityDelta(userText, apiKey);
     const notes = await listNotes().catch(() => [] as Note[]);
-    const fullSystemPrompt = buildSystemPrompt(settings, true, notes);
+    let fullSystemPrompt = buildSystemPrompt(settings, true, notes);
+    if (useWeb) {
+      fullSystemPrompt += "\n\n[Live web search is enabled for this turn. Use the fetched results to answer with up-to-date facts. Cite sources inline as [1], [2] when relevant.]";
+    }
     const history = await loadRecentTurns();
     const turnHistory: RecentTurn[] = [...history, { role: "user", content: userText }];
 
     const reply = await callChatStream(fullSystemPrompt, turnHistory, apiKey, (chunk) => {
       onEvent({ type: "chunk", text: chunk });
-    }, signal);
+    }, signal, useWeb);
 
     /* If the client cancelled mid-stream, skip persistence and personality
        merge — those side effects shouldn't fire on aborted requests. */
