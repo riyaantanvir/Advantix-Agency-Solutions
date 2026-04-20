@@ -2138,8 +2138,51 @@ export async function startPersonalGptBot(): Promise<void> {
         persist: !isGroup,
       });
       const sendOpts = isGroup ? { reply_to_message_id: msg.message_id } : undefined;
-      for (let i = 0; i < reply.length; i += 4000) {
-        await bot.sendMessage(chatId, reply.slice(i, i + 4000), sendOpts).catch(() => {});
+
+      /* If the voice transcript contains a reminder/note request, RUN the
+         same extractors that the text handler uses. The multimodal model
+         tends to reply "ok I set it!" without anything actually happening,
+         so we run the real action and override the reply with a verifiable
+         confirmation. DM only — group voice notes never auto-create rows. */
+      let actionReply: string | null = null;
+      if (!isGroup && transcript) {
+        try {
+          const apiKeyForIntent = await getOpenRouterKey();
+          if (apiKeyForIntent) {
+            const reminderIntent = await extractReminderIntent(transcript, apiKeyForIntent);
+            if (reminderIntent) {
+              const reminder = await createReminder({
+                message: reminderIntent.message,
+                remindAt: reminderIntent.remindAt,
+                chatId,
+                source: "telegram",
+              });
+              const whenLocal = formatLocalTime(reminder.remindAt);
+              actionReply = `🔔 Reminder #${reminder.id} set for *${whenLocal}*: _${reminder.message}_\n\n_Cancel anytime with_ \`/unremind ${reminder.id}\``;
+            } else {
+              const noteIntent = await extractNoteIntent(transcript, apiKeyForIntent);
+              if (noteIntent) {
+                const note = await addNote({
+                  category: noteIntent.category,
+                  title: noteIntent.title,
+                  body: noteIntent.body,
+                });
+                const bodyLine = note.body ? `\n_${note.body.slice(0, 200)}${note.body.length > 200 ? "…" : ""}_` : "";
+                actionReply = `📝 Saved as *${note.category}* #${note.id}: *${note.title}*${bodyLine}`;
+              }
+            }
+          }
+        } catch (err) {
+          logger.warn({ err }, "Voice intent detection failed (falling back to model reply)");
+        }
+      }
+
+      const finalReply = actionReply ?? reply;
+      const finalOpts = actionReply
+        ? { ...(sendOpts ?? {}), parse_mode: "Markdown" as const }
+        : sendOpts;
+      for (let i = 0; i < finalReply.length; i += 4000) {
+        await bot.sendMessage(chatId, finalReply.slice(i, i + 4000), finalOpts).catch(() => {});
       }
       /* React to the voice note based on what they actually said. Same DM-only
          rule as text — group voice notes don't get reactions. */
