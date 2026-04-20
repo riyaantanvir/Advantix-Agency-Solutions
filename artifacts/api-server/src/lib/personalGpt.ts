@@ -486,14 +486,21 @@ export async function answerFromVoice(input: {
   systemPrompt: string;
   history: RecentTurn[];
   promptHint?: string;
-}): Promise<string> {
+}): Promise<{ reply: string; transcript: string }> {
   const apiKey = await getOpenRouterKey();
   if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured.");
 
-  /* OpenAI-compatible multimodal content blocks. The hint nudges the model
-     to actually answer the spoken question rather than just transcribe it. */
+  /* Ask the model for BOTH a verbatim transcript and a natural reply in JSON.
+     The transcript lets us persist actual user words for short-term context
+     and feed personality extraction; the reply is what we send back. */
+  const hint = input.promptHint
+    ?? `Listen to this voice message. Respond ONLY with a JSON object of the form
+{"transcript": "<verbatim transcription of what the user said, in their original language>",
+ "reply": "<your natural reply, in the same language the user spoke>"}
+No prose, no markdown fences.`;
+
   const userContent = [
-    { type: "text", text: input.promptHint ?? "Listen to this voice message and reply naturally, in the same language the user spoke." },
+    { type: "text", text: hint },
     { type: "input_audio", input_audio: { data: input.audioBase64, format: input.audioFormat } },
   ];
 
@@ -515,6 +522,7 @@ export async function answerFromVoice(input: {
       model: VOICE_MODEL,
       temperature: 0.8,
       max_tokens: 1500,
+      response_format: { type: "json_object" },
       messages,
     }),
   });
@@ -523,9 +531,23 @@ export async function answerFromVoice(input: {
     throw new Error(`Voice reply failed: HTTP ${res.status} ${body.slice(0, 300)}`);
   }
   const data = await res.json() as { choices?: { message?: { content?: string } }[] };
-  const reply = data.choices?.[0]?.message?.content?.trim();
-  if (!reply) throw new Error("Voice model returned an empty reply.");
-  return reply;
+  const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
+  if (!raw) throw new Error("Voice model returned an empty reply.");
+
+  /* Tolerate stray markdown fences just in case the model ignores the format. */
+  const cleaned = raw.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+  let reply = "";
+  let transcript = "";
+  try {
+    const parsed = JSON.parse(cleaned) as { transcript?: unknown; reply?: unknown };
+    transcript = typeof parsed.transcript === "string" ? parsed.transcript.trim() : "";
+    reply      = typeof parsed.reply      === "string" ? parsed.reply.trim()      : "";
+  } catch {
+    /* Fallback: treat the whole content as the reply, no transcript available. */
+    reply = cleaned;
+  }
+  if (!reply) reply = cleaned || "(no reply)";
+  return { reply, transcript };
 }
 
 /**
@@ -547,19 +569,43 @@ export async function runPersonalGptVoiceTurn(args: {
   const fullSystemPrompt = buildSystemPrompt(settings, args.persist, notes);
   const history = args.persist ? await loadRecentTurns() : [];
 
-  const reply = await answerFromVoice({
+  const { reply, transcript } = await answerFromVoice({
     audioBase64: args.audioBase64,
     audioFormat: args.audioFormat,
     systemPrompt: fullSystemPrompt,
     history,
   });
 
+  /* Persist the actual transcript (when available) so future turns get real
+     context AND the personality extractor has something to learn from. Falls
+     back to the placeholder only when the model failed to return one. */
   if (args.persist) {
-    /* We don't have the transcript ourselves (model handled it internally),
-       so we record a placeholder for short-term context. The bot's reply is
-       still useful in history; the audio itself isn't replayable from text. */
-    await appendTurn("user", "🎤 (voice message)", args.source);
+    const userTurnContent = transcript ? `🎤 ${transcript}` : "🎤 (voice message)";
+    await appendTurn("user", userTurnContent, args.source);
     await appendTurn("assistant", reply, args.source);
+
+    /* Fire-and-forget personality extraction on the transcript — same path
+       text turns use, so voice messages now contribute to the auto-curated
+       profile too. */
+    if (transcript) {
+      void (async () => {
+        try {
+          const apiKey = await getOpenRouterKey();
+          if (!apiKey) return;
+          const delta = await extractPersonalityDelta(transcript, apiKey);
+          const hasDelta = (delta.facts?.length ?? 0) + (delta.habits?.length ?? 0)
+                         + (delta.likes?.length ?? 0) + (delta.dislikes?.length ?? 0)
+                         + (delta.style && delta.style.trim() ? 1 : 0) > 0;
+          if (hasDelta) {
+            const fresh = await loadSettings();
+            const merged = mergePersonality(fresh.personality, delta);
+            await updateSettings({ personality: merged });
+          }
+        } catch (err) {
+          logger.warn({ err }, "Personal GPT voice: personality merge failed");
+        }
+      })();
+    }
   }
   return { reply };
 }
