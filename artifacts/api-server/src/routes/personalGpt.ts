@@ -27,6 +27,9 @@ import {
   updateNote,
   deleteNote,
   NOTE_CATEGORIES,
+  createReminder,
+  listPendingReminders,
+  cancelReminder,
   type Personality,
 } from "../lib/personalGpt.js";
 import { logger } from "../lib/logger.js";
@@ -303,6 +306,47 @@ router.delete("/admin/personal-gpt/notes/:id", requireAdmin, async (req: Request
 });
 
 /* ── POST send a test message to the configured Telegram chat IDs ──────── */
+/* ── Reminders ──────────────────────────────────────────────────────────── */
+router.get("/admin/personal-gpt/reminders", requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const reminders = await listPendingReminders();
+    res.json({ reminders });
+  } catch (err) {
+    logger.error({ err }, "Personal GPT: failed to list reminders");
+    res.status(500).json({ error: "Failed to list reminders" });
+  }
+});
+
+router.post("/admin/personal-gpt/reminders", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const message = String(req.body?.message ?? "").trim();
+    const remindAt = String(req.body?.remindAt ?? "").trim();
+    if (!message) { res.status(400).json({ error: "message is required" }); return; }
+    if (!remindAt) { res.status(400).json({ error: "remindAt (ISO timestamp) is required" }); return; }
+    const when = new Date(remindAt);
+    if (isNaN(when.getTime())) { res.status(400).json({ error: "remindAt is not a valid date" }); return; }
+    if (when.getTime() < Date.now() - 60_000) { res.status(400).json({ error: "remindAt is in the past" }); return; }
+    const reminder = await createReminder({ message, remindAt: when, source: "web" });
+    res.json({ reminder });
+  } catch (err) {
+    logger.error({ err }, "Personal GPT: failed to create reminder");
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to create reminder" });
+  }
+});
+
+router.delete("/admin/personal-gpt/reminders/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+    const cancelled = await cancelReminder(id);
+    if (!cancelled) { res.status(404).json({ error: "Reminder not found or already fired/cancelled" }); return; }
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "Personal GPT: failed to cancel reminder");
+    res.status(500).json({ error: "Failed to cancel reminder" });
+  }
+});
+
 router.post("/admin/personal-gpt/telegram/test", requireAdmin, async (_req: Request, res: Response): Promise<void> => {
   try {
     const result = await sendPersonalGptTestMessage();

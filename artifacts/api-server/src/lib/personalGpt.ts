@@ -601,10 +601,12 @@ export async function listPendingReminders(): Promise<Reminder[]> {
   return r.rows.map(row => rowToReminder(row as Record<string, unknown>));
 }
 
-export async function cancelReminder(id: number): Promise<void> {
-  await db.execute(sql`
+export async function cancelReminder(id: number): Promise<boolean> {
+  const r = await db.execute(sql`
     UPDATE personal_gpt_reminders SET status = 'cancelled' WHERE id = ${id} AND status = 'pending'
+    RETURNING id
   `);
+  return r.rows.length > 0;
 }
 
 /* Format a UTC ISO instant in the user's local TZ for display in the

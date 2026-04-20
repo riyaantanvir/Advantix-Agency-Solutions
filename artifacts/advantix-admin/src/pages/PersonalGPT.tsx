@@ -4,7 +4,7 @@ import {
   Send, Trash2, Bot, User, Loader2, Sparkles, Settings as SettingsIcon, Save,
   Brain, MessageCircle, Plug, X, RefreshCw, Power, AlertCircle, CheckCircle2,
   Pin, PinOff, BookMarked, Plus, History, Search, Send as SendIcon, MessagesSquare,
-  Download, Upload, Database,
+  Download, Upload, Database, Bell, Clock, XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,7 +57,7 @@ export default function PersonalGPT() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const [tab, setTab] = useState<"chat" | "memory" | "insights" | "settings">("chat");
+  const [tab, setTab] = useState<"chat" | "memory" | "reminders" | "insights" | "settings">("chat");
 
   /* Settings load */
   const { data: settings, isLoading: settingsLoading } = useQuery<Settings>({
@@ -103,6 +103,15 @@ export default function PersonalGPT() {
             <BookMarked className="w-3.5 h-3.5" /> Memory
           </button>
           <button
+            onClick={() => setTab("reminders")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+              tab === "reminders" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Bell className="w-3.5 h-3.5" /> Reminders
+          </button>
+          <button
             onClick={() => setTab("insights")}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
@@ -131,6 +140,8 @@ export default function PersonalGPT() {
         <ChatPanel onPersonalityUpdated={() => qc.invalidateQueries({ queryKey: ["personal-gpt-settings"] })} toast={toast} />
       ) : tab === "memory" ? (
         <MemoryPanel toast={toast} />
+      ) : tab === "reminders" ? (
+        <RemindersPanel toast={toast} />
       ) : tab === "insights" ? (
         <InsightsPanel toast={toast} />
       ) : (
@@ -958,6 +969,235 @@ type ArchiveStats = {
   total: number; userTurns: number; assistantTurns: number;
   bySource: Record<string, number>; firstAt: string | null; lastAt: string | null;
 };
+
+/* ── Reminders Panel ─────────────────────────────────────────────────────── */
+
+type Reminder = {
+  id: number;
+  message: string;
+  remindAt: string;
+  chatId: number | null;
+  source: string;
+  status: "pending" | "sent" | "cancelled" | "failed";
+  createdAt: string;
+  firedAt: string | null;
+};
+
+/* Render an ISO timestamp in Asia/Dhaka so the admin sees the same wall clock
+   time the bot will actually fire at, regardless of the browser's locale. */
+function formatDhaka(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("en-GB", {
+      timeZone: "Asia/Dhaka",
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: true,
+    });
+  } catch { return iso; }
+}
+
+/* Human-friendly "in 5 min" / "in 2 hours" / "3 min ago" string. */
+function relativeTime(iso: string): string {
+  const diffMs = new Date(iso).getTime() - Date.now();
+  const past = diffMs < 0;
+  const abs = Math.abs(diffMs);
+  const min = Math.round(abs / 60_000);
+  const hr = Math.round(abs / 3_600_000);
+  const day = Math.round(abs / 86_400_000);
+  let body: string;
+  if (min < 1) body = "now";
+  else if (min < 60) body = `${min} min`;
+  else if (hr < 24) body = `${hr} hr`;
+  else body = `${day} day${day === 1 ? "" : "s"}`;
+  if (body === "now") return "now";
+  return past ? `${body} ago` : `in ${body}`;
+}
+
+/* Build a `YYYY-MM-DDTHH:mm` value for <input type="datetime-local"> set to
+   "now + 1h" expressed in Asia/Dhaka wall time, so the prefilled value is
+   consistent with how we interpret submissions (Dhaka, not browser local). */
+function defaultRemindAtLocal(): string {
+  const target = new Date(Date.now() + 60 * 60_000);
+  /* en-CA gives the YYYY-MM-DD HH:mm format we want; we only swap the space
+     for a `T` to match the input element's expected value format. */
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Dhaka",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(target);
+  const get = (t: string) => parts.find(p => p.type === t)?.value ?? "00";
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+}
+
+function RemindersPanel({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const qc = useQueryClient();
+  const [message, setMessage] = useState("");
+  const [remindAtLocal, setRemindAtLocal] = useState(defaultRemindAtLocal());
+
+  const { data, isLoading } = useQuery<{ reminders: Reminder[] }>({
+    queryKey: ["personal-gpt-reminders"],
+    queryFn: () => fetch("/api/admin/personal-gpt/reminders", { credentials: "include" })
+      .then(r => { if (!r.ok) throw new Error("Load failed"); return r.json(); }),
+    /* Auto-refresh so countdowns and newly-added reminders (from Telegram)
+       appear without a manual reload. */
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const create = useMutation({
+    mutationFn: async () => {
+      const trimmed = message.trim();
+      if (!trimmed) throw new Error("Message is empty");
+      if (!remindAtLocal) throw new Error("Pick a date & time");
+      /* `datetime-local` is a TZ-naive `YYYY-MM-DDTHH:mm` string. We always
+         interpret it as Asia/Dhaka wall time (UTC+6, no DST) regardless of
+         the browser's local TZ — this matches the Dhaka labels shown in the
+         list and what the bot uses for natural-language reminders. */
+      const iso = new Date(`${remindAtLocal}:00+06:00`).toISOString();
+      if (isNaN(new Date(iso).getTime())) throw new Error("Invalid date/time");
+      const r = await fetch("/api/admin/personal-gpt/reminders", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: trimmed, remindAt: iso }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Failed");
+      return j;
+    },
+    onSuccess: () => {
+      toast({ title: "Reminder set", description: "It will fire at the scheduled time." });
+      setMessage("");
+      setRemindAtLocal(defaultRemindAtLocal());
+      qc.invalidateQueries({ queryKey: ["personal-gpt-reminders"] });
+    },
+    onError: (err: Error) => toast({ title: "Could not create reminder", description: err.message, variant: "destructive" }),
+  });
+
+  const cancel = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/admin/personal-gpt/reminders/${id}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || "Failed"); }
+    },
+    onSuccess: () => {
+      toast({ title: "Reminder cancelled" });
+      qc.invalidateQueries({ queryKey: ["personal-gpt-reminders"] });
+    },
+    onError: (err: Error) => toast({ title: "Could not cancel", description: err.message, variant: "destructive" }),
+  });
+
+  const reminders = data?.reminders ?? [];
+
+  return (
+    <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Create card */}
+        <Card className="p-5 bg-card/50 border-border">
+          <div className="flex items-center gap-2 mb-3">
+            <Bell className="w-4 h-4 text-fuchsia-400" />
+            <h2 className="text-sm font-semibold text-foreground">New reminder</h2>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">
+            Set a one-off reminder. Times are in <span className="text-foreground/80">Asia/Dhaka</span>.
+            From Telegram you can also just say <span className="text-foreground/80">"kal sokal 9 tay meeting er kotha mone koraio"</span>.
+          </p>
+          <div className="grid sm:grid-cols-[1fr_auto_auto] gap-2">
+            <input
+              type="text"
+              placeholder="What to remind you about…"
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              className="px-3 py-2 rounded-md bg-background border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
+              maxLength={500}
+            />
+            <input
+              type="datetime-local"
+              value={remindAtLocal}
+              onChange={e => setRemindAtLocal(e.target.value)}
+              className="px-3 py-2 rounded-md bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
+            />
+            <Button
+              onClick={() => create.mutate()}
+              disabled={create.isPending || !message.trim()}
+              className="bg-fuchsia-500/90 hover:bg-fuchsia-500 text-white"
+            >
+              {create.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Plus className="w-4 h-4 mr-1" /> Add</>}
+            </Button>
+          </div>
+        </Card>
+
+        {/* List card */}
+        <Card className="p-5 bg-card/50 border-border">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-violet-400" />
+              <h2 className="text-sm font-semibold text-foreground">Pending reminders</h2>
+              <span className="text-xs text-muted-foreground">({reminders.length})</span>
+            </div>
+            <button
+              onClick={() => qc.invalidateQueries({ queryKey: ["personal-gpt-reminders"] })}
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+            >
+              <RefreshCw className="w-3 h-3" /> Refresh
+            </button>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : reminders.length === 0 ? (
+            <div className="text-center py-12 text-sm text-muted-foreground">
+              No pending reminders. Ask the bot on Telegram or add one above.
+            </div>
+          ) : (
+            <ul className="divide-y divide-border">
+              {reminders.map(r => {
+                const overdue = new Date(r.remindAt).getTime() < Date.now();
+                return (
+                  <li key={r.id} className="py-3 flex items-start gap-3">
+                    <div className={cn(
+                      "mt-0.5 w-8 h-8 rounded-md flex items-center justify-center shrink-0 border",
+                      overdue
+                        ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                        : "bg-violet-500/10 border-violet-500/20 text-violet-300"
+                    )}>
+                      <Bell className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-foreground break-words">{r.message}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {formatDhaka(r.remindAt)}
+                        </span>
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded",
+                          overdue ? "bg-amber-500/15 text-amber-300" : "bg-secondary/60 text-foreground/70"
+                        )}>
+                          {relativeTime(r.remindAt)}
+                        </span>
+                        <span className="text-muted-foreground/70">via {r.source}</span>
+                        <span className="text-muted-foreground/70">#{r.id}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => cancel.mutate(r.id)}
+                      disabled={cancel.isPending}
+                      className="shrink-0 p-1.5 text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-colors"
+                      title="Cancel reminder"
+                    >
+                      <XCircle className="w-4 h-4" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
 
 function InsightsPanel({ toast }: { toast: (o: { title: string; description?: string; variant?: "default" | "destructive" }) => void }) {
   const PAGE = 50;
