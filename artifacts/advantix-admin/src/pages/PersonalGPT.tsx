@@ -1034,7 +1034,7 @@ function RemindersPanel({ toast }: { toast: ReturnType<typeof useToast>["toast"]
   const [message, setMessage] = useState("");
   const [remindAtLocal, setRemindAtLocal] = useState(defaultRemindAtLocal());
 
-  const { data, isLoading } = useQuery<{ reminders: Reminder[] }>({
+  const { data, isLoading, isFetching, refetch } = useQuery<{ reminders: Reminder[] }>({
     queryKey: ["personal-gpt-reminders"],
     queryFn: () => fetch("/api/admin/personal-gpt/reminders", { credentials: "include" })
       .then(r => { if (!r.ok) throw new Error("Load failed"); return r.json(); }),
@@ -1137,10 +1137,11 @@ function RemindersPanel({ toast }: { toast: ReturnType<typeof useToast>["toast"]
               </span>
             </div>
             <button
-              onClick={() => qc.invalidateQueries({ queryKey: ["personal-gpt-reminders"] })}
+              onClick={() => refetch()}
+              disabled={isFetching}
               className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
             >
-              <RefreshCw className="w-3 h-3" /> Refresh
+              <RefreshCw className={`w-3 h-3 ${isFetching ? "animate-spin" : ""}`} /> Refresh
             </button>
           </div>
 
