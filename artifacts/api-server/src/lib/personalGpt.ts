@@ -536,6 +536,250 @@ export async function deleteNote(id: number): Promise<void> {
   await db.execute(sql`DELETE FROM personal_gpt_notes WHERE id = ${id}`);
 }
 
+/* ── Reminders ────────────────────────────────────────────────────────────
+   Time-based pings. The user says something like "amake 3:55 te meeting er
+   kotha mone koray dio" and the cheap extractor model returns a structured
+   {whenISO, message}. We persist the reminder; a background poller (started
+   alongside the Telegram bot) fires due rows by sending a Telegram message.
+   The user's local timezone is fixed to Asia/Dhaka (Bangladesh) — the user
+   is single-tenant so a hardcoded TZ is the simplest correct choice. */
+
+const REMINDER_TZ = "Asia/Dhaka";          // single-tenant — owner is in BD
+const REMINDER_TZ_OFFSET = "+06:00";       // BD has no DST, so a constant offset is safe
+const REMINDER_POLL_INTERVAL_MS = 30_000;  // 30s — accurate enough for human reminders
+const MAX_REMINDER_TEXT = 500;
+
+export type Reminder = {
+  id: number;
+  message: string;
+  remindAt: string;       // ISO UTC
+  chatId: number | null;
+  source: string;
+  status: "pending" | "sent" | "failed" | "cancelled";
+  createdAt: string;
+  firedAt: string | null;
+};
+
+function rowToReminder(r: Record<string, unknown>): Reminder {
+  return {
+    id: Number(r.id),
+    message: String(r.message),
+    remindAt: new Date(r.remind_at as string | Date).toISOString(),
+    chatId: r.chat_id == null ? null : Number(r.chat_id),
+    source: String(r.source ?? "telegram"),
+    status: (r.status as Reminder["status"]) ?? "pending",
+    createdAt: new Date(r.created_at as string | Date).toISOString(),
+    firedAt: r.fired_at ? new Date(r.fired_at as string | Date).toISOString() : null,
+  };
+}
+
+export async function createReminder(input: {
+  message: string;
+  remindAt: Date | string;
+  chatId?: number | null;
+  source?: string;
+}): Promise<Reminder> {
+  const message = String(input.message ?? "").trim().slice(0, MAX_REMINDER_TEXT);
+  if (!message) throw new Error("Reminder message is empty.");
+  const when = new Date(input.remindAt);
+  if (isNaN(when.getTime())) throw new Error("Reminder time is invalid.");
+  const r = await db.execute(sql`
+    INSERT INTO personal_gpt_reminders (message, remind_at, chat_id, source)
+    VALUES (${message}, ${when}, ${input.chatId ?? null}, ${input.source ?? "telegram"})
+    RETURNING *
+  `);
+  return rowToReminder(r.rows[0] as Record<string, unknown>);
+}
+
+export async function listPendingReminders(): Promise<Reminder[]> {
+  const r = await db.execute(sql`
+    SELECT * FROM personal_gpt_reminders
+    WHERE status = 'pending'
+    ORDER BY remind_at ASC
+    LIMIT 200
+  `);
+  return r.rows.map(row => rowToReminder(row as Record<string, unknown>));
+}
+
+export async function cancelReminder(id: number): Promise<void> {
+  await db.execute(sql`
+    UPDATE personal_gpt_reminders SET status = 'cancelled' WHERE id = ${id} AND status = 'pending'
+  `);
+}
+
+/* Format a UTC ISO instant in the user's local TZ for display in the
+   confirmation message ("4:00 PM today" etc). Keeps things human-friendly. */
+function formatLocalTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("en-US", {
+      timeZone: REMINDER_TZ,
+      weekday: "short", month: "short", day: "numeric",
+      hour: "numeric", minute: "2-digit", hour12: true,
+    });
+  } catch { return iso; }
+}
+
+/* Use the cheap extractor model in JSON mode to detect reminder intent and
+   resolve relative phrases ("tomorrow at 4", "in 30 min", "3:55 te"). The
+   model is given the current local time + TZ so it can produce an absolute
+   ISO timestamp. Returns null if the user is NOT asking for a reminder. */
+export async function extractReminderIntent(userText: string, apiKey: string): Promise<{
+  remindAt: string;
+  message: string;
+} | null> {
+  const text = userText.trim();
+  if (!text) return null;
+
+  /* Cheap pre-filter: skip the LLM round-trip entirely unless the message
+     looks reminder-shaped. Saves ~$0.0005 per chat turn AND latency. The
+     trigger list covers English + Banglish phrases. */
+  const looksLikeReminder = /\b(remind|reminder|alert|wake|notify|alarm)\b/i.test(text)
+    || /\b(at|by|in|after|before|on)\s+\d/i.test(text)
+    || /\b(tomorrow|tonight|today|tmrw|next)\b/i.test(text)
+    || /mone\s*kor(ay)?\s*d(a|i)o/i.test(text)
+    || /\bmone\s*koray\b/i.test(text)
+    || /\bmne\s*koray\b/i.test(text)
+    || /\balert\b/i.test(text)
+    || /\bagamikal\b/i.test(text)
+    || /\bajke\b/i.test(text)
+    || /\bekhon\b/i.test(text)
+    || /\bporshu\b/i.test(text);
+  if (!looksLikeReminder) return null;
+
+  const nowLocal = new Date().toLocaleString("en-US", {
+    timeZone: REMINDER_TZ,
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+    hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true,
+  });
+
+  const sysPrompt =
+    `You are a reminder intent extractor. Decide if the user is asking to be reminded at a specific time. ` +
+    `Current local time (${REMINDER_TZ}): ${nowLocal}. The user may write in English, Bengali, or Banglish ` +
+    `(romanized Bangla). Resolve relative phrases. If a time is given without AM/PM (e.g. "3:55"), pick ` +
+    `whichever of AM/PM is in the FUTURE relative to now — prefer the same day, else next day. ` +
+    `Reply with STRICT JSON only, no markdown, no commentary:\n` +
+    `  {"isReminder": true, "remindAt": "<ISO 8601 with offset>", "message": "<short reminder text in user's language>"}\n` +
+    `  or {"isReminder": false}\n` +
+    `The "message" must be the THING to be reminded about (not the request itself). ` +
+    `Examples:\n` +
+    `  "remind me at 4pm tomorrow about the meeting" → {"isReminder":true,"remindAt":"...","message":"meeting"}\n` +
+    `  "amake 3.55 te bookcafe meeting er kotha mone koray dio" → {"isReminder":true,"remindAt":"...","message":"Bookcafe meeting"}\n` +
+    `  "what's the weather today" → {"isReminder":false}`;
+
+  const res = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://advantix.digital",
+    },
+    body: JSON.stringify({
+      model: EXTRACT_MODEL,
+      max_tokens: 200,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: sysPrompt },
+        { role: "user", content: text.slice(0, 1000) },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    logger.warn({ status: res.status }, "Reminder extractor HTTP error");
+    return null;
+  }
+  const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+  const raw = data.choices?.[0]?.message?.content?.trim();
+  if (!raw) return null;
+  try {
+    /* The model occasionally wraps JSON in ```json fences despite being asked
+       not to. Strip a single leading/trailing fence pair before parsing. */
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+    const parsed = JSON.parse(cleaned) as { isReminder?: boolean; remindAt?: string; message?: string };
+    if (!parsed.isReminder || !parsed.remindAt || !parsed.message) return null;
+    const when = new Date(parsed.remindAt);
+    if (isNaN(when.getTime())) return null;
+    /* Reject reminders in the past (model occasionally hallucinates) — but
+       allow a 60s grace window for "in 30 seconds" type requests. */
+    if (when.getTime() < Date.now() - 60_000) return null;
+    return { remindAt: when.toISOString(), message: parsed.message.trim().slice(0, MAX_REMINDER_TEXT) };
+  } catch (err) {
+    logger.warn({ err, raw: raw.slice(0, 200) }, "Reminder extractor JSON parse failed");
+    return null;
+  }
+}
+
+/* Background scheduler — polls for due reminders every 30s and fires them
+   via the Telegram bot. We pass in the bot instance + default chat ID so the
+   scheduler doesn't need to re-instantiate either. Idempotent: only one
+   poller per process. */
+let reminderPollerHandle: NodeJS.Timeout | null = null;
+export function startReminderScheduler(
+  bot: TelegramBot,
+  defaultChatId: number,
+): void {
+  if (reminderPollerHandle) return; // already running
+  const tick = async () => {
+    try {
+      /* Atomically claim due rows by flipping their status to 'sent'
+         (optimistic — we'll roll back to 'failed' if Telegram rejects). The
+         RETURNING clause hands us the rows we just claimed so two pollers
+         can't double-fire the same reminder. */
+      const claimed = await db.execute(sql`
+        UPDATE personal_gpt_reminders
+        SET status = 'sent', fired_at = now()
+        WHERE id IN (
+          SELECT id FROM personal_gpt_reminders
+          WHERE status = 'pending' AND remind_at <= now()
+          ORDER BY remind_at ASC
+          LIMIT 20
+          FOR UPDATE SKIP LOCKED
+        )
+        RETURNING *
+      `);
+      for (const row of claimed.rows) {
+        const r = rowToReminder(row as Record<string, unknown>);
+        const target = r.chatId ?? defaultChatId;
+        const localTime = formatLocalTime(r.remindAt);
+        try {
+          await bot.sendMessage(target,
+            `⏰ Reminder: ${r.message}\n\n_Set for ${localTime}_`,
+            { parse_mode: "Markdown" });
+        } catch (err) {
+          logger.warn({ err, reminderId: r.id }, "Reminder send failed");
+          await db.execute(sql`
+            UPDATE personal_gpt_reminders
+            SET status = 'failed', error = ${String(err instanceof Error ? err.message : err).slice(0, 500)}
+            WHERE id = ${r.id}
+          `).catch(() => {});
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, "Reminder scheduler tick failed");
+    }
+  };
+  reminderPollerHandle = setInterval(tick, REMINDER_POLL_INTERVAL_MS);
+  /* Don't keep the event loop alive just for this poller. */
+  reminderPollerHandle.unref?.();
+  /* Run an immediate first tick so newly-due reminders don't wait 30s. */
+  void tick();
+  logger.info(`Personal GPT reminder scheduler started (poll every ${REMINDER_POLL_INTERVAL_MS / 1000}s, default chat ${defaultChatId})`);
+}
+
+/* Helper used by the bot handler to format an upcoming-reminders list. */
+export function formatRemindersList(reminders: Reminder[]): string {
+  if (!reminders.length) return "No upcoming reminders. Just say something like _'remind me at 4pm about the meeting'_ to set one.";
+  return "📅 *Upcoming reminders:*\n" + reminders.slice(0, 20).map(r =>
+    `• #${r.id} — ${r.message}\n   _${formatLocalTime(r.remindAt)}_`
+  ).join("\n");
+}
+
+/* Unused TZ offset constant kept for potential future use (e.g. exposing
+   the user's offset to the model alongside the local time string). */
+void REMINDER_TZ_OFFSET;
+
+
 /* Render a compact, model-readable view of the user's notes. We cap to
    MAX_NOTES_IN_PROMPT items to keep the prompt small. */
 function renderNotes(notes: Note[]): string {
@@ -1487,6 +1731,13 @@ export async function startPersonalGptBot(): Promise<void> {
   }
   logger.info(`Personal GPT bot started as @${pgBotUsername ?? "?"} for chats: ${allowedChatIds.join(", ")}`);
 
+  /* Start the reminder scheduler. Default chat = first POSITIVE chat ID
+     in the allowed list (DMs have positive IDs, groups negative). Reminders
+     created from the web (no chatId) will fire to this DM by default — the
+     user's phone, not a group, is the right destination for personal pings. */
+  const defaultDmChat = allowedChatIds.find(id => id > 0) ?? allowedChatIds[0];
+  startReminderScheduler(bot, defaultDmChat);
+
   bot.on("polling_error", (err) => {
     logger.warn({ err: String(err) }, "Personal GPT bot polling error");
   });
@@ -1614,6 +1865,52 @@ export async function startPersonalGptBot(): Promise<void> {
         await deleteNote(id).catch(() => {});
         await bot.sendMessage(chatId, `🗑️ Deleted note #${id}.`);
         return;
+      }
+
+      /* /reminders — show what's scheduled. /unremind <id> — cancel one. */
+      if (text === "/reminders") {
+        const list = await listPendingReminders().catch(() => [] as Reminder[]);
+        await bot.sendMessage(chatId, formatRemindersList(list), { parse_mode: "Markdown" }).catch(() => {});
+        return;
+      }
+      const unremindMatch = text.match(/^\/unremind\s+(\d+)\s*$/);
+      if (unremindMatch) {
+        const id = Number(unremindMatch[1]);
+        await cancelReminder(id).catch(() => {});
+        await bot.sendMessage(chatId, `🗑️ Cancelled reminder #${id}.`);
+        return;
+      }
+    }
+
+    /* Reminder intent detection — runs BEFORE the normal chat path so a
+       message like "amake 4tay meeting er kotha mone koray dio" is handled
+       as a scheduling action, not a generic conversation turn. DM only —
+       group reminders would ping the wrong person. */
+    if (!isGroup) {
+      try {
+        const apiKeyForReminder = await getOpenRouterKey();
+        if (apiKeyForReminder) {
+          const intent = await extractReminderIntent(text, apiKeyForReminder);
+          if (intent) {
+            const r = await createReminder({
+              message: intent.message,
+              remindAt: intent.remindAt,
+              chatId,
+              source: "telegram",
+            });
+            await bot.sendMessage(chatId,
+              `⏰ Got it. I'll remind you about *${r.message}* on _${formatLocalTime(r.remindAt)}_.\n\n_Cancel anytime with_ \`/unremind ${r.id}\``,
+              { parse_mode: "Markdown", reply_to_message_id: msg.message_id }
+            ).catch(() => {});
+            /* Persist the exchange to the archive so the conversation
+               history reflects what happened. */
+            await appendTurn("user", text, "telegram").catch(() => {});
+            await appendTurn("assistant", `[Reminder set for ${formatLocalTime(r.remindAt)}: ${r.message}]`, "telegram").catch(() => {});
+            return;
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, "Reminder intent detection failed (falling back to normal chat)");
       }
     }
 

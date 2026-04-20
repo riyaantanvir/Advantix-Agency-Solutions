@@ -412,6 +412,28 @@ export async function runMigrations(): Promise<void> {
       ON personal_gpt_notes (category, pinned DESC, updated_at DESC)
   `);
 
+  /* Time-based reminders. The scheduler polls this table every 30s and fires
+     any due rows via the Telegram bot. status: 'pending' → 'sent' or 'failed'.
+     `chat_id` is the Telegram chat that should receive the ping (NULL means
+     send to the default DM chat — used for reminders created from the web). */
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS personal_gpt_reminders (
+      id serial PRIMARY KEY,
+      message text NOT NULL,
+      remind_at timestamptz NOT NULL,
+      chat_id bigint,
+      source text NOT NULL DEFAULT 'telegram',
+      status text NOT NULL DEFAULT 'pending',
+      error text,
+      created_at timestamptz DEFAULT now() NOT NULL,
+      fired_at timestamptz
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_personal_gpt_reminders_due
+      ON personal_gpt_reminders (status, remind_at)
+  `);
+
   // ── AI tables ─────────────────────────────────────────────────────────────
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS ai_projects (
