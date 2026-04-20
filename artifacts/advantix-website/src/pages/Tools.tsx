@@ -104,66 +104,76 @@ export default function Tools() {
   };
 
   return (
-    <div className="pt-32 pb-24 min-h-screen bg-background">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
-        {/* Header */}
+    <div className="pt-28 pb-20 min-h-screen bg-background">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-6xl">
+        {/* Header — compact */}
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
+          initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: expo }}
-          className="text-center mb-16"
+          transition={{ duration: 0.5, ease: expo }}
+          className="text-center mb-10"
         >
-          <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 text-primary rounded-full px-5 py-2 text-sm font-bold tracking-widest uppercase mb-6">
-            <Zap className="w-4 h-4" />
+          <div className="inline-flex items-center gap-2 bg-primary/10 border border-primary/20 text-primary rounded-full px-4 py-1.5 text-xs font-bold tracking-widest uppercase mb-4">
+            <Zap className="w-3.5 h-3.5" />
             Advantix Tools
           </div>
-          <h1 className="text-4xl md:text-5xl font-display font-extrabold mb-5 tracking-tight">
+          <h1 className="text-3xl md:text-4xl font-display font-extrabold mb-3 tracking-tight">
             Free Tools for Your Business
           </h1>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Powerful mini-tools built by Advantix — free to use, no strings attached. Sign up to save your data across sessions.
+          <p className="text-sm md:text-base text-muted-foreground max-w-xl mx-auto leading-relaxed">
+            Powerful mini-tools built by Advantix — free to use. Sign up to save your data across sessions.
           </p>
         </motion.div>
 
-        {/* Tool cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        {/* Tool cards — compact grid: up to 4 cols on lg, 3 on md, 2 on sm */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {tools.map((tool, idx) => {
             const Icon = tool.icon;
             const allowed = isAllowed(tool.slug);
             const content = (
               <motion.div
-                initial={{ opacity: 0, y: 24 }}
+                initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.55, ease: expo, delay: idx * 0.1 }}
-                whileHover={allowed ? { y: -4, scale: 1.01 } : {}}
+                transition={{ duration: 0.4, ease: expo, delay: Math.min(idx * 0.04, 0.3) }}
+                whileHover={allowed ? { y: -2 } : {}}
+                className="h-full"
               >
-                <Card className={`p-8 h-full border-border/50 bg-card transition-all duration-300 ${allowed ? "hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5 cursor-pointer" : "opacity-50 cursor-not-allowed grayscale"}`}>
-                  <div className="flex items-start justify-between mb-6">
-                    <div className={`w-14 h-14 rounded-2xl ${tool.bg} flex items-center justify-center`}>
-                      <Icon className={`w-7 h-7 ${tool.color}`} />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {!allowed && (
-                        <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 text-xs font-semibold border border-red-500/20">
-                          <Lock className="w-3 h-3" /> No Access
+                <Card className={`group relative p-4 h-full border-border/50 bg-card transition-all duration-200 ${allowed ? "hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 cursor-pointer" : "opacity-60 cursor-not-allowed grayscale"}`}>
+                  {/* Badge top-right */}
+                  {(tool.badge && allowed) || !allowed ? (
+                    <div className="absolute top-3 right-3">
+                      {!allowed ? (
+                        <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 text-[10px] font-semibold border border-red-500/20">
+                          <Lock className="w-2.5 h-2.5" /> Locked
                         </span>
-                      )}
-                      {tool.badge && allowed && (
-                        <span className="px-3 py-1 rounded-full bg-secondary text-muted-foreground text-xs font-semibold">
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold uppercase tracking-wide">
                           {tool.badge}
                         </span>
                       )}
                     </div>
+                  ) : null}
+
+                  <div className="flex items-start gap-3">
+                    <div className={`w-10 h-10 rounded-xl ${tool.bg} flex items-center justify-center shrink-0`}>
+                      <Icon className={`w-5 h-5 ${tool.color}`} />
+                    </div>
+                    <div className="min-w-0 flex-1 pr-12">
+                      <h2 className="text-sm font-display font-bold leading-tight mb-1 truncate">{tool.name}</h2>
+                      <p className="text-xs text-muted-foreground leading-snug line-clamp-2">{tool.description}</p>
+                    </div>
                   </div>
-                  <h2 className="text-2xl font-display font-bold mb-3">{tool.name}</h2>
-                  <p className="text-muted-foreground leading-relaxed mb-6">{tool.description}</p>
+
                   {allowed && (
-                    <div className="flex items-center gap-2 text-primary font-semibold text-sm">
-                      Open Tool <ArrowRight className="w-4 h-4" />
+                    <div className="mt-3 pt-3 border-t border-border/40 flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">Open</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-primary transition-transform group-hover:translate-x-0.5" />
                     </div>
                   )}
                   {!allowed && user && (
-                    <p className="text-xs text-muted-foreground">Contact an admin to request access</p>
+                    <div className="mt-3 pt-3 border-t border-border/40">
+                      <p className="text-[10px] text-muted-foreground">Contact admin for access</p>
+                    </div>
                   )}
                 </Card>
               </motion.div>
@@ -172,9 +182,9 @@ export default function Tools() {
             if (!allowed) return <div key={tool.name}>{content}</div>;
 
             return tool.external ? (
-              <a key={tool.name} href={tool.href}>{content}</a>
+              <a key={tool.name} href={tool.href} className="block h-full">{content}</a>
             ) : (
-              <Link key={tool.name} href={tool.href}>{content}</Link>
+              <Link key={tool.name} href={tool.href} className="block h-full">{content}</Link>
             );
           })}
         </div>
