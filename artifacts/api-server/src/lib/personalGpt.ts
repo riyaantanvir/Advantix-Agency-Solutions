@@ -62,7 +62,7 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 */
 const CHAT_MODEL    = "z-ai/glm-4.6";                          // primary text model (low cost)
 const VOICE_MODEL   = "google/gemini-2.5-flash";               // accepts inline audio (best quality)
-const IMAGE_MODEL   = "google/gemini-2.5-flash-image-preview"; // Nano Banana
+const IMAGE_MODEL   = "google/gemini-2.5-flash-image";         // Nano Banana
 const EXTRACT_MODEL = "z-ai/glm-4.5-air";                      // ~3x cheaper extractor
 
 /* How many CRM/knowledge notes to surface to the model per prompt. We sort by
