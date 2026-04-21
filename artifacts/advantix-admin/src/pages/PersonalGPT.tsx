@@ -499,17 +499,37 @@ function SettingsPanel({ settings, toast, qc }: {
   const [retraining, setRetraining] = useState(false);
 
   const retrainFromArchive = async () => {
-    if (!confirm("Re-scan the last 200 chat messages and merge any new personality signals into Facts/Habits/Likes/Dislikes?\n\nThis runs the AI in batch mode — takes ~20-40 seconds. Existing items are kept; only new ones are added.")) return;
+    if (!confirm("Re-scan the last 100 chat messages and merge any new personality signals into Facts/Habits/Likes/Dislikes?\n\nThis runs the AI in batch mode — takes ~15-30 seconds. Existing items are kept; only new ones are added.")) return;
     setRetraining(true);
     try {
       const res = await fetch("/api/admin/personal-gpt/personality/retrain", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maxTurns: 200 }),
+        body: JSON.stringify({ maxTurns: 100 }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Retrain failed");
+      /* Read body as text first so we can give a clear error when the
+         response is empty (proxy timeout, server restart mid-request, etc.)
+         instead of the cryptic "Unexpected end of JSON input". */
+      const raw = await res.text();
+      if (!raw) {
+        throw new Error(
+          res.ok
+            ? "Server returned an empty response — the request likely timed out. Try again."
+            : `Server error ${res.status} (empty body)`
+        );
+      }
+      let data: {
+        scannedTurns?: number; batches?: number;
+        factsAdded?: number; habitsAdded?: number; likesAdded?: number; dislikesAdded?: number;
+        styleUpdated?: boolean; error?: string;
+      };
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error(`Server returned non-JSON response: ${raw.slice(0, 200)}`);
+      }
+      if (!res.ok) throw new Error(data.error ?? `Retrain failed (HTTP ${res.status})`);
       const added = (data.factsAdded ?? 0) + (data.habitsAdded ?? 0) + (data.likesAdded ?? 0) + (data.dislikesAdded ?? 0);
       toast({
         title: added > 0 ? `Trained — ${added} new item${added === 1 ? "" : "s"} learned` : "Already up to date",
