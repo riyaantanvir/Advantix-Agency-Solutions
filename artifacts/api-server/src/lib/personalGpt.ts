@@ -930,30 +930,47 @@ export async function extractNoteIntent(userText: string, apiKey: string): Promi
   const text = userText.trim();
   if (!text) return null;
 
-  /* Cheap pre-filter to skip the LLM round-trip for normal chat. Stricter
-     than the reminder prefilter — note keywords are less ambiguous, so we
-     keep this list tight to minimize false positives. */
-  const looksLikeNote = /\b(save|remember|note|jot|store|memori[sz]e|don'?t forget)\b/i.test(text)
-    || /\bmone\s*rakh/i.test(text)            // "mone rakho"
+  /* Cheap pre-filter to skip the LLM round-trip for normal chat. Catches:
+       (a) explicit save/remember intent (English + Banglish + Bangla),
+       (b) task-list dictation — daily/weekly plans, numbered lists, "korte
+           hobe" phrasing — which the user expects to land in the
+           Knowledge Base under the Tasks tab even without a "save" verb. */
+  const explicitSave = /\b(save|remember|note|jot|store|memori[sz]e|don'?t forget|to[-\s]?do)\b/i.test(text)
+    || /\bmone\s*rakh/i.test(text)                                // "mone rakho"
     || /\bmne\s*rakh/i.test(text)
-    || /\bnote\s*kor/i.test(text)             // "note kore rakho"
-    || /\bsave\s*kor/i.test(text)             // "save kore rakho"
-    || /\blikhe\s*rakh/i.test(text)           // "likhe rakho"
-    || /\beta\s+(save|note|mone)/i.test(text);
-  if (!looksLikeNote) return null;
+    || /\bnote\s*kor/i.test(text)                                 // "note kore rakho"
+    || /\bsave\s*kor/i.test(text)                                 // "save kore rakho"
+    || /\blikhe\s*rakh/i.test(text)                               // "likhe rakho"
+    || /\beta\s+(save|note|mone)/i.test(text)
+    || /মনে\s*রাখ|নোট\s*কর|সেভ\s*কর|লিখে\s*রাখ/.test(text);     // Bangla script
+  /* Task-list heuristic: "today's tasks", "kaj list", "korte hobe", "to-do",
+     OR a numbered/bulleted list of 2+ items. */
+  const looksLikeTaskList =
+       /\b(task\s*list|to[-\s]?do|aajker?\s*(kaj|task)|kaj\s*list|kajer\s*list|kal(\s*ker)?\s*(kaj|task))\b/i.test(text)
+    || /আজকের\s*(কাজ|টাস্ক|তালিকা)|কাজের\s*তালিকা|করতে\s*হবে/.test(text)
+    || /\bkorte\s*hobe\b/i.test(text)
+    || /(?:^|\n)\s*(?:[-*•]|\d+[.)])\s+\S.{2,}(?:\n\s*(?:[-*•]|\d+[.)])\s+\S){1,}/m.test(text); // 2+ list items
+  if (!explicitSave && !looksLikeTaskList) return null;
 
   const sysPrompt =
     `You decide whether the user is asking to SAVE something to a long-term notes/CRM database. ` +
-    `Distinguish "save this fact" (yes) from "set a reminder for later" (no — that's a separate system) ` +
+    `Distinguish "save this fact / record these tasks" (yes) from "set a reminder for later" (no — separate system) ` +
     `and from regular questions/chat (no). The user may write in English, Bengali, or Banglish.\n` +
     `Pick the best CATEGORY from: contact, deal, project, task, date, note.\n` +
     `Reply with STRICT JSON only, no markdown:\n` +
     `  {"isNote": true, "category": "<one of the above>", "title": "<≤80 char headline>", "body": "<full details, may be empty>"}\n` +
     `  or {"isNote": false}\n` +
+    `\n` +
+    `IMPORTANT for task lists: when the user dictates 2+ tasks/items for today/tomorrow/this week (numbered, ` +
+    `bulleted, OR with "korte hobe" phrasing), treat it as ONE note with category="task". ` +
+    `Title = short label like "Aajker kaj (4 tasks)" or "Tomorrow's plan". ` +
+    `Body = the full list as bullet points, preserving the original language.\n` +
+    `\n` +
     `Examples:\n` +
     `  "save Sajjad as a contact, CTO at Foo Ltd, +8801711xxxxxxx" → {"isNote":true,"category":"contact","title":"Sajjad","body":"CTO at Foo Ltd, +8801711xxxxxxx"}\n` +
     `  "mone rakho Rana er number 01711xxxxxxx" → {"isNote":true,"category":"contact","title":"Rana","body":"01711xxxxxxx"}\n` +
     `  "note kore rakho: Bookcafe deal closes Friday" → {"isNote":true,"category":"deal","title":"Bookcafe deal closes Friday","body":""}\n` +
+    `  "ajker kaj: bikele meeting, sondhay bazar, ratere bug fix" → {"isNote":true,"category":"task","title":"Aajker kaj (3 tasks)","body":"- বিকেলে: meeting\\n- সন্ধ্যায়: bazar\\n- রাতে: bug fix"}\n` +
     `  "remind me at 4pm" → {"isNote":false}\n` +
     `  "what's the weather" → {"isNote":false}`;
 
@@ -1532,7 +1549,12 @@ function buildSystemPrompt(
     "## How to use the knowledge base",
     "- Treat saved contacts, deals, projects, tasks and dates as authoritative facts.",
     "- When the user asks something like \"who is X?\" or \"what's the status of Y?\", check the knowledge base first.",
-    "- If the user clearly tells you something worth remembering long-term (a person, a project, a deadline), just confirm naturally — e.g. 'Saved!' or 'Got it, I'll remember.' The system will auto-save it to the notes database; you do NOT need to ask the user to run /remember themselves.",
+    "",
+    "## CRITICAL — never fake confirmations",
+    "The system runs automatic extractors that decide whether to save a note or set a reminder. When something IS saved, the system overrides your reply with a verifiable confirmation like '📝 Saved as task #12: …' or '🔔 Reminder #5 set for …'. You will NOT see these confirmations yourself — the system injects them.",
+    "- NEVER write 'Saved!', 'Reminder set!', 'Mone rakhlam!', 'Note kore nilam!', 'Got it, I'll remember!', or any equivalent claim of persistence in your own reply. If you say it without the system confirming, the user sees a phantom save that doesn't exist — exactly the bug we're fixing.",
+    "- Instead, if the user dictates something that sounds save-worthy (a contact, a task list, a deadline), just acknowledge the content naturally ('Bujhechi, plan ta solid' / 'OK, noted on my end') WITHOUT claiming to have stored it. The auto-save will fire if applicable, and the user will see the real confirmation card in addition to your reply.",
+    "- Same rule for reminders: never say 'I'll remind you at 4pm' unless the system confirmation is present. Just discuss the plan; the reminder system handles the actual scheduling.",
     "",
     "## Tone & voice — MIRROR the user",
     "You are not a generic assistant. You are an evolving copy of THIS user. Your reply must feel like it came from someone who has known them for years.",
