@@ -496,6 +496,37 @@ function SettingsPanel({ settings, toast, qc }: {
   const [savingPrompt, setSavingPrompt] = useState(false);
   const [savingPersonality, setSavingPersonality] = useState(false);
   const [savingTelegram, setSavingTelegram] = useState(false);
+  const [retraining, setRetraining] = useState(false);
+
+  const retrainFromArchive = async () => {
+    if (!confirm("Re-scan the last 200 chat messages and merge any new personality signals into Facts/Habits/Likes/Dislikes?\n\nThis runs the AI in batch mode — takes ~20-40 seconds. Existing items are kept; only new ones are added.")) return;
+    setRetraining(true);
+    try {
+      const res = await fetch("/api/admin/personal-gpt/personality/retrain", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxTurns: 200 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Retrain failed");
+      const added = (data.factsAdded ?? 0) + (data.habitsAdded ?? 0) + (data.likesAdded ?? 0) + (data.dislikesAdded ?? 0);
+      toast({
+        title: added > 0 ? `Trained — ${added} new item${added === 1 ? "" : "s"} learned` : "Already up to date",
+        description: `Scanned ${data.scannedTurns} messages in ${data.batches} batch${data.batches === 1 ? "" : "es"} · facts +${data.factsAdded} · habits +${data.habitsAdded} · likes +${data.likesAdded} · dislikes +${data.dislikesAdded}${data.styleUpdated ? " · style updated" : ""}`,
+      });
+      /* Refresh settings so the new personality lands in the form. */
+      qc.invalidateQueries({ queryKey: ["personal-gpt-settings"] });
+    } catch (err) {
+      toast({
+        title: "Retrain failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setRetraining(false);
+    }
+  };
   const [restartingBot, setRestartingBot] = useState(false);
   const [testingBot, setTestingBot] = useState(false);
 
@@ -711,17 +742,31 @@ function SettingsPanel({ settings, toast, qc }: {
             })}
           </div>
 
-          <div className="mt-5 flex justify-end">
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={retrainFromArchive}
+              disabled={retraining || savingPersonality}
+              className="gap-1.5"
+              title="Re-scan recent chat history and pull new personality signals into the lists above"
+            >
+              {retraining ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+              {retraining ? "Training…" : "Train from chat history"}
+            </Button>
             <Button
               size="sm"
               onClick={() => save({ personality }, setSavingPersonality, "Personality saved")}
-              disabled={savingPersonality}
+              disabled={savingPersonality || retraining}
               className="gap-1.5"
             >
               {savingPersonality ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
               Save Personality
             </Button>
           </div>
+          <p className="mt-2 text-[11px] text-muted-foreground/70">
+            Tip: <span className="text-muted-foreground">Train from chat history</span> re-reads the last ~200 messages and pulls new facts, habits, likes & dislikes into the lists above. Use it after long conversations or when you've imported a backup.
+          </p>
         </Card>
 
         {/* Backup & Restore */}

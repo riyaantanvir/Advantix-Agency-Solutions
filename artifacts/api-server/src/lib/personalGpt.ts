@@ -1142,9 +1142,21 @@ function isTrivialMessage(text: string): boolean {
   return TRIVIAL_PATTERNS.some(re => re.test(t));
 }
 
-async function extractPersonalityDelta(userText: string, apiKey: string): Promise<Partial<Personality>> {
+async function extractPersonalityDelta(
+  userText: string,
+  apiKey: string,
+  recentContext?: string[],
+): Promise<Partial<Personality>> {
   /* Token-saving short-circuit. */
   if (isTrivialMessage(userText)) return {};
+  /* Build the message: optionally include the last few user turns as context
+     so the extractor can resolve references like "oi book ta darun chilo" to
+     the actual book mentioned 1-2 turns earlier. */
+  const contextBlock = recentContext && recentContext.length > 0
+    ? `[Earlier user turns for reference — DO NOT extract from these, only the LATEST message below]\n` +
+      recentContext.slice(-3).map((t, i) => `(${i + 1}) ${t.slice(0, 600)}`).join("\n") +
+      `\n\n[LATEST message — extract from this]\n`
+    : "";
   try {
     const res = await fetch(OPENROUTER_URL, {
       method: "POST",
@@ -1155,12 +1167,12 @@ async function extractPersonalityDelta(userText: string, apiKey: string): Promis
       },
       body: JSON.stringify({
         model: EXTRACT_MODEL,
-        max_tokens: 400,
+        max_tokens: 500,
         temperature: 0.1,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: EXTRACT_SYSTEM },
-          { role: "user", content: userText.slice(0, 4000) },
+          { role: "user", content: (contextBlock + userText).slice(0, 6000) },
         ],
       }),
     });
@@ -1178,6 +1190,133 @@ async function extractPersonalityDelta(userText: string, apiKey: string): Promis
     logger.warn({ err }, "Personal GPT extractor failed");
     return {};
   }
+}
+
+/* ── Batch retraining ────────────────────────────────────────────────────
+ * Extract personality signal from a batch of user turns at once. Lets a
+ * single LLM call cover ~20 messages of context — much richer than the
+ * per-message extractor because the model sees the user across many turns
+ * and can infer durable patterns (recurring themes, favorites, idols).
+ */
+async function extractPersonalityFromBatch(
+  userTurns: string[],
+  apiKey: string,
+): Promise<Partial<Personality>> {
+  const valid = userTurns.map(t => t.trim()).filter(t => t && !isTrivialMessage(t));
+  if (valid.length === 0) return {};
+  const joined = valid.map((t, i) => `[${i + 1}] ${t.slice(0, 800)}`).join("\n");
+  const sysPrompt = EXTRACT_SYSTEM +
+    `\n\nBATCH MODE: You will receive MANY recent user messages joined together. ` +
+    `Treat them as one continuous corpus and extract every durable personality signal you can find ` +
+    `across all of them. Include facts, habits, likes, dislikes, and a refined style sentence. ` +
+    `Output the SAME JSON schema. Do not deduplicate — the caller handles that.`;
+  try {
+    const res = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+        "HTTP-Referer": "https://advantix.digital",
+        "X-Title": "Advantix Personal GPT (batch retrain)",
+      },
+      body: JSON.stringify({
+        model: EXTRACT_MODEL,
+        max_tokens: 1500,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: sysPrompt },
+          { role: "user", content: joined.slice(0, 30000) },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      logger.warn(`Personal GPT batch extractor: HTTP ${res.status}`);
+      return {};
+    }
+    const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+    const raw = data.choices?.[0]?.message?.content?.trim() ?? "";
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    return normalizePersonality(parsed);
+  } catch (err) {
+    logger.warn({ err }, "Personal GPT batch extractor failed");
+    return {};
+  }
+}
+
+export interface RetrainResult {
+  scannedTurns: number;
+  batches: number;
+  factsAdded: number;
+  habitsAdded: number;
+  likesAdded: number;
+  dislikesAdded: number;
+  styleUpdated: boolean;
+}
+
+/**
+ * Re-extract personality from the most recent user turns in the archive.
+ * Splits into batches of ~25 messages each, runs the batch extractor, then
+ * merges all deltas into the existing personality (deduped by mergeUnique).
+ *
+ * @param maxTurns  How many of the most-recent user turns to scan (default 200).
+ */
+export async function retrainPersonalityFromArchive(maxTurns = 200): Promise<RetrainResult> {
+  const apiKey = await getOpenRouterKey();
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured.");
+
+  /* Pull the most-recent user turns from the archive (oldest→newest order
+     for the batch so the model sees the natural conversation flow). */
+  const cap = Math.min(Math.max(maxTurns, 10), 500);
+  const rowsRes = await db.execute(sql`
+    SELECT content FROM personal_gpt_archive
+    WHERE role = 'user'
+    ORDER BY id DESC
+    LIMIT ${cap}
+  `);
+  const userTurns = (rowsRes.rows as { content: string }[])
+    .map(r => r.content)
+    .filter(t => typeof t === "string" && t.trim().length > 0)
+    .reverse();
+
+  if (userTurns.length === 0) {
+    return { scannedTurns: 0, batches: 0, factsAdded: 0, habitsAdded: 0, likesAdded: 0, dislikesAdded: 0, styleUpdated: false };
+  }
+
+  const BATCH = 25;
+  const batches: string[][] = [];
+  for (let i = 0; i < userTurns.length; i += BATCH) batches.push(userTurns.slice(i, i + BATCH));
+
+  /* Run batches sequentially to avoid rate-limit bursts. */
+  const before = await loadSettings();
+  let merged: Personality = before.personality;
+  let styleUpdated = false;
+  for (const b of batches) {
+    const delta = await extractPersonalityFromBatch(b, apiKey);
+    if (delta.style && delta.style.trim() && delta.style.trim() !== merged.style) {
+      styleUpdated = true;
+    }
+    merged = mergePersonality(merged, delta);
+  }
+
+  await updateSettings({ personality: merged });
+
+  const factsAdded    = merged.facts.length    - before.personality.facts.length;
+  const habitsAdded   = merged.habits.length   - before.personality.habits.length;
+  const likesAdded    = merged.likes.length    - before.personality.likes.length;
+  const dislikesAdded = merged.dislikes.length - before.personality.dislikes.length;
+
+  logger.info({
+    scannedTurns: userTurns.length, batches: batches.length,
+    factsAdded, habitsAdded, likesAdded, dislikesAdded, styleUpdated,
+  }, "Personal GPT: personality retrained from archive");
+
+  return {
+    scannedTurns: userTurns.length,
+    batches: batches.length,
+    factsAdded, habitsAdded, likesAdded, dislikesAdded, styleUpdated,
+  };
 }
 
 /* ── Multi-modal: image generation + voice understanding ────────────────── */
@@ -1824,11 +1963,6 @@ export async function runPersonalGptTurn(userText: string, opts: TurnOptions): P
   const useWeb = force !== null ? force : wantsWebSearch(cleanedText);
   userText = cleanedText;
 
-  /* Personality extraction only runs for trusted/persistable turns. */
-  const extractPromise = opts.persist
-    ? extractPersonalityDelta(userText, apiKey)
-    : Promise.resolve<Partial<Personality>>({});
-
   /* For ephemeral (group) turns we deliberately use no history AND omit the
      personality profile + notes so group conversations can't pull in or leak
      private context. DM/web turns get the full memory. */
@@ -1838,6 +1972,14 @@ export async function runPersonalGptTurn(userText: string, opts: TurnOptions): P
     fullSystemPrompt += "\n\n[Live web search is enabled for this turn. Use the fetched results to answer with up-to-date facts. Cite sources inline as [1], [2] when relevant.]";
   }
   const history = opts.persist ? await loadRecentTurns() : [];
+
+  /* Personality extraction only runs for trusted/persistable turns. We pass
+     the last few user turns as context so references like "oi book ta darun"
+     can resolve to a title mentioned a turn or two earlier. */
+  const recentUserTurns = history.filter(h => h.role === "user").map(h => h.content).slice(-3);
+  const extractPromise = opts.persist
+    ? extractPersonalityDelta(userText, apiKey, recentUserTurns)
+    : Promise.resolve<Partial<Personality>>({});
   const turnHistory: RecentTurn[] = [...history, { role: "user", content: userText }];
 
   const reply = await callChat(fullSystemPrompt, turnHistory, apiKey, useWeb);
@@ -1898,14 +2040,17 @@ export async function runPersonalGptTurnStream(
     const useWeb = force !== null ? force : wantsWebSearch(cleanedText);
     userText = cleanedText;
 
-    /* Streaming endpoint is web-only and always persists. */
-    const extractPromise = extractPersonalityDelta(userText, apiKey);
     const notes = await listNotes().catch(() => [] as Note[]);
     let fullSystemPrompt = buildSystemPrompt(settings, true, notes);
     if (useWeb) {
       fullSystemPrompt += "\n\n[Live web search is enabled for this turn. Use the fetched results to answer with up-to-date facts. Cite sources inline as [1], [2] when relevant.]";
     }
     const history = await loadRecentTurns();
+
+    /* Streaming endpoint is web-only and always persists. Pass the last few
+       user turns as context for cross-message reference resolution. */
+    const recentUserTurns = history.filter(h => h.role === "user").map(h => h.content).slice(-3);
+    const extractPromise = extractPersonalityDelta(userText, apiKey, recentUserTurns);
     const turnHistory: RecentTurn[] = [...history, { role: "user", content: userText }];
 
     const reply = await callChatStream(fullSystemPrompt, turnHistory, apiKey, (chunk) => {

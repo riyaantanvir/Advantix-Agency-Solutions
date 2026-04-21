@@ -31,6 +31,7 @@ import {
   listPendingReminders,
   listRemindersForAdmin,
   cancelReminder,
+  retrainPersonalityFromArchive,
   type Personality,
 } from "../lib/personalGpt.js";
 import { logger } from "../lib/logger.js";
@@ -204,6 +205,19 @@ router.get("/admin/personal-gpt/archive/stats", requireAdmin, async (_req: Reque
   } catch (err) {
     logger.error({ err }, "personal-gpt: archive stats failed");
     res.status(500).json({ error: "Failed to load stats" });
+  }
+});
+
+/* ── POST personality retrain (rescan archive) ─────────────────────────── */
+router.post("/admin/personal-gpt/personality/retrain", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const body = (req.body ?? {}) as { maxTurns?: unknown };
+    const requested = typeof body.maxTurns === "number" && Number.isFinite(body.maxTurns) ? body.maxTurns : 200;
+    const result = await retrainPersonalityFromArchive(requested);
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "personal-gpt: retrain failed");
+    res.status(500).json({ error: err instanceof Error ? err.message : "Retrain failed" });
   }
 });
 
