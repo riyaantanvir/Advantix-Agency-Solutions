@@ -1091,9 +1091,20 @@ const EXTRACT_SYSTEM = `You are a personality-profiler. Your job is to build a p
 Read the user's latest message (English, Bangla, or Banglish — most likely Banglish from a Bangladeshi tech founder) and extract ONLY new long-term-useful signal.
 
 What to capture:
-- "facts": durable identity facts ("runs Advantix Digital", "based in Bagerhat").
-- "habits": recurring behaviors ("works late nights", "uses voice messages often").
-- "likes" / "dislikes": preferences worth remembering long-term.
+- "facts": durable identity facts ("runs Advantix Digital", "based in Bagerhat", "is Muslim").
+- "habits": recurring behaviors ("works late nights", "uses voice messages often", "performs daily Namaz").
+- "likes": ANYTHING the user expresses positive feeling, admiration, fondness, or preference for — be GENEROUS here. Includes:
+    • favorite books, authors, characters (real or fictional) — "loves Ahmed Musa from Masud Rana series", "favorite author is Humayun Ahmed"
+    • role models, idols, inspirations — "looks up to Steve Jobs", "ideal: Imam Ghazali"
+    • favorite films, shows, music, artists, songs
+    • favorite foods, drinks, restaurants, cuisines
+    • favorite sports / teams / players
+    • favorite places, cities, travel spots
+    • favorite tools, brands, apps, gadgets
+    • aesthetic / design / style preferences ("loves minimalist UI", "prefers dark mode")
+    • general preferences ("enjoys tea", "prefers structured planning")
+  If the user calls something "best", "legend", "ekdom favorite", "pochonder", "bhalo lage", "love kori", "ideal", "icon", or even just praises a person/work/thing warmly — capture it. Do NOT require the user to literally say "I like X"; admiration counts.
+- "dislikes": opposite — things they reject, hate, find annoying, avoid.
 - "style": ONE detailed sentence covering ALL of these dimensions when observable:
     1. Language mix — pure English / pure Bangla / Banglish (which dominant?).
     2. Formality — casual / blunt / formal / mixed.
