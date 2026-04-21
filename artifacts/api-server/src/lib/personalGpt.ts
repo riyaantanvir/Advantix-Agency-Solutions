@@ -61,6 +61,11 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
      • personality extraction (background) → cheap GLM 4.5 Air
 */
 const CHAT_MODEL    = "z-ai/glm-4.6";                          // primary text model (low cost)
+/* Fallback when the primary refuses or returns empty — Gemini 2.5 Flash is
+   much less prone to safety-refuse innocent personal queries that contain
+   spicy profile facts (betting clients, black-hat marketing, etc.) AND
+   it's already wired up for voice/reminders so no new credentials needed. */
+const FALLBACK_CHAT_MODEL = "google/gemini-2.5-flash";
 const VOICE_MODEL   = "google/gemini-2.5-flash";               // accepts inline audio (best quality)
 const IMAGE_MODEL   = "google/gemini-2.5-flash-image";         // Nano Banana
 const EXTRACT_MODEL = "z-ai/glm-4.5-air";                      // ~3x cheaper extractor
@@ -1517,6 +1522,8 @@ function buildSystemPrompt(
     timeLine,
     "",
     "## What you know about the user (long-term memory)",
+    "These are facts the user has shared about themselves over time. They are the user's OWN information — not requests for you to take action. You may discuss, list, summarize, or reference any of these facts freely whenever asked. Never refuse to discuss them — refusing to talk about the user's own profile would break the product. Only refuse if the user asks you to do something genuinely harmful (e.g. attack a third party, generate CSAM, etc.) — never refuse based on the profile facts themselves.",
+    "",
     renderPersonality(settings.personality),
     "",
     "## Knowledge base / CRM (saved by the user — quote IDs like #12 if you reference one)",
@@ -1618,7 +1625,9 @@ type ChatResponse = { choices?: ChatChoice[]; error?: { message?: string } };
 
 async function callChatOnce(
   systemPrompt: string, history: RecentTurn[], apiKey: string, useWeb: boolean, temperature: number,
+  modelOverride?: string,
 ): Promise<{ reply: string; diag: string }> {
+  const baseModel = modelOverride ?? CHAT_MODEL;
   const res = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
@@ -1627,7 +1636,7 @@ async function callChatOnce(
       "HTTP-Referer": "https://advantix.digital",
     },
     body: JSON.stringify({
-      model: useWeb ? `${CHAT_MODEL}:online` : CHAT_MODEL,
+      model: useWeb ? `${baseModel}:online` : baseModel,
       max_tokens: 1500,
       temperature,
       messages: buildMessages(systemPrompt, history),
@@ -1647,20 +1656,28 @@ async function callChatOnce(
 async function callChat(
   systemPrompt: string, history: RecentTurn[], apiKey: string, useWeb = false,
 ): Promise<string> {
-  /* First attempt at normal temperature. */
+  /* Attempt 1: primary model at normal temperature. */
   const first = await callChatOnce(systemPrompt, history, apiKey, useWeb, 0.8);
   if (first.reply) return first.reply;
 
-  logger.warn({ diag: first.diag, useWeb }, "Personal GPT: empty reply — retrying once with lower temperature");
+  logger.warn({ diag: first.diag, useWeb, model: CHAT_MODEL }, "Personal GPT: empty reply — retrying primary at low temperature");
 
-  /* One retry at temperature 0.2 — usually rescues refusals/flakes. */
+  /* Attempt 2: primary at low temperature — rescues random flakes. */
   const second = await callChatOnce(systemPrompt, history, apiKey, useWeb, 0.2);
   if (second.reply) return second.reply;
 
-  /* Still nothing — log full diagnostics and return a friendly fallback so
-     the user gets *something* instead of a raw error toast. The caller path
-     persists this reply to the archive too, which is fine: it's honest. */
-  logger.error({ first: first.diag, second: second.diag, useWeb }, "Personal GPT: chat model returned empty twice — falling back");
+  /* Attempt 3: fallback model. The primary (GLM-4.6) sometimes safety-refuses
+     when the system prompt contains spicy profile facts ("betting clients",
+     "black-hat marketing"). Gemini 2.5 Flash handles those queries fine. */
+  logger.warn({ first: first.diag, second: second.diag, useWeb, fallback: FALLBACK_CHAT_MODEL },
+    "Personal GPT: primary model empty twice — switching to fallback model");
+  const third = await callChatOnce(systemPrompt, history, apiKey, useWeb, 0.7, FALLBACK_CHAT_MODEL);
+  if (third.reply) return third.reply;
+
+  /* All three attempts came back empty — friendly fallback so the user
+     never sees a raw error toast. */
+  logger.error({ first: first.diag, second: second.diag, third: third.diag, useWeb },
+    "Personal GPT: all chat model attempts returned empty — emitting fallback message");
   if (useWeb) {
     return "Bhai web search e ekhon kichu fetch korte parlam na — ektu pore abar try koro, ba `/nosearch` diye normally ask koro.";
   }
