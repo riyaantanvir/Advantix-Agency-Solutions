@@ -402,6 +402,84 @@ function ChatBubble({ msg }: { msg: Message }) {
   );
 }
 
+/* ── Personality list editor (one row per category) ─────────────────────── */
+
+function PersonalityListEditor({ listKey, label, color, items, onAdd, onRemove }: {
+  listKey: keyof Personality;
+  label: string;
+  color: string;
+  items: string[];
+  onAdd: (value: string) => void;
+  onRemove: (idx: number) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const placeholderByKey: Record<string, string> = {
+    facts:    "e.g. graduated from BUET",
+    habits:   "e.g. checks email first thing every morning",
+    likes:    "e.g. loves Ahmed Musa from Masud Rana series",
+    dislikes: "e.g. hates being interrupted during deep work",
+  };
+  const submit = () => {
+    const v = draft.trim();
+    if (!v) return;
+    onAdd(v);
+    setDraft("");
+  };
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="text-xs font-medium text-muted-foreground">{label} ({items.length})</label>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-xs text-muted-foreground/60 italic px-2 py-1.5">Nothing learned yet — add one below.</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {items.map((item, i) => (
+            <span key={i} className={cn(
+              "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs",
+              COLOR_CLASSES[color]
+            )}>
+              <span className="max-w-[280px] truncate">{item}</span>
+              <button
+                onClick={() => onRemove(i)}
+                className="hover:opacity-70 shrink-0"
+                title="Remove"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-1.5">
+        <input
+          type="text"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder={placeholderByKey[listKey as string] ?? `Add ${label.toLowerCase()}…`}
+          className="flex-1 px-2.5 py-1.5 bg-secondary/30 border border-border/50 rounded-md text-xs focus:outline-none focus:border-primary/50"
+          maxLength={200}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={submit}
+          disabled={!draft.trim()}
+          className="h-auto px-2.5 py-1.5 text-xs gap-1"
+        >
+          <Plus className="w-3 h-3" /> Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Settings panel ──────────────────────────────────────────────────────── */
 
 function SettingsPanel({ settings, toast, qc }: {
@@ -461,6 +539,18 @@ function SettingsPanel({ settings, toast, qc }: {
   const removeItem = (key: keyof Personality, idx: number) => {
     if (key === "style") return;
     setPersonality(prev => ({ ...prev, [key]: (prev[key] as string[]).filter((_, i) => i !== idx) }));
+  };
+
+  const addItem = (key: keyof Personality, value: string) => {
+    if (key === "style") return;
+    const v = value.trim();
+    if (!v) return;
+    setPersonality(prev => {
+      const list = prev[key] as string[];
+      /* Skip duplicates (case-insensitive) so manual + auto-curate don't collide. */
+      if (list.some(x => x.toLowerCase() === v.toLowerCase())) return prev;
+      return { ...prev, [key]: [...list, v] };
+    });
   };
 
   const testBot = async () => {
@@ -585,7 +675,7 @@ function SettingsPanel({ settings, toast, qc }: {
             <div className="flex-1">
               <h3 className="font-semibold text-sm">Auto-curated Personality</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Updated automatically from every conversation (web + Telegram). Click × to remove an item.
+                Updated automatically from every conversation. Add items manually below — the AI reads them on every reply.
               </p>
             </div>
           </div>
@@ -608,32 +698,15 @@ function SettingsPanel({ settings, toast, qc }: {
             {PERSONALITY_KEYS.map(({ key, label, color }) => {
               const items = personality[key] as string[];
               return (
-                <div key={key}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">{label} ({items.length})</label>
-                  </div>
-                  {items.length === 0 ? (
-                    <p className="text-xs text-muted-foreground/60 italic px-2 py-1.5">Nothing learned yet.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {items.map((item, i) => (
-                        <span key={i} className={cn(
-                          "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs",
-                          COLOR_CLASSES[color]
-                        )}>
-                          <span className="max-w-[280px] truncate">{item}</span>
-                          <button
-                            onClick={() => removeItem(key, i)}
-                            className="hover:opacity-70 shrink-0"
-                            title="Remove"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <PersonalityListEditor
+                  key={key}
+                  listKey={key}
+                  label={label}
+                  color={color}
+                  items={items}
+                  onAdd={(v) => addItem(key, v)}
+                  onRemove={(i) => removeItem(key, i)}
+                />
               );
             })}
           </div>
