@@ -1091,7 +1091,8 @@ const EXTRACT_SYSTEM = `You are a personality-profiler. Your job is to build a p
 Read the user's latest message (English, Bangla, or Banglish — most likely Banglish from a Bangladeshi tech founder) and extract ONLY new long-term-useful signal.
 
 What to capture:
-- "facts": durable identity facts ("runs Advantix Digital", "based in Bagerhat", "is Muslim").
+- "facts": durable identity facts ("runs Advantix Digital", "based in Bagerhat", "is Muslim", "married", "wife's name is Tanzima", "has a daughter named Lamia", "graduated from BUET", "drives a Toyota Corolla").
+   Family, marital status, parents, children, siblings, hometown, education, employer, job title — ALL count as facts and must be captured even if mentioned briefly or as an answer to a question. If the bot asks "what's your wife's name?" and the user answers "Tanzima!", extract BOTH "married" AND "wife's name is Tanzima".
 - "habits": recurring behaviors ("works late nights", "uses voice messages often", "performs daily Namaz").
 - "likes": ANYTHING the user expresses positive feeling, admiration, fondness, or preference for — be GENEROUS here. Includes:
     • favorite books, authors, characters (real or fictional) — "loves Ahmed Musa from Masud Rana series", "favorite author is Humayun Ahmed"
@@ -1149,13 +1150,19 @@ async function extractPersonalityDelta(
 ): Promise<Partial<Personality>> {
   /* Token-saving short-circuit. */
   if (isTrivialMessage(userText)) return {};
-  /* Build the message: optionally include the last few user turns as context
-     so the extractor can resolve references like "oi book ta darun chilo" to
-     the actual book mentioned 1-2 turns earlier. */
+  /* Build the message: optionally include the last few user turns + the last
+     assistant turn as context. The extractor focuses on the LATEST message
+     but USES the prior turns to interpret references and answers — e.g.
+     when the bot asks "what's your wife's name?" and the user replies
+     "Tanzima!", that single word becomes the fact "wife's name is Tanzima
+     (married)". Without context, "Tanzima!" looks like a noise word. */
   const contextBlock = recentContext && recentContext.length > 0
-    ? `[Earlier user turns for reference — DO NOT extract from these, only the LATEST message below]\n` +
-      recentContext.slice(-3).map((t, i) => `(${i + 1}) ${t.slice(0, 600)}`).join("\n") +
-      `\n\n[LATEST message — extract from this]\n`
+    ? `[Recent conversation context — use these to INTERPRET the latest message. ` +
+      `If the latest message is an answer to a question or a reference to ` +
+      `something mentioned earlier, infer the FULL fact (not just the bare ` +
+      `word) and put it in the right list.]\n` +
+      recentContext.slice(-4).map((t, i) => `(${i + 1}) ${t.slice(0, 600)}`).join("\n") +
+      `\n\n[LATEST user message — primary source for extraction, but resolve references using the context above]\n`
     : "";
   try {
     const res = await fetch(OPENROUTER_URL, {
