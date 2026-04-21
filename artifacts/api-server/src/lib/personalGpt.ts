@@ -1605,9 +1605,20 @@ function parseSearchOverride(text: string): { text: string; force: boolean | nul
   return { text, force: null };
 }
 
-async function callChat(
-  systemPrompt: string, history: RecentTurn[], apiKey: string, useWeb = false,
-): Promise<string> {
+/* Models occasionally return choices with `content: null` plus a `refusal`
+   field, or `finish_reason: "content_filter"`, or an empty string when the
+   provider had a transient hiccup. Pull whatever the most useful diagnostic
+   is so we can log it AND show the user a friendlier message than crash. */
+type ChatChoice = {
+  message?: { content?: string | null; refusal?: string | null };
+  finish_reason?: string;
+  native_finish_reason?: string;
+};
+type ChatResponse = { choices?: ChatChoice[]; error?: { message?: string } };
+
+async function callChatOnce(
+  systemPrompt: string, history: RecentTurn[], apiKey: string, useWeb: boolean, temperature: number,
+): Promise<{ reply: string; diag: string }> {
   const res = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
@@ -1618,18 +1629,42 @@ async function callChat(
     body: JSON.stringify({
       model: useWeb ? `${CHAT_MODEL}:online` : CHAT_MODEL,
       max_tokens: 1500,
-      temperature: 0.8,
+      temperature,
       messages: buildMessages(systemPrompt, history),
     }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Chat API HTTP ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`Chat API HTTP ${res.status}: ${text.slice(0, 300)}`);
   }
-  const data = await res.json() as { choices?: { message?: { content?: string } }[] };
-  const reply = data.choices?.[0]?.message?.content?.trim();
-  if (!reply) throw new Error("Empty reply from chat model");
-  return reply;
+  const data = await res.json() as ChatResponse;
+  const choice = data.choices?.[0];
+  const reply = choice?.message?.content?.trim() ?? "";
+  const diag = `finish=${choice?.finish_reason ?? "?"} native=${choice?.native_finish_reason ?? "?"} refusal=${choice?.message?.refusal ?? "n/a"} err=${data.error?.message ?? "n/a"}`;
+  return { reply, diag };
+}
+
+async function callChat(
+  systemPrompt: string, history: RecentTurn[], apiKey: string, useWeb = false,
+): Promise<string> {
+  /* First attempt at normal temperature. */
+  const first = await callChatOnce(systemPrompt, history, apiKey, useWeb, 0.8);
+  if (first.reply) return first.reply;
+
+  logger.warn({ diag: first.diag, useWeb }, "Personal GPT: empty reply — retrying once with lower temperature");
+
+  /* One retry at temperature 0.2 — usually rescues refusals/flakes. */
+  const second = await callChatOnce(systemPrompt, history, apiKey, useWeb, 0.2);
+  if (second.reply) return second.reply;
+
+  /* Still nothing — log full diagnostics and return a friendly fallback so
+     the user gets *something* instead of a raw error toast. The caller path
+     persists this reply to the archive too, which is fine: it's honest. */
+  logger.error({ first: first.diag, second: second.diag, useWeb }, "Personal GPT: chat model returned empty twice — falling back");
+  if (useWeb) {
+    return "Bhai web search e ekhon kichu fetch korte parlam na — ektu pore abar try koro, ba `/nosearch` diye normally ask koro.";
+  }
+  return "Bhai ekhon model theke clean reply ashlo na — ektu pore abar try koro. (Diagnostics archived in server logs.)";
 }
 
 /**
