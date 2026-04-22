@@ -8,7 +8,7 @@ import {
 } from "@workspace/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import pino from "pino";
-import { generateFbAutoReply } from "./aiReply.js";
+import { generateFbAutoReply, generateFbAutoReplyDetailed } from "./aiReply.js";
 
 const logger = pino({ name: "fb-scheduler" });
 
@@ -28,10 +28,8 @@ async function fbPost(path: string, token: string, body: object): Promise<Record
   return r.json() as Promise<Record<string, unknown>>;
 }
 
-async function getAiReply(instructions: string, userMessage: string): Promise<string> {
-  return generateFbAutoReply(instructions, userMessage);
-}
-
+/* Mirrors `processAndReply` in routes/facebook.ts — both call sites must record
+   *why* a reply was skipped (no rule, AI empty, FB error). Keep in sync. */
 async function processAndReply(fbPageDbId: number, messageDbId: number, messageText: string): Promise<void> {
   try {
     const [msgRow] = await db.select().from(facebookMessagesTable).where(eq(facebookMessagesTable.id, messageDbId));
@@ -53,7 +51,12 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
       }
     }
 
-    if (!matchedRule) return;
+    if (!matchedRule) {
+      await db.update(facebookMessagesTable)
+        .set({ error: rules.length === 0 ? "No active rules for this page" : "No rule matched this message" })
+        .where(eq(facebookMessagesTable.id, messageDbId));
+      return;
+    }
 
     let replyText = "";
     let replyType = "template";
@@ -61,11 +64,21 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
     if (matchedRule.replyMode === "template" && matchedRule.replyTemplate) {
       replyText = matchedRule.replyTemplate.replace("{name}", msgRow.senderName ?? "there");
     } else if (matchedRule.replyMode === "ai" && matchedRule.aiInstructions) {
-      replyText = await getAiReply(matchedRule.aiInstructions, messageText);
+      const ai = await generateFbAutoReplyDetailed(matchedRule.aiInstructions, messageText);
+      replyText = ai.text;
       replyType = "ai";
+      if (!replyText) {
+        await db.update(facebookMessagesTable)
+          .set({ ruleId: matchedRule.id, error: `AI (${ai.provider}/${ai.model}): ${ai.error ?? "empty response"}` })
+          .where(eq(facebookMessagesTable.id, messageDbId));
+        return;
+      }
+    } else {
+      await db.update(facebookMessagesTable)
+        .set({ ruleId: matchedRule.id, error: `Rule "${matchedRule.ruleName}" has no template or AI instructions` })
+        .where(eq(facebookMessagesTable.id, messageDbId));
+      return;
     }
-
-    if (!replyText) return;
 
     const sendResult = await fbPost(`/me/messages`, fbPage.pageAccessToken, {
       recipient: { id: msgRow.senderId },
@@ -80,11 +93,13 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
       repliedAt: hasError ? null : new Date(),
       replyType,
       ruleId: matchedRule.id,
-      error: hasError ? JSON.stringify((sendResult as any).error) : null,
+      error: hasError ? `Facebook send failed: ${JSON.stringify((sendResult as any).error)}` : null,
     }).where(eq(facebookMessagesTable.id, messageDbId));
 
   } catch (err) {
-    await db.update(facebookMessagesTable).set({ error: String(err) }).where(eq(facebookMessagesTable.id, messageDbId));
+    await db.update(facebookMessagesTable)
+      .set({ error: `processAndReply threw: ${err instanceof Error ? err.message : String(err)}` })
+      .where(eq(facebookMessagesTable.id, messageDbId));
   }
 }
 

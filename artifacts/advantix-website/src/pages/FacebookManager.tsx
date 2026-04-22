@@ -160,6 +160,22 @@ export default function FacebookManager() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  /* Manual retry for a stuck message — re-runs server-side processAndReply
+     after we've fixed root cause (model/key/rule). */
+  const retryMessage = useMutation({
+    mutationFn: (id: number) => apiFetch(`/facebook/messages/${id}/retry`, { method: "POST" }),
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ["fb-messages"] });
+      qc.invalidateQueries({ queryKey: ["fb-stats"] });
+      toast({
+        title: d?.ok ? "Reply sent" : "Retry failed",
+        description: d?.ok ? d.replyText : (d?.error ?? "No reply was sent — see message error."),
+        variant: d?.ok ? "default" : "destructive",
+      });
+    },
+    onError: (e: Error) => toast({ title: "Retry failed", description: e.message, variant: "destructive" }),
+  });
+
   const checkNow = useMutation({
     mutationFn: () => apiFetch("/facebook/check-now", { method: "POST" }),
     onSuccess: (d) => {
@@ -471,14 +487,26 @@ export default function FacebookManager() {
                       </div>
                     )}
                     {msg.error && (
-                      <p className="text-xs text-red-400 mt-1 flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3" />{msg.error}
+                      <p className="text-xs text-red-400 mt-1 flex items-start gap-1">
+                        <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" /><span className="break-words">{msg.error}</span>
                       </p>
+                    )}
+                    {!msg.isReplied && (
+                      <Button
+                        size="sm" variant="outline"
+                        className="mt-2 h-7 text-xs"
+                        disabled={retryMessage.isPending && retryMessage.variables === msg.id}
+                        onClick={() => retryMessage.mutate(msg.id)}>
+                        {retryMessage.isPending && retryMessage.variables === msg.id
+                          ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                          : <RefreshCw className="w-3 h-3 mr-1.5" />}
+                        Retry reply
+                      </Button>
                     )}
                   </div>
                   <div className="shrink-0">
-                    {msg.error ? <XCircle className="w-4 h-4 text-red-400" /> :
-                     msg.isReplied ? <CheckCircle2 className="w-4 h-4 text-green-400" /> :
+                    {msg.isReplied ? <CheckCircle2 className="w-4 h-4 text-green-400" /> :
+                     msg.error ? <XCircle className="w-4 h-4 text-red-400" /> :
                      <Loader2 className="w-4 h-4 text-yellow-400" />}
                   </div>
                 </div>

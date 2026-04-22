@@ -59,11 +59,24 @@ export async function getFbAutoReplyConfig(): Promise<FbAutoReplyConfig> {
   return { provider, model, apiKey, apiKeyConfigured: !!apiKey };
 }
 
-/** Generate a reply using the configured provider. Returns "" on any failure
- *  (caller treats empty as "no reply" and surfaces it in diagnostics). */
-export async function generateFbAutoReply(instructions: string, userMessage: string): Promise<string> {
+/** Result of an AI reply attempt. `text` is non-empty on success; otherwise
+ *  `error` carries a human-readable reason that should be persisted on the
+ *  message so the user can see *why* nothing was sent. */
+export interface AiReplyResult {
+  text: string;
+  error?: string;
+  provider: AiProvider;
+  model: string;
+}
+
+/** Generate a reply using the configured provider. Always resolves — never
+ *  throws. On failure, returns `{ text: "", error: "..." }`. */
+export async function generateFbAutoReplyDetailed(instructions: string, userMessage: string): Promise<AiReplyResult> {
   const cfg = await getFbAutoReplyConfig();
-  if (!cfg.apiKey) return "";
+  const meta = { provider: cfg.provider, model: cfg.model };
+  if (!cfg.apiKey) {
+    return { text: "", error: `No API key for provider "${cfg.provider}". Add ${PROVIDER_KEY_NAMES[cfg.provider]} in admin → Integrations.`, ...meta };
+  }
 
   const messages = [
     { role: "system", content: instructions },
@@ -72,6 +85,10 @@ export async function generateFbAutoReply(instructions: string, userMessage: str
 
   try {
     if (cfg.provider === "openrouter") {
+      /* GLM/DeepSeek/o-series and other reasoning models burn most of the token
+         budget on hidden chain-of-thought, leaving `content` empty. We disable
+         reasoning output and raise the cap so customer-facing replies always
+         have room. `reasoning.exclude` is a no-op on non-reasoning models. */
       const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -80,11 +97,17 @@ export async function generateFbAutoReply(instructions: string, userMessage: str
           "HTTP-Referer": "https://advantix.digital",
           "X-Title": "Advantix FB Auto-Reply",
         },
-        body: JSON.stringify({ model: cfg.model, max_tokens: 500, messages }),
+        body: JSON.stringify({
+          model: cfg.model,
+          max_tokens: 2000,
+          messages,
+          reasoning: { exclude: true, effort: "low" },
+        }),
       });
       const d = await r.json() as { choices?: Array<{ message: { content: string } }>; error?: { message?: string } };
-      if (d.error) { console.warn("[FB AI] OpenRouter error:", d.error.message); return ""; }
-      return d.choices?.[0]?.message?.content?.trim() ?? "";
+      if (d.error) return { text: "", error: `OpenRouter: ${d.error.message ?? "unknown error"}`, ...meta };
+      const text = d.choices?.[0]?.message?.content?.trim() ?? "";
+      return text ? { text, ...meta } : { text: "", error: `OpenRouter returned no content for model "${cfg.model}". Check model name.`, ...meta };
     }
 
     if (cfg.provider === "openai") {
@@ -94,47 +117,37 @@ export async function generateFbAutoReply(instructions: string, userMessage: str
         body: JSON.stringify({ model: cfg.model, max_tokens: 500, messages }),
       });
       const d = await r.json() as { choices?: Array<{ message: { content: string } }>; error?: { message?: string } };
-      if (d.error) { console.warn("[FB AI] OpenAI error:", d.error.message); return ""; }
-      return d.choices?.[0]?.message?.content?.trim() ?? "";
+      if (d.error) return { text: "", error: `OpenAI: ${d.error.message ?? "unknown error"}`, ...meta };
+      const text = d.choices?.[0]?.message?.content?.trim() ?? "";
+      return text ? { text, ...meta } : { text: "", error: `OpenAI returned no content for model "${cfg.model}".`, ...meta };
     }
 
     if (cfg.provider === "anthropic") {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": cfg.apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: cfg.model, max_tokens: 500, system: instructions,
-          messages: [{ role: "user", content: userMessage }],
-        }),
+        headers: { "Content-Type": "application/json", "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: cfg.model, max_tokens: 500, system: instructions, messages: [{ role: "user", content: userMessage }] }),
       });
       const d = await r.json() as { content?: Array<{ text?: string }>; error?: { message?: string } };
-      if (d.error) { console.warn("[FB AI] Anthropic error:", d.error.message); return ""; }
-      return d.content?.[0]?.text?.trim() ?? "";
+      if (d.error) return { text: "", error: `Anthropic: ${d.error.message ?? "unknown error"}`, ...meta };
+      const text = d.content?.[0]?.text?.trim() ?? "";
+      return text ? { text, ...meta } : { text: "", error: `Anthropic returned no content for model "${cfg.model}".`, ...meta };
     }
 
     if (cfg.provider === "gemini") {
-      const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:generateContent?key=${cfg.apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: instructions }] },
-            contents: [{ role: "user", parts: [{ text: userMessage }] }],
-            generationConfig: { maxOutputTokens: 500 },
-          }),
-        }
-      );
-      const d = await r.json() as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        error?: { message?: string };
-      };
-      if (d.error) { console.warn("[FB AI] Gemini error:", d.error.message); return ""; }
-      return d.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:generateContent?key=${cfg.apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: instructions }] },
+          contents: [{ role: "user", parts: [{ text: userMessage }] }],
+          generationConfig: { maxOutputTokens: 500 },
+        }),
+      });
+      const d = await r.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; error?: { message?: string } };
+      if (d.error) return { text: "", error: `Gemini: ${d.error.message ?? "unknown error"}`, ...meta };
+      const text = d.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+      return text ? { text, ...meta } : { text: "", error: `Gemini returned no content for model "${cfg.model}".`, ...meta };
     }
 
     if (cfg.provider === "grok") {
@@ -144,13 +157,19 @@ export async function generateFbAutoReply(instructions: string, userMessage: str
         body: JSON.stringify({ model: cfg.model, max_tokens: 500, messages }),
       });
       const d = await r.json() as { choices?: Array<{ message: { content: string } }>; error?: { message?: string } };
-      if (d.error) { console.warn("[FB AI] Grok error:", d.error.message); return ""; }
-      return d.choices?.[0]?.message?.content?.trim() ?? "";
+      if (d.error) return { text: "", error: `Grok: ${d.error.message ?? "unknown error"}`, ...meta };
+      const text = d.choices?.[0]?.message?.content?.trim() ?? "";
+      return text ? { text, ...meta } : { text: "", error: `Grok returned no content for model "${cfg.model}".`, ...meta };
     }
   } catch (err) {
-    console.error("[FB AI] generateFbAutoReply threw:", err);
+    return { text: "", error: `Network/runtime error: ${err instanceof Error ? err.message : String(err)}`, ...meta };
   }
-  return "";
+  return { text: "", error: `Unknown provider "${cfg.provider}".`, ...meta };
+}
+
+/** Backwards-compatible string-returning wrapper. Prefer the Detailed version. */
+export async function generateFbAutoReply(instructions: string, userMessage: string): Promise<string> {
+  return (await generateFbAutoReplyDetailed(instructions, userMessage)).text;
 }
 
 export const FB_AUTOREPLY_DEFAULT_MODELS = DEFAULT_MODELS;

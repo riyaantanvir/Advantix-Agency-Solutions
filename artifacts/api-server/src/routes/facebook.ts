@@ -11,7 +11,7 @@ import {
 import { eq, desc, and, count, sql, isNull, inArray } from "drizzle-orm";
 import { requireToolUser } from "../middleware/toolAuth.js";
 import { requireAdmin } from "../middleware/auth.js";
-import { generateFbAutoReply, getFbAutoReplyConfig } from "../lib/aiReply.js";
+import { generateFbAutoReply, generateFbAutoReplyDetailed, getFbAutoReplyConfig } from "../lib/aiReply.js";
 
 const router = Router();
 
@@ -126,7 +126,15 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
       }
     }
 
-    if (!matchedRule) return;
+    /* Always persist *why* we couldn't reply — silent returns made auto-reply
+       feel "broken with no clue why" for the user. Now the Messages tab can
+       surface a clear reason badge for every unreplied message. */
+    if (!matchedRule) {
+      await db.update(facebookMessagesTable)
+        .set({ error: rules.length === 0 ? "No active rules for this page" : "No rule matched this message" })
+        .where(eq(facebookMessagesTable.id, messageDbId));
+      return;
+    }
 
     let replyText = "";
     let replyType = "template";
@@ -134,11 +142,21 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
     if (matchedRule.replyMode === "template" && matchedRule.replyTemplate) {
       replyText = matchedRule.replyTemplate.replace("{name}", msgRow.senderName ?? "there");
     } else if (matchedRule.replyMode === "ai" && matchedRule.aiInstructions) {
-      replyText = await getAiReply(matchedRule.aiInstructions, messageText);
+      const ai = await generateFbAutoReplyDetailed(matchedRule.aiInstructions, messageText);
+      replyText = ai.text;
       replyType = "ai";
+      if (!replyText) {
+        await db.update(facebookMessagesTable)
+          .set({ ruleId: matchedRule.id, error: `AI (${ai.provider}/${ai.model}): ${ai.error ?? "empty response"}` })
+          .where(eq(facebookMessagesTable.id, messageDbId));
+        return;
+      }
+    } else {
+      await db.update(facebookMessagesTable)
+        .set({ ruleId: matchedRule.id, error: `Rule "${matchedRule.ruleName}" has no template or AI instructions` })
+        .where(eq(facebookMessagesTable.id, messageDbId));
+      return;
     }
-
-    if (!replyText) return;
 
     /* Send reply via Facebook Graph API */
     const sendResult = await fbPost(`/me/messages`, fbPage.pageAccessToken, {
@@ -154,11 +172,13 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
       repliedAt: hasError ? null : new Date(),
       replyType,
       ruleId: matchedRule.id,
-      error: hasError ? JSON.stringify((sendResult as any).error) : null,
+      error: hasError ? `Facebook send failed: ${JSON.stringify((sendResult as any).error)}` : null,
     }).where(eq(facebookMessagesTable.id, messageDbId));
 
   } catch (err) {
-    await db.update(facebookMessagesTable).set({ error: String(err) }).where(eq(facebookMessagesTable.id, messageDbId));
+    await db.update(facebookMessagesTable)
+      .set({ error: `processAndReply threw: ${err instanceof Error ? err.message : String(err)}` })
+      .where(eq(facebookMessagesTable.id, messageDbId));
   }
 }
 
@@ -540,6 +560,44 @@ router.get("/facebook/messages", requireToolUser, async (req: Request, res: Resp
     .limit(limit);
 
   res.json({ messages: msgs });
+});
+
+/* Manual retry — clears prior error/reply state on the message and re-runs
+   processAndReply. Lets the user push a stuck message through after fixing
+   the root cause (e.g. wrong AI model, missing rule) without deleting it. */
+router.post("/facebook/messages/:id/retry", requireToolUser, async (req: Request, res: Response) => {
+  const uid = toolUserId(req);
+  const messageId = Number(req.params.id);
+  if (!Number.isFinite(messageId)) { res.status(400).json({ error: "Invalid message id" }); return; }
+
+  const [msg] = await db.select({
+    id: facebookMessagesTable.id,
+    facebookPageId: facebookMessagesTable.facebookPageId,
+    messageText: facebookMessagesTable.messageText,
+    isReplied: facebookMessagesTable.isReplied,
+    pageOwner: facebookPagesTable.toolUserId,
+  }).from(facebookMessagesTable)
+    .innerJoin(facebookPagesTable, eq(facebookMessagesTable.facebookPageId, facebookPagesTable.id))
+    .where(eq(facebookMessagesTable.id, messageId));
+
+  if (!msg) { res.status(404).json({ error: "Message not found" }); return; }
+  if (msg.pageOwner !== uid) { res.status(403).json({ error: "Forbidden" }); return; }
+  if (msg.isReplied) { res.status(400).json({ error: "Message already replied" }); return; }
+
+  /* Clear prior error so processAndReply writes a fresh outcome */
+  await db.update(facebookMessagesTable)
+    .set({ error: null })
+    .where(eq(facebookMessagesTable.id, messageId));
+
+  await processAndReply(msg.facebookPageId, msg.id, msg.messageText);
+
+  const [after] = await db.select({
+    isReplied: facebookMessagesTable.isReplied,
+    replyText: facebookMessagesTable.replyText,
+    error: facebookMessagesTable.error,
+  }).from(facebookMessagesTable).where(eq(facebookMessagesTable.id, messageId));
+
+  res.json({ ok: !!after?.isReplied, ...after });
 });
 
 /* ── Rules CRUD ──────────────────────────────────────────────────────────── */
