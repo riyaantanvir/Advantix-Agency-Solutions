@@ -905,6 +905,402 @@ export function startReminderScheduler(
   logger.info(`Personal GPT reminder scheduler started (poll every ${REMINDER_POLL_INTERVAL_MS / 1000}s, default chat ${defaultChatId})`);
 }
 
+/* ── Tasks ────────────────────────────────────────────────────────────────
+   First-class to-do entities. Distinct from reminders:
+     - Reminder = fires once at a fixed time, then it's done.
+     - Task     = has an optional due date and KEEPS nagging (every N hours
+                  during configured working hours) until marked done/cancel.
+   The bot extracts a list of tasks from a single message ("3ta task ache: …")
+   so each one can be managed independently. */
+
+export const TASK_STATUSES = ["pending", "done", "cancelled"] as const;
+export type TaskStatus = typeof TASK_STATUSES[number];
+
+export type Task = {
+  id: number;
+  title: string;
+  description: string;
+  dueAt: string | null;       // ISO UTC, nullable
+  status: TaskStatus;
+  remindCount: number;
+  lastRemindedAt: string | null;
+  source: string;
+  chatId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+};
+
+const MAX_TASK_TITLE = 200;
+const MAX_TASK_DESC = 2000;
+
+function rowToTask(r: Record<string, unknown>): Task {
+  return {
+    id: Number(r.id),
+    title: String(r.title),
+    description: String(r.description ?? ""),
+    dueAt: r.due_at ? new Date(r.due_at as string | Date).toISOString() : null,
+    status: ((r.status as TaskStatus) ?? "pending"),
+    remindCount: Number(r.remind_count ?? 0),
+    lastRemindedAt: r.last_reminded_at ? new Date(r.last_reminded_at as string | Date).toISOString() : null,
+    source: String(r.source ?? "web"),
+    chatId: r.chat_id == null ? null : Number(r.chat_id),
+    createdAt: new Date(r.created_at as string | Date).toISOString(),
+    updatedAt: new Date(r.updated_at as string | Date).toISOString(),
+    completedAt: r.completed_at ? new Date(r.completed_at as string | Date).toISOString() : null,
+  };
+}
+
+export async function createTask(input: {
+  title: string;
+  description?: string;
+  dueAt?: Date | string | null;
+  chatId?: number | null;
+  source?: string;
+}): Promise<Task> {
+  const title = String(input.title ?? "").trim().slice(0, MAX_TASK_TITLE);
+  if (!title) throw new Error("Task title is empty.");
+  const description = String(input.description ?? "").trim().slice(0, MAX_TASK_DESC);
+  let dueAt: Date | null = null;
+  if (input.dueAt) {
+    const d = new Date(input.dueAt);
+    if (isNaN(d.getTime())) throw new Error("Task due date is invalid.");
+    dueAt = d;
+  }
+  const r = await db.execute(sql`
+    INSERT INTO personal_gpt_tasks (title, description, due_at, chat_id, source)
+    VALUES (${title}, ${description}, ${dueAt}, ${input.chatId ?? null}, ${input.source ?? "web"})
+    RETURNING *
+  `);
+  return rowToTask(r.rows[0] as Record<string, unknown>);
+}
+
+export async function listTasks(opts: { status?: TaskStatus; limit?: number } = {}): Promise<Task[]> {
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
+  if (opts.status) {
+    const r = await db.execute(sql`
+      SELECT * FROM personal_gpt_tasks
+      WHERE status = ${opts.status}
+      ORDER BY
+        CASE WHEN due_at IS NULL THEN 1 ELSE 0 END,
+        due_at ASC,
+        created_at DESC
+      LIMIT ${limit}
+    `);
+    return r.rows.map(row => rowToTask(row as Record<string, unknown>));
+  }
+  /* All-statuses view: pending first (by due date), then recently
+     completed/cancelled. */
+  const r = await db.execute(sql`
+    SELECT * FROM personal_gpt_tasks
+    ORDER BY
+      CASE status WHEN 'pending' THEN 0 WHEN 'done' THEN 1 ELSE 2 END,
+      CASE WHEN due_at IS NULL THEN 1 ELSE 0 END,
+      due_at ASC,
+      created_at DESC
+    LIMIT ${limit}
+  `);
+  return r.rows.map(row => rowToTask(row as Record<string, unknown>));
+}
+
+export async function getTask(id: number): Promise<Task | null> {
+  const r = await db.execute(sql`SELECT * FROM personal_gpt_tasks WHERE id = ${id} LIMIT 1`);
+  return r.rows.length ? rowToTask(r.rows[0] as Record<string, unknown>) : null;
+}
+
+export async function updateTask(id: number, patch: {
+  title?: string;
+  description?: string;
+  dueAt?: Date | string | null;
+  status?: TaskStatus;
+}): Promise<Task | null> {
+  const sets: ReturnType<typeof sql>[] = [];
+  if (patch.title !== undefined) {
+    const t = String(patch.title).trim().slice(0, MAX_TASK_TITLE);
+    if (!t) throw new Error("Task title cannot be empty.");
+    sets.push(sql`title = ${t}`);
+  }
+  if (patch.description !== undefined) {
+    sets.push(sql`description = ${String(patch.description).slice(0, MAX_TASK_DESC)}`);
+  }
+  if (patch.dueAt !== undefined) {
+    if (patch.dueAt === null) {
+      sets.push(sql`due_at = NULL`);
+    } else {
+      const d = new Date(patch.dueAt);
+      if (isNaN(d.getTime())) throw new Error("Invalid due date.");
+      sets.push(sql`due_at = ${d}`);
+    }
+  }
+  if (patch.status !== undefined) {
+    if (!TASK_STATUSES.includes(patch.status)) throw new Error("Invalid status.");
+    sets.push(sql`status = ${patch.status}`);
+    if (patch.status === "done") {
+      sets.push(sql`completed_at = now()`);
+    } else if (patch.status === "pending") {
+      sets.push(sql`completed_at = NULL`);
+    }
+  }
+  if (!sets.length) return getTask(id);
+  sets.push(sql`updated_at = now()`);
+  /* Stitch SET fragments together with commas. */
+  const setExpr = sets.reduce((acc, s, i) => i === 0 ? sql`${s}` : sql`${acc}, ${s}`);
+  const r = await db.execute(sql`
+    UPDATE personal_gpt_tasks SET ${setExpr} WHERE id = ${id} RETURNING *
+  `);
+  return r.rows.length ? rowToTask(r.rows[0] as Record<string, unknown>) : null;
+}
+
+export async function completeTask(id: number): Promise<Task | null> {
+  return updateTask(id, { status: "done" });
+}
+
+export async function cancelTask(id: number): Promise<Task | null> {
+  return updateTask(id, { status: "cancelled" });
+}
+
+export async function deleteTask(id: number): Promise<boolean> {
+  const r = await db.execute(sql`DELETE FROM personal_gpt_tasks WHERE id = ${id} RETURNING id`);
+  return r.rows.length > 0;
+}
+
+/* Format a list of tasks for the /tasks Telegram reply. */
+export function formatTasksList(tasks: Task[]): string {
+  const pending = tasks.filter(t => t.status === "pending");
+  if (!pending.length) {
+    return "✅ No pending tasks. You're clear!\n\n_Add one by saying:_ `agamikal 3 ta kaj ache: X, Y, Z` _or use the admin Tasks tab._";
+  }
+  const lines = pending.slice(0, 30).map(t => {
+    const due = t.dueAt ? `📅 _${formatLocalTime(t.dueAt)}_` : "";
+    const overdue = t.dueAt && new Date(t.dueAt).getTime() < Date.now() ? " ⚠️ *overdue*" : "";
+    const nags = t.remindCount > 0 ? ` (${t.remindCount}× reminded)` : "";
+    return `• #${t.id} — *${t.title}*${overdue}\n   ${due}${nags}`.trim();
+  });
+  const more = pending.length > 30 ? `\n\n_…and ${pending.length - 30} more._` : "";
+  return `📋 *Pending tasks (${pending.length}):*\n\n${lines.join("\n")}${more}\n\n_Mark done:_ \`/done <id>\`  _Cancel:_ \`/cancel <id>\``;
+}
+
+/* ── Task list extraction (LLM intent) ────────────────────────────────────
+   When the user types "agamikal 3 ta kaj ache: X, Y, Z due 4PM" we want to
+   pull each item out as a separate Task row, with a shared due date if one
+   was given. Reuses the same OpenRouter cheap-model pattern. */
+export type TaskListIntent = {
+  tasks: { title: string; description?: string; dueAt: string | null }[];
+  /* Single confirmation message to show the user after creation. */
+  summary: string;
+};
+
+/* Cheap pre-filter — skip the LLM round-trip unless the message smells like
+   a task-list dictation. */
+export function looksLikeTaskListShape(text: string): boolean {
+  return /\b(\d+\s*ta?\s*(kaj|task|kaaj))\b/i.test(text)
+    || /\b(task|kaj|kaaj|to[-\s]?do)\s*(list|gula|gulo|list-?e?)\b/i.test(text)
+    || /\bkorte\s*hobe\b/i.test(text)
+    || /\b(agamikal|agami\s*kal|kalker|aajker?|ajker?|porshu)\s+.*\b(kaj|task|kora|hobe)\b/i.test(text)
+    || /\b(add\s*kor[oe]?|tasks?\s*a\s*add)\b/i.test(text)
+    || /আজকের\s*(কাজ|টাস্ক|তালিকা)|কাজের\s*তালিকা|করতে\s*হবে/.test(text)
+    /* numbered/bulleted list of 2+ items */
+    || /(?:^|\n)\s*(?:[-*•]|\d+[.)])\s+\S.{2,}(?:\n\s*(?:[-*•]|\d+[.)])\s+\S){1,}/m.test(text);
+}
+
+export async function extractTaskListIntent(userText: string, apiKey: string): Promise<TaskListIntent | null> {
+  const text = userText.trim();
+  if (!text) return null;
+  if (!looksLikeTaskListShape(text)) return null;
+
+  const nowLocal = new Date().toLocaleString("en-US", {
+    timeZone: REMINDER_TZ,
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  });
+
+  const sysPrompt =
+    `You are a task-list extractor. The user dictates 1+ to-do items, possibly with a shared due date. ` +
+    `Current local time (${REMINDER_TZ}): ${nowLocal}. The user may write in English, Bengali, or Banglish. ` +
+    `Bengali numerals (০১২৩৪৫৬৭৮৯) map to (0123456789). ` +
+    `Bengali time words: "আজকে/আজ" = today, "আগামীকাল/কাল" = tomorrow, "পরশু" = day after tomorrow, ` +
+    `"বিকাল/বিকেল" = afternoon, "সকাল" = morning, "রাত" = night, "দুপুর" = noon. ` +
+    `\n\n` +
+    `Decide: is this a TASK LIST (1+ to-do items the user wants tracked)? ` +
+    `Distinguish from: (a) a one-shot reminder (e.g. "remind me at 4pm" — handled separately), ` +
+    `(b) a single fact to remember ("Sajjad er number 017..." — handled separately), ` +
+    `(c) regular chat/questions.\n\n` +
+    `If YES, split into ATOMIC tasks. "Need to check expire domain, pay domain bill, Upwork withdrawal" → 3 tasks. ` +
+    `Each task gets a SHORT, action-oriented title. Description is optional extra detail. ` +
+    `If a SHARED due date/time is mentioned ("agamikal 4tay", "tomorrow 4 PM"), apply it to ALL tasks unless ` +
+    `each task has its own. Resolve relative phrases to absolute ISO timestamps with +06:00 offset. ` +
+    `If no due date is mentioned at all, set dueAt to null.\n\n` +
+    `Reply with STRICT JSON only, no markdown:\n` +
+    `  {"isTaskList": true, "tasks": [{"title":"...", "description":"...", "dueAt":"<ISO+06:00 or null>"}, ...]}\n` +
+    `  or {"isTaskList": false}\n\n` +
+    `Examples (assume now is 5 AM Asia/Dhaka):\n` +
+    `  "agamikalker jonno 3ta tasks ache: 1. check expire domain, 2. pay domain bill, 3. Upwork withdrawal. bikal 4tay" →\n` +
+    `    {"isTaskList":true,"tasks":[\n` +
+    `      {"title":"Check expire domain","description":"","dueAt":"<tomorrow>T16:00:00+06:00"},\n` +
+    `      {"title":"Pay domain bill","description":"","dueAt":"<tomorrow>T16:00:00+06:00"},\n` +
+    `      {"title":"Upwork withdrawal","description":"","dueAt":"<tomorrow>T16:00:00+06:00"}]}\n` +
+    `  "ajker kaj: bug fix ar bazar" → {"isTaskList":true,"tasks":[{"title":"Bug fix","description":"","dueAt":"<today>T20:00:00+06:00"},{"title":"Bazar","description":"","dueAt":"<today>T20:00:00+06:00"}]}\n` +
+    `  "korte hobe: prod deploy" → {"isTaskList":true,"tasks":[{"title":"Prod deploy","description":"","dueAt":null}]}\n` +
+    `  "remind me at 4pm" → {"isTaskList":false}\n` +
+    `  "Sajjad er number 017..." → {"isTaskList":false}\n` +
+    `  "what's the weather today" → {"isTaskList":false}`;
+
+  const res = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://advantix.digital",
+    },
+    body: JSON.stringify({
+      model: REMINDER_EXTRACT_MODEL,
+      max_tokens: 800,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: sysPrompt },
+        { role: "user", content: text.slice(0, 2000) },
+      ],
+    }),
+  });
+  if (!res.ok) { logger.warn({ status: res.status }, "Task-list extractor HTTP error"); return null; }
+  const data = await res.json() as { choices?: { message?: { content?: string } }[] };
+  const raw = data.choices?.[0]?.message?.content?.trim();
+  if (!raw) return null;
+  try {
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+    const parsed = JSON.parse(cleaned) as {
+      isTaskList?: boolean;
+      tasks?: { title?: unknown; description?: unknown; dueAt?: unknown }[];
+    };
+    if (!parsed.isTaskList || !Array.isArray(parsed.tasks) || !parsed.tasks.length) return null;
+    const tasks = parsed.tasks.flatMap(t => {
+      const title = String(t.title ?? "").trim().slice(0, MAX_TASK_TITLE);
+      if (!title) return [];
+      const description = String(t.description ?? "").trim().slice(0, MAX_TASK_DESC);
+      let dueAt: string | null = null;
+      if (t.dueAt) {
+        const d = new Date(String(t.dueAt));
+        /* Reject past times — > 60s grace for "in 5 minutes" type. */
+        if (!isNaN(d.getTime()) && d.getTime() > Date.now() - 60_000) {
+          dueAt = d.toISOString();
+        }
+      }
+      return [{ title, description, dueAt }];
+    });
+    if (!tasks.length) return null;
+    /* Build a friendly summary for the confirmation reply. */
+    const dueGroups = new Map<string, number>();
+    for (const t of tasks) {
+      const k = t.dueAt ?? "no-due";
+      dueGroups.set(k, (dueGroups.get(k) ?? 0) + 1);
+    }
+    let summary: string;
+    if (dueGroups.size === 1 && tasks[0].dueAt) {
+      summary = `${tasks.length} task${tasks.length === 1 ? "" : "s"} due ${formatLocalTime(tasks[0].dueAt)}`;
+    } else if (dueGroups.size === 1) {
+      summary = `${tasks.length} task${tasks.length === 1 ? "" : "s"} (no due date)`;
+    } else {
+      summary = `${tasks.length} task${tasks.length === 1 ? "" : "s"} added`;
+    }
+    return { tasks, summary };
+  } catch (err) {
+    logger.warn({ err, raw: raw.slice(0, 200) }, "Task-list extractor JSON parse failed");
+    return null;
+  }
+}
+
+/* ── Task escalation scheduler ───────────────────────────────────────────
+   Polls pending tasks. For each that's overdue AND we're inside the
+   working-hours window AND enough time has passed since the last nag,
+   send a reminder ping and bump the counter. */
+const TASK_POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+let taskPollerHandle: NodeJS.Timeout | null = null;
+
+/* Is `nowDate` (in REMINDER_TZ) inside the [start, end) hour window?
+   If end <= start, the window WRAPS past midnight (e.g. 15→4 means
+   3 PM today through 4 AM tomorrow). */
+function isInsideWorkingHours(nowDate: Date, startHour: number, endHour: number): boolean {
+  const localHour = Number(
+    nowDate.toLocaleString("en-US", { timeZone: REMINDER_TZ, hour: "numeric", hour12: false })
+      .replace(/[^\d]/g, "")
+  );
+  if (Number.isNaN(localHour)) return true; // fail-open: don't drop reminders
+  if (endHour > startHour) {
+    return localHour >= startHour && localHour < endHour;
+  }
+  /* Wrap-around: [start, 24) ∪ [0, end). */
+  return localHour >= startHour || localHour < endHour;
+}
+
+export function startTaskScheduler(bot: TelegramBot, defaultChatId: number): void {
+  if (taskPollerHandle) return;
+  const tick = async () => {
+    try {
+      /* Load current work-hours config from settings (cached one tick). */
+      const cfg = await db.execute(sql`
+        SELECT work_hours_start, work_hours_end, task_remind_interval_hours
+        FROM personal_gpt_settings WHERE id = 1 LIMIT 1
+      `);
+      const row = cfg.rows[0] as Record<string, unknown> | undefined;
+      const startHour = Number(row?.work_hours_start ?? 15);
+      const endHour = Number(row?.work_hours_end ?? 4);
+      const intervalHours = Math.max(1, Number(row?.task_remind_interval_hours ?? 2));
+
+      const now = new Date();
+      if (!isInsideWorkingHours(now, startHour, endHour)) return;
+
+      /* Atomically grab overdue tasks ready for a re-nag. We flip
+         last_reminded_at and bump remind_count first, then fire — so a
+         crash mid-send loses at most one nag rather than spamming the
+         user every poll. */
+      const intervalMs = intervalHours * 60 * 60 * 1000;
+      const cutoff = new Date(Date.now() - intervalMs);
+      const claimed = await db.execute(sql`
+        UPDATE personal_gpt_tasks
+        SET remind_count = remind_count + 1,
+            last_reminded_at = now(),
+            updated_at = now()
+        WHERE id IN (
+          SELECT id FROM personal_gpt_tasks
+          WHERE status = 'pending'
+            AND due_at IS NOT NULL
+            AND due_at <= now()
+            AND (last_reminded_at IS NULL OR last_reminded_at <= ${cutoff})
+          ORDER BY due_at ASC
+          LIMIT 10
+          FOR UPDATE SKIP LOCKED
+        )
+        RETURNING *
+      `);
+      for (const r of claimed.rows) {
+        const t = rowToTask(r as Record<string, unknown>);
+        const target = t.chatId ?? defaultChatId;
+        const overdueMs = Date.now() - new Date(t.dueAt!).getTime();
+        const overdueHrs = Math.floor(overdueMs / (60 * 60 * 1000));
+        const overdueLabel = overdueHrs >= 24
+          ? `${Math.floor(overdueHrs / 24)}d ${overdueHrs % 24}h overdue`
+          : overdueHrs >= 1
+            ? `${overdueHrs}h overdue`
+            : "due now";
+        try {
+          await bot.sendMessage(target,
+            `🔔 *Task #${t.id}* — _${overdueLabel}_\n*${t.title}*${t.description ? `\n${t.description.slice(0, 300)}` : ""}\n\n_Reminded ${t.remindCount}× · Due ${formatLocalTime(t.dueAt!)}_\n_Done:_ \`/done ${t.id}\`  _Cancel:_ \`/cancel ${t.id}\``,
+            { parse_mode: "Markdown" });
+        } catch (err) {
+          logger.warn({ err, taskId: t.id }, "Task reminder send failed");
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, "Task scheduler tick failed");
+    }
+  };
+  taskPollerHandle = setInterval(tick, TASK_POLL_INTERVAL_MS);
+  taskPollerHandle.unref?.();
+  void tick();
+  logger.info(`Personal GPT task scheduler started (poll every ${TASK_POLL_INTERVAL_MS / 1000}s)`);
+}
+
 /* ── Note-save intent ─────────────────────────────────────────────────────
    Natural-language note saving so the user never has to type the
    `/remember <category> <title> | <body>` ritual. Same pattern as
@@ -2332,6 +2728,7 @@ export async function startPersonalGptBot(): Promise<void> {
      user's phone, not a group, is the right destination for personal pings. */
   const defaultDmChat = allowedChatIds.find(id => id > 0) ?? allowedChatIds[0];
   startReminderScheduler(bot, defaultDmChat);
+  startTaskScheduler(bot, defaultDmChat);
 
   bot.on("polling_error", (err) => {
     logger.warn({ err: String(err) }, "Personal GPT bot polling error");
@@ -2386,17 +2783,23 @@ export async function startPersonalGptBot(): Promise<void> {
       }
     }
 
-    if (text === "/start") {
+    if (text === "/start" || text === "/help") {
       await bot.sendMessage(chatId,
         "👋 Personal GPT is ready. Just message me.\n\n" +
-        "Commands (DM only):\n" +
-        "• /remember <category> <title> | <body>  — save to your knowledge base\n" +
-        "    categories: contact, deal, project, task, date, note (default: note)\n" +
-        "    examples:\n" +
-        "      /remember contact Sajjad | CTO at Foo Ltd, +880…\n" +
-        "      /remember task Send invoice to ACME by Friday\n" +
+        "Tasks:\n" +
+        "• /tasks  — show pending tasks\n" +
+        "• /done <id>  — mark a task done\n" +
+        "• /cancel <id>  — drop a task\n" +
+        "    (Or just say: \"agamikal 3 ta kaj ache: X, Y, Z bikal 4 tay\" — I'll extract them.)\n\n" +
+        "Reminders (one-shot):\n" +
+        "• /reminders  — list scheduled reminders\n" +
+        "• /unremind <id>  — cancel one\n\n" +
+        "Knowledge base:\n" +
+        "• /remember <category> <title> | <body>  — save a note\n" +
+        "    categories: contact, deal, project, task, date, note\n" +
         "• /notes [category]  — list saved notes\n" +
-        "• /forget <id>  — delete a note by its ID (e.g. /forget 12)\n" +
+        "• /forget <id>  — delete a note\n\n" +
+        "Other:\n" +
         "• /clear  — wipe short-term chat memory\n",
       );
       return;
@@ -2474,6 +2877,78 @@ export async function startPersonalGptBot(): Promise<void> {
         await cancelReminder(id).catch(() => {});
         await bot.sendMessage(chatId, `🗑️ Cancelled reminder #${id}.`);
         return;
+      }
+
+      /* /tasks (or /task) — show pending tasks. /done <id> — complete one.
+         /cancel <id> — drop one. Each is acknowledged with a verifiable
+         confirmation; nothing here goes through the chat model. */
+      if (text === "/tasks" || text === "/task") {
+        const list = await listTasks({ limit: 100 }).catch(() => [] as Task[]);
+        await bot.sendMessage(chatId, formatTasksList(list), { parse_mode: "Markdown" }).catch(() => {});
+        return;
+      }
+      const doneMatch = text.match(/^\/done\s+(\d+)\s*$/);
+      if (doneMatch) {
+        const id = Number(doneMatch[1]);
+        const t = await completeTask(id).catch(() => null);
+        if (!t) { await bot.sendMessage(chatId, `⚠️ Task #${id} not found.`); return; }
+        await bot.sendMessage(chatId, `✅ Done — *${t.title}* (#${t.id})`, { parse_mode: "Markdown" }).catch(() => {});
+        return;
+      }
+      const cancelTaskMatch = text.match(/^\/cancel\s+(\d+)\s*$/);
+      if (cancelTaskMatch) {
+        const id = Number(cancelTaskMatch[1]);
+        const t = await cancelTask(id).catch(() => null);
+        if (!t) { await bot.sendMessage(chatId, `⚠️ Task #${id} not found.`); return; }
+        await bot.sendMessage(chatId, `🗑️ Cancelled — *${t.title}* (#${t.id})`, { parse_mode: "Markdown" }).catch(() => {});
+        return;
+      }
+    }
+
+    /* Task-list extraction — runs BEFORE reminder/note extractors so a
+       message like "agamikalker jonno 3 ta task ache: X, Y, Z bikal 4 tay"
+       lands as 3 individual Task rows with a shared due date, not a single
+       lump reminder. DM only — group task dictation isn't supported. */
+    if (!isGroup) {
+      try {
+        const apiKeyForTasks = await getOpenRouterKey();
+        if (apiKeyForTasks) {
+          const taskIntent = await extractTaskListIntent(text, apiKeyForTasks);
+          if (taskIntent && taskIntent.tasks.length > 0) {
+            const created: Task[] = [];
+            for (const t of taskIntent.tasks) {
+              try {
+                const row = await createTask({
+                  title: t.title,
+                  description: t.description ?? "",
+                  dueAt: t.dueAt,
+                  chatId,
+                  source: "telegram",
+                });
+                created.push(row);
+              } catch (err) {
+                logger.warn({ err, task: t }, "Task create failed");
+              }
+            }
+            if (created.length > 0) {
+              const lines = created.map(t =>
+                `• #${t.id} — *${t.title}*${t.dueAt ? `\n   📅 _${formatLocalTime(t.dueAt)}_` : ""}`
+              ).join("\n");
+              const sharedDue = created.every(t => t.dueAt && t.dueAt === created[0].dueAt) && created[0].dueAt
+                ? `\n\n_All due ${formatLocalTime(created[0].dueAt)} — I'll nag you every 2 hours during working time until done._`
+                : created.some(t => t.dueAt) ? "\n\n_I'll nag you every 2 hours during working time once due._" : "";
+              await bot.sendMessage(chatId,
+                `📋 *Saved ${created.length} task${created.length === 1 ? "" : "s"}:*\n${lines}${sharedDue}\n\n_View all:_ \`/tasks\`  _Done:_ \`/done <id>\`  _Cancel:_ \`/cancel <id>\``,
+                { parse_mode: "Markdown", reply_to_message_id: msg.message_id }
+              ).catch(() => {});
+              await appendTurn("user", text, "telegram").catch(() => {});
+              await appendTurn("assistant", `[Saved ${created.length} task(s): ${created.map(t => `#${t.id} ${t.title}`).join(", ")}]`, "telegram").catch(() => {});
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, "Task-list intent detection failed (falling back to reminder/note/chat)");
       }
     }
 
@@ -2643,6 +3118,35 @@ export async function startPersonalGptBot(): Promise<void> {
         try {
           const apiKeyForIntent = await getOpenRouterKey();
           if (apiKeyForIntent) {
+            /* Tasks first — multi-item dictation should split into rows
+               instead of being lumped as one reminder. */
+            const taskIntent = await extractTaskListIntent(transcript, apiKeyForIntent);
+            if (taskIntent && taskIntent.tasks.length > 0) {
+              const created: Task[] = [];
+              for (const t of taskIntent.tasks) {
+                try {
+                  const row = await createTask({
+                    title: t.title,
+                    description: t.description ?? "",
+                    dueAt: t.dueAt,
+                    chatId,
+                    source: "telegram",
+                  });
+                  created.push(row);
+                } catch (err) {
+                  logger.warn({ err, task: t }, "Voice task create failed");
+                }
+              }
+              if (created.length > 0) {
+                const lines = created.map(t =>
+                  `• #${t.id} — *${t.title}*${t.dueAt ? ` _(${formatLocalTime(t.dueAt)})_` : ""}`
+                ).join("\n");
+                actionReply = `📋 *Saved ${created.length} task${created.length === 1 ? "" : "s"}:*\n${lines}\n\n_View:_ \`/tasks\``;
+              }
+            }
+            if (actionReply) {
+              /* Already handled — skip reminder/note extractors. */
+            } else {
             const reminderIntent = await extractReminderIntent(transcript, apiKeyForIntent);
             if (reminderIntent?.kind === "ok") {
               const reminder = await createReminder({
@@ -2671,6 +3175,7 @@ export async function startPersonalGptBot(): Promise<void> {
                 actionReply = `📝 Saved as *${note.category}* #${note.id}: *${note.title}*${bodyLine}`;
               }
             }
+            } /* end else (no task) */
           }
         } catch (err) {
           logger.warn({ err }, "Voice intent detection failed (falling back to model reply)");

@@ -434,6 +434,44 @@ export async function runMigrations(): Promise<void> {
       ON personal_gpt_reminders (status, remind_at)
   `);
 
+  /* Tasks — first-class to-do entities, distinct from reminders. A reminder
+     fires once at a fixed time; a task has a due date and KEEPS reminding
+     (every N hours during configured working hours) until the user marks
+     it done or cancels. Powers /tasks, /done, /cancel, plus the admin
+     Tasks tab. */
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS personal_gpt_tasks (
+      id serial PRIMARY KEY,
+      title text NOT NULL,
+      description text NOT NULL DEFAULT '',
+      due_at timestamptz,
+      status text NOT NULL DEFAULT 'pending',
+      remind_count integer NOT NULL DEFAULT 0,
+      last_reminded_at timestamptz,
+      source text NOT NULL DEFAULT 'web',
+      chat_id bigint,
+      created_at timestamptz DEFAULT now() NOT NULL,
+      updated_at timestamptz DEFAULT now() NOT NULL,
+      completed_at timestamptz
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_personal_gpt_tasks_status_due
+      ON personal_gpt_tasks (status, due_at)
+  `);
+
+  /* Working-hours window for task escalation reminders. The user is a
+     night owl in BD — works ~3 PM until ~4 AM. We store start/end as 0–23
+     hour-of-day; if end <= start, the window WRAPS past midnight. The
+     interval is how many hours between repeated nags for an overdue task
+     while inside the window. */
+  await db.execute(sql`
+    ALTER TABLE personal_gpt_settings
+      ADD COLUMN IF NOT EXISTS work_hours_start integer NOT NULL DEFAULT 15,
+      ADD COLUMN IF NOT EXISTS work_hours_end integer NOT NULL DEFAULT 4,
+      ADD COLUMN IF NOT EXISTS task_remind_interval_hours integer NOT NULL DEFAULT 2
+  `);
+
   // ── AI tables ─────────────────────────────────────────────────────────────
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS ai_projects (

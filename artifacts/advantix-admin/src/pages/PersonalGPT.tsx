@@ -4,7 +4,7 @@ import {
   Send, Trash2, Bot, User, Loader2, Sparkles, Settings as SettingsIcon, Save,
   Brain, MessageCircle, Plug, X, RefreshCw, Power, AlertCircle, CheckCircle2,
   Pin, PinOff, BookMarked, Plus, History, Search, Send as SendIcon, MessagesSquare,
-  Download, Upload, Database, Bell, Clock, XCircle,
+  Download, Upload, Database, Bell, Clock, XCircle, CheckSquare, Square, Calendar,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -57,7 +57,7 @@ export default function PersonalGPT() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const [tab, setTab] = useState<"chat" | "memory" | "reminders" | "insights" | "settings">("chat");
+  const [tab, setTab] = useState<"chat" | "memory" | "tasks" | "reminders" | "insights" | "settings">("chat");
 
   /* Settings load */
   const { data: settings, isLoading: settingsLoading } = useQuery<Settings>({
@@ -103,6 +103,15 @@ export default function PersonalGPT() {
             <BookMarked className="w-3.5 h-3.5" /> Memory
           </button>
           <button
+            onClick={() => setTab("tasks")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+              tab === "tasks" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <CheckSquare className="w-3.5 h-3.5" /> Tasks
+          </button>
+          <button
             onClick={() => setTab("reminders")}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
@@ -140,6 +149,8 @@ export default function PersonalGPT() {
         <ChatPanel onPersonalityUpdated={() => qc.invalidateQueries({ queryKey: ["personal-gpt-settings"] })} toast={toast} />
       ) : tab === "memory" ? (
         <MemoryPanel toast={toast} />
+      ) : tab === "tasks" ? (
+        <TasksPanel toast={toast} />
       ) : tab === "reminders" ? (
         <RemindersPanel toast={toast} />
       ) : tab === "insights" ? (
@@ -1107,6 +1118,314 @@ type ArchiveStats = {
   total: number; userTurns: number; assistantTurns: number;
   bySource: Record<string, number>; firstAt: string | null; lastAt: string | null;
 };
+
+/* ── Tasks Panel ─────────────────────────────────────────────────────────── */
+
+type Task = {
+  id: number;
+  title: string;
+  description: string;
+  dueAt: string | null;
+  status: "pending" | "done" | "cancelled";
+  remindCount: number;
+  lastRemindedAt: string | null;
+  source: string;
+  chatId: number | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+};
+
+function TasksPanel({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState<"pending" | "all" | "done" | "cancelled">("pending");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [dueAtLocal, setDueAtLocal] = useState(""); // optional
+
+  const { data, isLoading, isFetching, refetch } = useQuery<{ tasks: Task[] }>({
+    queryKey: ["personal-gpt-tasks", filter],
+    queryFn: () => {
+      const url = filter === "all"
+        ? "/api/admin/personal-gpt/tasks"
+        : `/api/admin/personal-gpt/tasks?status=${filter}`;
+      return fetch(url, { credentials: "include" })
+        .then(r => { if (!r.ok) throw new Error("Load failed"); return r.json(); });
+    },
+    /* Auto-refresh so escalation reminder counts update without reload. */
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+  });
+
+  const create = useMutation({
+    mutationFn: async () => {
+      const t = title.trim();
+      if (!t) throw new Error("Title is required");
+      let dueAtIso: string | null = null;
+      if (dueAtLocal) {
+        /* Same TZ-naive → Asia/Dhaka conversion as Reminders, so admin sees
+           the same wall-clock time the bot will nag at. */
+        dueAtIso = new Date(`${dueAtLocal}:00+06:00`).toISOString();
+        if (isNaN(new Date(dueAtIso).getTime())) throw new Error("Invalid date/time");
+      }
+      const r = await fetch("/api/admin/personal-gpt/tasks", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: t, description: description.trim(), dueAt: dueAtIso }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Failed");
+      return j;
+    },
+    onSuccess: () => {
+      toast({ title: "Task added" });
+      setTitle(""); setDescription(""); setDueAtLocal("");
+      qc.invalidateQueries({ queryKey: ["personal-gpt-tasks"] });
+    },
+    onError: (err: Error) => toast({ title: "Could not add task", description: err.message, variant: "destructive" }),
+  });
+
+  const setStatus = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: Task["status"] }) => {
+      const r = await fetch(`/api/admin/personal-gpt/tasks/${id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || "Failed"); }
+    },
+    onSuccess: (_d, vars) => {
+      toast({ title: vars.status === "done" ? "Marked done" : vars.status === "cancelled" ? "Cancelled" : "Reopened" });
+      qc.invalidateQueries({ queryKey: ["personal-gpt-tasks"] });
+    },
+    onError: (err: Error) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
+  });
+
+  const remove = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/admin/personal-gpt/tasks/${id}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || "Failed"); }
+    },
+    onSuccess: () => {
+      toast({ title: "Task deleted" });
+      qc.invalidateQueries({ queryKey: ["personal-gpt-tasks"] });
+    },
+    onError: (err: Error) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
+  });
+
+  const tasks = data?.tasks ?? [];
+  const counts = {
+    pending: tasks.filter(t => t.status === "pending").length,
+    done: tasks.filter(t => t.status === "done").length,
+    cancelled: tasks.filter(t => t.status === "cancelled").length,
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="max-w-5xl mx-auto space-y-6">
+        {/* Create card */}
+        <Card className="p-5 bg-card/50 border-border">
+          <div className="flex items-center gap-2 mb-3">
+            <CheckSquare className="w-4 h-4 text-fuchsia-400" />
+            <h2 className="text-sm font-semibold text-foreground">New task</h2>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">
+            Tasks keep nagging until you mark them done — every <span className="text-foreground/80">2 hours during working hours (3 PM – 4 AM)</span>.
+            From Telegram you can dictate multiple at once: <span className="text-foreground/80">"agamikal 3 ta task: X, Y, Z bikal 4 tay"</span>.
+          </p>
+          <div className="space-y-2">
+            <input
+              type="text"
+              placeholder="Task title (e.g. Pay domain bill)"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              className="w-full px-3 py-2 rounded-md bg-background border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
+              maxLength={200}
+            />
+            <div className="grid sm:grid-cols-[1fr_auto_auto] gap-2">
+              <input
+                type="text"
+                placeholder="Description (optional)"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                className="px-3 py-2 rounded-md bg-background border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
+                maxLength={2000}
+              />
+              <input
+                type="datetime-local"
+                value={dueAtLocal}
+                onChange={e => setDueAtLocal(e.target.value)}
+                placeholder="Due (optional)"
+                className="px-3 py-2 rounded-md bg-background border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-fuchsia-500/30"
+              />
+              <Button
+                onClick={() => create.mutate()}
+                disabled={create.isPending || !title.trim()}
+                className="bg-fuchsia-500/90 hover:bg-fuchsia-500 text-white"
+              >
+                {create.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Plus className="w-4 h-4 mr-1" /> Add</>}
+              </Button>
+            </div>
+          </div>
+        </Card>
+
+        {/* List card */}
+        <Card className="p-5 bg-card/50 border-border">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <CheckSquare className="w-4 h-4 text-violet-400" />
+              <h2 className="text-sm font-semibold text-foreground">Tasks</h2>
+              <span className="text-xs text-muted-foreground">
+                ({counts.pending} pending · {counts.done} done · {counts.cancelled} cancelled)
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 p-1 bg-secondary/50 rounded-lg">
+                {(["pending", "all", "done", "cancelled"] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setFilter(f)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-md text-xs font-medium transition-colors capitalize",
+                      filter === f ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >{f}</button>
+                ))}
+              </div>
+              <button
+                onClick={() => refetch()}
+                disabled={isFetching}
+                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+              >
+                <RefreshCw className={`w-3 h-3 ${isFetching ? "animate-spin" : ""}`} /> Refresh
+              </button>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : !tasks.length ? (
+            <div className="text-center py-12 text-sm text-muted-foreground">
+              No tasks {filter !== "all" ? `with status "${filter}"` : "yet"}. Add one above or message the bot on Telegram.
+            </div>
+          ) : (
+            <div className="overflow-x-auto -mx-2">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-muted-foreground border-b border-border">
+                  <tr>
+                    <th className="text-left px-2 py-2 font-medium">#</th>
+                    <th className="text-left px-2 py-2 font-medium">Task</th>
+                    <th className="text-left px-2 py-2 font-medium">Due</th>
+                    <th className="text-left px-2 py-2 font-medium">Status</th>
+                    <th className="text-left px-2 py-2 font-medium">Reminded</th>
+                    <th className="text-left px-2 py-2 font-medium">Source</th>
+                    <th className="text-right px-2 py-2 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tasks.map(t => {
+                    const overdue = t.status === "pending" && t.dueAt && new Date(t.dueAt).getTime() < Date.now();
+                    return (
+                      <tr key={t.id} className="border-b border-border/50 hover:bg-secondary/30 transition-colors">
+                        <td className="px-2 py-3 text-xs text-muted-foreground font-mono">#{t.id}</td>
+                        <td className="px-2 py-3 align-top">
+                          <div className={cn(
+                            "font-medium text-foreground",
+                            t.status === "done" && "line-through text-muted-foreground",
+                            t.status === "cancelled" && "text-muted-foreground",
+                          )}>{t.title}</div>
+                          {t.description && (
+                            <div className="text-xs text-muted-foreground mt-0.5 max-w-md break-words">
+                              {t.description.length > 120 ? t.description.slice(0, 120) + "…" : t.description}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-2 py-3 align-top whitespace-nowrap">
+                          {t.dueAt ? (
+                            <div className="flex flex-col">
+                              <span className={cn("text-xs", overdue && "text-red-400 font-medium")}>
+                                <Calendar className="w-3 h-3 inline mr-1" />{formatDhaka(t.dueAt)}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">{relativeTime(t.dueAt)}</span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">no due</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-3 align-top">
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wide",
+                            t.status === "pending" && (overdue ? "bg-red-500/15 text-red-400" : "bg-amber-500/15 text-amber-400"),
+                            t.status === "done" && "bg-emerald-500/15 text-emerald-400",
+                            t.status === "cancelled" && "bg-zinc-500/15 text-zinc-400",
+                          )}>
+                            {overdue && t.status === "pending" ? "Overdue" : t.status}
+                          </span>
+                        </td>
+                        <td className="px-2 py-3 align-top text-xs text-muted-foreground">
+                          {t.remindCount > 0 ? (
+                            <div className="flex flex-col">
+                              <span className="text-foreground/80">{t.remindCount}×</span>
+                              {t.lastRemindedAt && (
+                                <span className="text-[10px]">last {relativeTime(t.lastRemindedAt)}</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="italic">—</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-3 align-top text-xs text-muted-foreground capitalize">{t.source}</td>
+                        <td className="px-2 py-3 align-top">
+                          <div className="flex items-center justify-end gap-1">
+                            {t.status === "pending" ? (
+                              <>
+                                <button
+                                  title="Mark done"
+                                  onClick={() => setStatus.mutate({ id: t.id, status: "done" })}
+                                  disabled={setStatus.isPending}
+                                  className="p-1.5 rounded-md hover:bg-emerald-500/15 text-emerald-400 transition-colors"
+                                ><CheckSquare className="w-4 h-4" /></button>
+                                <button
+                                  title="Cancel"
+                                  onClick={() => setStatus.mutate({ id: t.id, status: "cancelled" })}
+                                  disabled={setStatus.isPending}
+                                  className="p-1.5 rounded-md hover:bg-amber-500/15 text-amber-400 transition-colors"
+                                ><XCircle className="w-4 h-4" /></button>
+                              </>
+                            ) : (
+                              <button
+                                title="Reopen"
+                                onClick={() => setStatus.mutate({ id: t.id, status: "pending" })}
+                                disabled={setStatus.isPending}
+                                className="p-1.5 rounded-md hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                              ><Square className="w-4 h-4" /></button>
+                            )}
+                            <button
+                              title="Delete"
+                              onClick={() => {
+                                if (confirm(`Delete task #${t.id} "${t.title}"?`)) remove.mutate(t.id);
+                              }}
+                              disabled={remove.isPending}
+                              className="p-1.5 rounded-md hover:bg-red-500/15 text-red-400 transition-colors"
+                            ><Trash2 className="w-4 h-4" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
 
 /* ── Reminders Panel ─────────────────────────────────────────────────────── */
 

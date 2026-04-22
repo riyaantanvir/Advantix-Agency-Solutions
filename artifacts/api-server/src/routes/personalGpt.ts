@@ -32,6 +32,12 @@ import {
   listRemindersForAdmin,
   cancelReminder,
   retrainPersonalityFromArchive,
+  createTask,
+  listTasks,
+  updateTask,
+  deleteTask,
+  TASK_STATUSES,
+  type TaskStatus,
   type Personality,
 } from "../lib/personalGpt.js";
 import { logger } from "../lib/logger.js";
@@ -360,6 +366,59 @@ router.delete("/admin/personal-gpt/reminders/:id", requireAdmin, async (req: Req
     logger.error({ err }, "Personal GPT: failed to cancel reminder");
     res.status(500).json({ error: "Failed to cancel reminder" });
   }
+});
+
+/* ── Tasks ──────────────────────────────────────────────────────────────── */
+router.get("/admin/personal-gpt/tasks", requireAdmin, async (req: Request, res: Response) => {
+  const status = String(req.query.status ?? "").toLowerCase();
+  const filter = (TASK_STATUSES as readonly string[]).includes(status) ? (status as TaskStatus) : undefined;
+  const tasks = await listTasks({ status: filter, limit: 200 });
+  res.json({ tasks });
+});
+
+router.post("/admin/personal-gpt/tasks", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  const body = (req.body ?? {}) as { title?: unknown; description?: unknown; dueAt?: unknown };
+  const title = String(body.title ?? "").trim();
+  if (!title) { res.status(400).json({ error: "Title is required." }); return; }
+  try {
+    const task = await createTask({
+      title,
+      description: typeof body.description === "string" ? body.description : "",
+      dueAt: typeof body.dueAt === "string" && body.dueAt ? body.dueAt : null,
+      source: "web",
+    });
+    res.status(201).json({ task });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.patch("/admin/personal-gpt/tasks/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id." }); return; }
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const patch: Parameters<typeof updateTask>[1] = {};
+  if (typeof body.title === "string") patch.title = body.title;
+  if (typeof body.description === "string") patch.description = body.description;
+  if (body.dueAt === null || typeof body.dueAt === "string") patch.dueAt = body.dueAt as string | null;
+  if (typeof body.status === "string" && (TASK_STATUSES as readonly string[]).includes(body.status)) {
+    patch.status = body.status as TaskStatus;
+  }
+  try {
+    const task = await updateTask(id, patch);
+    if (!task) { res.status(404).json({ error: "Not found." }); return; }
+    res.json({ task });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.delete("/admin/personal-gpt/tasks/:id", requireAdmin, async (req: Request, res: Response): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) { res.status(400).json({ error: "Invalid id." }); return; }
+  const ok = await deleteTask(id);
+  if (!ok) { res.status(404).json({ error: "Not found." }); return; }
+  res.json({ success: true });
 });
 
 router.post("/admin/personal-gpt/telegram/test", requireAdmin, async (_req: Request, res: Response): Promise<void> => {
