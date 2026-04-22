@@ -322,15 +322,21 @@ export async function clearRecentTurns(): Promise<void> {
    so a restore brings the AI back to exactly the state it was in. */
 
 export type PersonalGptBackup = {
-  /* Bumped to v2 when reminders were added. v1 backups are still accepted on
-     import (the reminders block is just treated as empty). */
-  version: 1 | 2;
+  /* v1 = pre-reminders, v2 = + reminders, v3 = + tasks. Older versions are
+     still accepted on import; missing blocks are simply treated as empty so
+     downgrades never destroy current data on `merge`. */
+  version: 1 | 2 | 3;
   exportedAt: string;
   personality: Personality;
   notes: Array<Pick<Note, "category" | "title" | "body" | "pinned" | "createdAt" | "updatedAt">>;
   archive: ArchiveTurn[];
-  /* Optional in v1 for back-compat. Always present in v2 exports. */
+  /* Optional in v1 for back-compat. Present in v2+ exports. */
   reminders?: Array<Pick<Reminder, "message" | "remindAt" | "chatId" | "source" | "status" | "createdAt" | "firedAt">>;
+  /* Optional in v1/v2 for back-compat. Present in v3+ exports. */
+  tasks?: Array<Pick<Task,
+    "title" | "description" | "dueAt" | "status" | "remindCount" | "lastRemindedAt"
+    | "source" | "chatId" | "createdAt" | "updatedAt" | "completedAt"
+  >>;
 };
 
 export async function exportAll(): Promise<PersonalGptBackup> {
@@ -374,8 +380,33 @@ export async function exportAll(): Promise<PersonalGptBackup> {
       firedAt: r.firedAt,
     }));
 
+  /* Tasks — pull every row regardless of status so a restore brings back the
+     full history (pending will resume nagging, done/cancelled keep their
+     audit trail). */
+  const taskRes = await db.execute(sql`
+    SELECT id, title, description, due_at, status, remind_count, last_reminded_at,
+           source, chat_id, created_at, updated_at, completed_at
+    FROM personal_gpt_tasks
+    ORDER BY id ASC
+  `);
+  const tasks = (taskRes.rows as Record<string, unknown>[])
+    .map(rowToTask)
+    .map(t => ({
+      title: t.title,
+      description: t.description,
+      dueAt: t.dueAt,
+      status: t.status,
+      remindCount: t.remindCount,
+      lastRemindedAt: t.lastRemindedAt,
+      source: t.source,
+      chatId: t.chatId,
+      createdAt: t.createdAt,
+      updatedAt: t.updatedAt,
+      completedAt: t.completedAt,
+    }));
+
   return {
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     personality: settings.personality,
     notes: notes.map(n => ({
@@ -384,6 +415,7 @@ export async function exportAll(): Promise<PersonalGptBackup> {
     })),
     archive,
     reminders,
+    tasks,
   };
 }
 
@@ -394,6 +426,7 @@ export type ImportResult = {
   notesImported: number;
   archiveImported: number;
   remindersImported: number;
+  tasksImported: number;
 };
 
 /**
@@ -406,14 +439,18 @@ export async function importAll(backup: unknown, mode: ImportMode = "replace"): 
   if (!backup || typeof backup !== "object") throw new Error("Backup is empty or not an object");
   const b = backup as Partial<PersonalGptBackup>;
   /* Accept v1 (pre-reminders) and v2 (current) — anything else is unknown. */
-  if (b.version !== 1 && b.version !== 2) throw new Error(`Unsupported backup version: ${String(b.version)}`);
+  if (b.version !== 1 && b.version !== 2 && b.version !== 3) throw new Error(`Unsupported backup version: ${String(b.version)}`);
 
   const personality = normalizePersonality(b.personality ?? EMPTY_PERSONALITY);
   const notes = Array.isArray(b.notes) ? b.notes : [];
   const archive = Array.isArray(b.archive) ? b.archive : [];
   const reminders = Array.isArray(b.reminders) ? b.reminders : [];
+  const tasks = Array.isArray(b.tasks) ? b.tasks : [];
 
-  const result: ImportResult = { mode, personalityRestored: false, notesImported: 0, archiveImported: 0, remindersImported: 0 };
+  const result: ImportResult = {
+    mode, personalityRestored: false,
+    notesImported: 0, archiveImported: 0, remindersImported: 0, tasksImported: 0,
+  };
 
   /* Wrap the whole restore in a transaction. If ANY step fails (bad row,
      connection drop, malformed JSON), we roll back so the user is never left
@@ -448,6 +485,7 @@ export async function importAll(backup: unknown, mode: ImportMode = "replace"): 
       await tx.execute(sql`DELETE FROM personal_gpt_recent`);
       await tx.execute(sql`DELETE FROM personal_gpt_notes`);
       await tx.execute(sql`DELETE FROM personal_gpt_reminders`);
+      await tx.execute(sql`DELETE FROM personal_gpt_tasks`);
     }
 
     /* Update the personality JSONB on the singleton settings row. We do this
@@ -523,6 +561,42 @@ export async function importAll(backup: unknown, mode: ImportMode = "replace"): 
                 COALESCE(${createdAt}, now()), ${firedAt})
       `);
       result.remindersImported++;
+    }
+
+    /* Re-insert tasks. Pending tasks resume nagging on the next scheduler
+       poll; done/cancelled keep their audit trail. We preserve remind_count
+       and last_reminded_at so escalation history isn't lost across restores. */
+    const validTaskStatuses = new Set(["pending", "done", "cancelled"]);
+    for (const t of tasks) {
+      if (!t || typeof t !== "object") continue;
+      const title = String((t as { title?: unknown }).title ?? "").trim().slice(0, MAX_TASK_TITLE);
+      if (!title) continue;
+      const description = String((t as { description?: unknown }).description ?? "").slice(0, MAX_TASK_DESC);
+      const dueAt = parseTs((t as { dueAt?: unknown }).dueAt);
+      const rawStatus = String((t as { status?: unknown }).status ?? "pending");
+      const status = validTaskStatuses.has(rawStatus) ? rawStatus : "pending";
+      const rawRemindCount = (t as { remindCount?: unknown }).remindCount;
+      const remindCount = typeof rawRemindCount === "number" && Number.isFinite(rawRemindCount)
+        ? Math.max(0, Math.floor(rawRemindCount)) : 0;
+      const lastRemindedAt = parseTs((t as { lastRemindedAt?: unknown }).lastRemindedAt);
+      const source = String((t as { source?: unknown }).source ?? "web").slice(0, 50);
+      const rawChatId = (t as { chatId?: unknown }).chatId;
+      const chatId = typeof rawChatId === "number" && Number.isFinite(rawChatId)
+        ? rawChatId
+        : (typeof rawChatId === "string" && /^-?\d+$/.test(rawChatId) ? Number(rawChatId) : null);
+      const createdAt = parseTs((t as { createdAt?: unknown }).createdAt);
+      const updatedAt = parseTs((t as { updatedAt?: unknown }).updatedAt);
+      const completedAt = parseTs((t as { completedAt?: unknown }).completedAt);
+      await tx.execute(sql`
+        INSERT INTO personal_gpt_tasks
+          (title, description, due_at, status, remind_count, last_reminded_at,
+           source, chat_id, created_at, updated_at, completed_at)
+        VALUES
+          (${title}, ${description}, ${dueAt}, ${status}, ${remindCount}, ${lastRemindedAt},
+           ${source}, ${chatId},
+           COALESCE(${createdAt}, now()), COALESCE(${updatedAt}, now()), ${completedAt})
+      `);
+      result.tasksImported++;
     }
   });
 
