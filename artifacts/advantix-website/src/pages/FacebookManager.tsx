@@ -7,6 +7,7 @@ import {
   MessageCircle, BarChart2, Settings2, Loader2, ExternalLink,
   Zap, Brain, ChevronRight, AlertCircle, LogIn,
   ToggleLeft, ToggleRight, ArrowLeft, Eye, EyeOff, KeyRound,
+  Pencil, Save,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -86,6 +87,7 @@ export default function FacebookManager() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("pages");
   const [selectedPageId, setSelectedPageId] = useState<number | null>(null);
+  const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
   const [pageAccessTokenInput, setPageAccessTokenInput] = useState("");
   const [showTokenValue, setShowTokenValue] = useState(false);
@@ -348,6 +350,18 @@ export default function FacebookManager() {
             )}
 
             {rules.map((rule) => (
+              editingRuleId === rule.id ? (
+                <CreateRuleForm
+                  key={`edit-${rule.id}`}
+                  pages={pages}
+                  existing={rule}
+                  onClose={() => setEditingRuleId(null)}
+                  onCreated={() => {
+                    setEditingRuleId(null);
+                    qc.invalidateQueries({ queryKey: ["fb-rules"] });
+                  }}
+                />
+              ) : (
               <Card key={rule.id} className={cn("p-4 border-border/40", !rule.isActive && "opacity-60")}>
                 <div className="flex items-start gap-3">
                   <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5",
@@ -377,18 +391,26 @@ export default function FacebookManager() {
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <Button variant="ghost" size="icon" className="w-8 h-8"
-                      onClick={() => toggleRule.mutate({ id: rule.id, isActive: !rule.isActive })}>
+                      onClick={() => toggleRule.mutate({ id: rule.id, isActive: !rule.isActive })}
+                      title={rule.isActive ? "Disable rule" : "Enable rule"}>
                       {rule.isActive
                         ? <ToggleRight className="w-4 h-4 text-green-400" />
                         : <ToggleLeft className="w-4 h-4 text-muted-foreground" />}
                     </Button>
+                    <Button variant="ghost" size="icon" className="w-8 h-8 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+                      onClick={() => setEditingRuleId(rule.id)}
+                      title="Edit rule">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
                     <Button variant="ghost" size="icon" className="w-8 h-8 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                      onClick={() => { if (confirm(`Delete rule "${rule.ruleName}"?`)) deleteRule.mutate(rule.id); }}>
+                      onClick={() => { if (confirm(`Delete rule "${rule.ruleName}"?`)) deleteRule.mutate(rule.id); }}
+                      title="Delete rule">
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
                   </div>
                 </div>
               </Card>
+              )
             ))}
 
             {pages.length > 0 && (
@@ -670,45 +692,66 @@ export default function FacebookManager() {
 }
 
 // ── Create Rule Form ──────────────────────────────────────────────────────────
-function CreateRuleForm({ pages, onCreated }: { pages: FbPage[]; onCreated: () => void }) {
+/**
+ * Combined create + edit form. When `existing` is supplied it switches to edit
+ * mode (PUT /facebook/rules/:id). When omitted it stays in create mode and
+ * renders a collapsed "Add New Rule" button until the user opens it.
+ */
+function CreateRuleForm({
+  pages, onCreated, existing, onClose,
+}: {
+  pages: FbPage[];
+  onCreated: () => void;
+  existing?: FbRule;
+  onClose?: () => void;
+}) {
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
+  const isEdit = !!existing;
+  const [open, setOpen] = useState(isEdit);
   const [form, setForm] = useState({
-    facebookPageId: pages[0]?.id ?? 0,
-    ruleName: "",
-    triggerType: "all" as "all" | "keyword" | "ai_decide",
-    triggerKeywords: "",
-    replyMode: "template" as "template" | "ai",
-    replyTemplate: "",
-    aiInstructions: "",
-    priority: 0,
+    facebookPageId: existing?.facebookPageId ?? pages[0]?.id ?? 0,
+    ruleName: existing?.ruleName ?? "",
+    triggerType: (existing?.triggerType ?? "all") as "all" | "keyword" | "ai_decide",
+    triggerKeywords: existing?.triggerKeywords ?? "",
+    replyMode: (existing?.replyMode ?? "template") as "template" | "ai",
+    replyTemplate: existing?.replyTemplate ?? "",
+    aiInstructions: existing?.aiInstructions ?? "",
+    priority: existing?.priority ?? 0,
   });
 
-  const create = useMutation({
-    mutationFn: () =>
-      fetch("/api/facebook/rules", {
-        method: "POST",
+  const submit = useMutation({
+    mutationFn: () => {
+      const payload = {
+        ...form,
+        facebookPageId: Number(form.facebookPageId),
+        priority: Number(form.priority),
+        triggerKeywords: form.triggerType === "keyword" ? form.triggerKeywords : null,
+        replyTemplate: form.replyMode === "template" ? form.replyTemplate : null,
+        aiInstructions: form.replyMode === "ai" ? form.aiInstructions : null,
+      };
+      const url = isEdit ? `/api/facebook/rules/${existing!.id}` : "/api/facebook/rules";
+      const method = isEdit ? "PUT" : "POST";
+      return fetch(url, {
+        method,
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          facebookPageId: Number(form.facebookPageId),
-          priority: Number(form.priority),
-          triggerKeywords: form.triggerType === "keyword" ? form.triggerKeywords : null,
-          replyTemplate: form.replyMode === "template" ? form.replyTemplate : null,
-          aiInstructions: form.replyMode === "ai" ? form.aiInstructions : null,
-        }),
-      }).then(async (r) => { if (!r.ok) throw new Error((await r.json()).error); return r.json(); }),
+        body: JSON.stringify(payload),
+      }).then(async (r) => { if (!r.ok) throw new Error((await r.json()).error); return r.json(); });
+    },
     onSuccess: () => {
-      toast({ title: "Rule created!" });
+      toast({ title: isEdit ? "Rule updated!" : "Rule created!" });
       onCreated();
-      setOpen(false);
-      setForm({ ...form, ruleName: "", triggerKeywords: "", replyTemplate: "", aiInstructions: "" });
+      if (isEdit) {
+        onClose?.();
+      } else {
+        setOpen(false);
+        setForm({ ...form, ruleName: "", triggerKeywords: "", replyTemplate: "", aiInstructions: "" });
+      }
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  if (!open) {
+  if (!open && !isEdit) {
     return (
       <button onClick={() => setOpen(true)}
         className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-border/60 text-sm text-muted-foreground hover:text-foreground hover:border-blue-500/40 transition-colors">
@@ -720,17 +763,28 @@ function CreateRuleForm({ pages, onCreated }: { pages: FbPage[]; onCreated: () =
   return (
     <Card className="p-5 border-blue-500/20 bg-blue-500/5 space-y-4">
       <div className="flex items-center justify-between">
-        <p className="font-semibold text-sm">New Auto-Reply Rule</p>
-        <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">✕</button>
+        <p className="font-semibold text-sm">{isEdit ? `Edit Rule — ${existing!.ruleName}` : "New Auto-Reply Rule"}</p>
+        <button
+          onClick={() => { if (isEdit) onClose?.(); else setOpen(false); }}
+          className="text-muted-foreground hover:text-foreground"
+        >✕</button>
       </div>
 
       <div className="grid sm:grid-cols-2 gap-3">
         <div>
           <Label className="text-xs mb-1.5 block">Page</Label>
-          <select value={form.facebookPageId} onChange={(e) => setForm({ ...form, facebookPageId: Number(e.target.value) })}
-            className="w-full text-sm bg-card border border-border/40 rounded-lg px-3 py-2 text-foreground">
-            {pages.map((p) => <option key={p.id} value={p.id}>{p.pageName}</option>)}
-          </select>
+          {isEdit ? (
+            /* Page can't be moved during edit — backend PUT doesn't support it
+               and rules are scoped per-page. Show as read-only context. */
+            <div className="w-full text-sm bg-card/50 border border-border/40 rounded-lg px-3 py-2 text-muted-foreground">
+              {pages.find((p) => p.id === form.facebookPageId)?.pageName ?? "—"}
+            </div>
+          ) : (
+            <select value={form.facebookPageId} onChange={(e) => setForm({ ...form, facebookPageId: Number(e.target.value) })}
+              className="w-full text-sm bg-card border border-border/40 rounded-lg px-3 py-2 text-foreground">
+              {pages.map((p) => <option key={p.id} value={p.id}>{p.pageName}</option>)}
+            </select>
+          )}
         </div>
         <div>
           <Label className="text-xs mb-1.5 block">Rule Name</Label>
@@ -790,11 +844,16 @@ function CreateRuleForm({ pages, onCreated }: { pages: FbPage[]; onCreated: () =
       </div>
 
       <div className="flex gap-2">
-        <Button onClick={() => create.mutate()} disabled={create.isPending || !form.ruleName}>
-          {create.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
-          Create Rule
+        <Button onClick={() => submit.mutate()} disabled={submit.isPending || !form.ruleName}>
+          {submit.isPending
+            ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            : isEdit ? <Save className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+          {isEdit ? "Save Changes" : "Create Rule"}
         </Button>
-        <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button
+          variant="outline"
+          onClick={() => { if (isEdit) onClose?.(); else setOpen(false); }}
+        >Cancel</Button>
       </div>
     </Card>
   );
