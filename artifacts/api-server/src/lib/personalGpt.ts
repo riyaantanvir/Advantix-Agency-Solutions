@@ -1093,14 +1093,30 @@ export type TaskListIntent = {
 /* Cheap pre-filter — skip the LLM round-trip unless the message smells like
    a task-list dictation. */
 export function looksLikeTaskListShape(text: string): boolean {
-  return /\b(\d+\s*ta?\s*(kaj|task|kaaj))\b/i.test(text)
-    || /\b(task|kaj|kaaj|to[-\s]?do)\s*(list|gula|gulo|list-?e?)\b/i.test(text)
+  /* Bengali / Banglish task-list cues (existing). */
+  const phraseHit = /\b(\d+\s*ta?\s*(kaj|task|kaaj))\b/i.test(text)
+    || /\b(task|kaj|kaaj|to[-\s]?do)s?\s*(list|gula|gulo|list-?e?)?\b/i.test(text)
     || /\bkorte\s*hobe\b/i.test(text)
     || /\b(agamikal|agami\s*kal|kalker|aajker?|ajker?|porshu)\s+.*\b(kaj|task|kora|hobe)\b/i.test(text)
     || /\b(add\s*kor[oe]?|tasks?\s*a\s*add)\b/i.test(text)
-    || /আজকের\s*(কাজ|টাস্ক|তালিকা)|কাজের\s*তালিকা|করতে\s*হবে/.test(text)
-    /* numbered/bulleted list of 2+ items */
+    || /আজকের\s*(কাজ|টাস্ক|তালিকা)|কাজের\s*তালিকা|করতে\s*হবে|টাস্ক/.test(text)
+    /* numbered/bulleted list of 2+ items on separate lines */
     || /(?:^|\n)\s*(?:[-*•]|\d+[.)])\s+\S.{2,}(?:\n\s*(?:[-*•]|\d+[.)])\s+\S){1,}/m.test(text);
+  if (phraseHit) return true;
+
+  /* Comma/semicolon-separated list of 3+ short items on a single line — when
+     paired with a time-ish phrase, this is almost certainly a task dictation
+     ("check expire domain, pay domain bill, Upwork withdrawal — bikal 4tay"). */
+  const segments = text.split(/[,;]|\s—\s|\s-\s/).map(s => s.trim()).filter(Boolean);
+  const hasTimeHint = /\b(\d{1,2}\s*(am|pm|tay|ta|টা))\b/i.test(text)
+    || /\b(bikal|bikel|sokal|rat|dupur|kal|porshu|tomorrow|today|tonight|morning|evening|afternoon)\b/i.test(text)
+    || /বিকা?ল|সকাল|রাত|দুপুর|আগামীকাল|আজকে|পরশু/.test(text);
+  if (segments.length >= 3 && hasTimeHint && segments.every(s => s.length <= 80)) return true;
+
+  /* Numbered list on a single line: "1. X 2. Y 3. Z" */
+  if (/(?:^|\s)1[.)]\s+\S+.*\s2[.)]\s+\S+/i.test(text)) return true;
+
+  return false;
 }
 
 export async function extractTaskListIntent(userText: string, apiKey: string): Promise<TaskListIntent | null> {
