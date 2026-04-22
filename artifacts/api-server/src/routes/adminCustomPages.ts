@@ -48,18 +48,58 @@ async function getSidecarSignedUrl(objectName: string, method: "GET" | "PUT"): P
   return signed_url;
 }
 
+/* iPhones default to HEIC/HEIF, which no browser <img> tag can render. Detect
+   and transcode to JPEG on the server before persisting so the resulting URL
+   works everywhere (admin preview + public site). Detection uses both the
+   mimetype and the original filename, since some clients send HEIC bytes with
+   a generic `application/octet-stream` content-type. */
+function isHeic(mimetype: string, originalName: string): boolean {
+  const m = (mimetype || "").toLowerCase();
+  if (m === "image/heic" || m === "image/heif" || m === "image/heic-sequence" || m === "image/heif-sequence") return true;
+  const ext = path.extname(originalName || "").toLowerCase();
+  return ext === ".heic" || ext === ".heif";
+}
+
+async function transcodeHeicToJpeg(buffer: Buffer): Promise<Buffer> {
+  /* Dynamic import — heic-convert is a heavy WASM module; loading lazily
+     keeps cold-start fast for non-HEIC requests. */
+  const mod = await import("heic-convert");
+  const convert = (mod.default ?? mod) as (opts: { buffer: Buffer; format: "JPEG" | "PNG"; quality?: number }) => Promise<ArrayBuffer>;
+  const out = await convert({ buffer, format: "JPEG", quality: 0.9 });
+  return Buffer.from(out);
+}
+
+/* Wrapper: returns possibly-transcoded buffer + the final mimetype/extension
+   that should be used for storage. */
+async function normalizeImage(
+  buffer: Buffer,
+  mimetype: string,
+  originalName: string,
+): Promise<{ buffer: Buffer; mimetype: string; ext: string }> {
+  if (isHeic(mimetype, originalName)) {
+    try {
+      const jpeg = await transcodeHeicToJpeg(buffer);
+      return { buffer: jpeg, mimetype: "image/jpeg", ext: ".jpg" };
+    } catch (err) {
+      throw new Error(`HEIC conversion failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { buffer, mimetype: mimetype || "image/jpeg", ext: path.extname(originalName) || ".jpg" };
+}
+
 /* ── Unified upload ──────────────────────────────────────────────────────── */
 async function uploadImage(buffer: Buffer, mimetype: string, originalName: string): Promise<string> {
+  const norm = await normalizeImage(buffer, mimetype, originalName);
   if (isReplitStorage()) {
     // ── Replit Object Storage via sidecar ──────────────────────────────────
     const { prefix } = parseStorageDir();
-    const ext = path.extname(originalName) || ".jpg";
+    const ext = norm.ext || ".jpg";
     const objectName = [prefix, `gallery/${randomUUID()}${ext}`].filter(Boolean).join("/");
     const putUrl = await getSidecarSignedUrl(objectName, "PUT");
     const uploadRes = await fetch(putUrl, {
       method: "PUT",
-      headers: { "Content-Type": mimetype },
-      body: buffer,
+      headers: { "Content-Type": norm.mimetype },
+      body: norm.buffer,
       signal: AbortSignal.timeout(60_000),
     });
     if (!uploadRes.ok) throw new Error(`GCS upload failed: ${uploadRes.status}`);
@@ -68,7 +108,7 @@ async function uploadImage(buffer: Buffer, mimetype: string, originalName: strin
     // ── DB blob storage (zero-config fallback for DO / any platform) ───────
     const result = await db.execute(sql`
       INSERT INTO gallery_image_blobs (data, mime_type)
-      VALUES (${buffer}, ${mimetype})
+      VALUES (${norm.buffer}, ${norm.mimetype})
       RETURNING id
     `);
     const blobId = (result.rows[0] as Record<string, unknown>).id;
