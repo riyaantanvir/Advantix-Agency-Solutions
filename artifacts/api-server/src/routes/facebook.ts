@@ -505,7 +505,10 @@ router.get("/facebook/stats", requireToolUser, async (req: Request, res: Respons
     return;
   }
 
-  const [stats] = await db.execute(sql`
+  /* drizzle's db.execute returns a `{ rows: [...] }` result object, NOT an
+     iterable — destructuring it threw "(intermediate value) is not iterable"
+     and 500'd this endpoint on every poll. Read .rows directly. */
+  const result = await db.execute(sql`
     SELECT
       COUNT(*) AS total_messages,
       COUNT(*) FILTER (WHERE is_replied = true AND reply_type = 'ai') AS ai_replies,
@@ -514,7 +517,7 @@ router.get("/facebook/stats", requireToolUser, async (req: Request, res: Respons
     FROM facebook_messages
     WHERE facebook_page_id = ANY(${sql`ARRAY[${sql.join(pageIds.map(i => sql`${i}`), sql`, `)}]::int[]`})
   `);
-  const s = (stats as any).rows[0];
+  const s = (result as any).rows?.[0] ?? {};
   res.json({
     totalMessages: Number(s.total_messages),
     aiReplies: Number(s.ai_replies),

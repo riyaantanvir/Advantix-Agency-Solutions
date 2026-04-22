@@ -7,7 +7,7 @@ import {
   MessageCircle, BarChart2, Settings2, Loader2, ExternalLink,
   Zap, Brain, ChevronRight, AlertCircle, LogIn,
   ToggleLeft, ToggleRight, ArrowLeft, Eye, EyeOff, KeyRound,
-  Pencil, Save,
+  Pencil, Save, Copy, Webhook, Check,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -122,6 +122,14 @@ export default function FacebookManager() {
     queryKey: ["fb-messages", selectedPageId],
     queryFn: () => apiFetch(`/facebook/messages${selectedPageId ? `?pageId=${selectedPageId}` : ""}`).then((r) => r?.messages ?? r ?? []),
     enabled: !!user && tab === "messages",
+  });
+
+  /* Webhook setup info — what to paste into Facebook App Dashboard so DMs
+     fire instantly instead of waiting for the 20-min scheduler / Check Now. */
+  const { data: webhookInfo } = useQuery<{ webhookUrl: string; verifyToken: string; callbackFields: string }>({
+    queryKey: ["fb-webhook-info"],
+    queryFn: () => apiFetch("/facebook/webhook-info"),
+    enabled: !!user && tab === "pages",
   });
 
 
@@ -269,6 +277,14 @@ export default function FacebookManager() {
         {tab === "pages" && (
           <motion.div key="pages" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: expo }}
             className="space-y-4">
+
+            {/* Webhook setup — pasted into Facebook App Dashboard so DMs trigger
+                instant replies. Without this, replies only fire on Check Now or
+                the 20-min scheduler tick. */}
+            {webhookInfo && (
+              <WebhookSetupCard info={webhookInfo} />
+            )}
+
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">Connected Pages ({pages.length})</h2>
               <div className="flex gap-2">
@@ -883,6 +899,71 @@ function CreateRuleForm({
           onClick={() => { if (isEdit) onClose?.(); else setOpen(false); }}
         >Cancel</Button>
       </div>
+    </Card>
+  );
+}
+
+/* ── Webhook Setup Card ────────────────────────────────────────────────────── */
+/* Shows the Webhook URL + Verify Token the user must paste into Facebook
+   App Dashboard → Webhooks → Page subscription. Without this, FB never POSTs
+   to /facebook/webhook and replies only fire on Check Now / scheduler. */
+function WebhookSetupCard({ info }: { info: { webhookUrl: string; verifyToken: string; callbackFields: string } }) {
+  const [copied, setCopied] = useState<"url" | "token" | null>(null);
+  const copy = (kind: "url" | "token", value: string) => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 1500);
+    });
+  };
+  return (
+    <Card className="p-5 border-blue-500/20 bg-blue-500/5 space-y-4">
+      <div className="flex items-start gap-3">
+        <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
+          <Webhook className="w-5 h-5 text-blue-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm">Webhook Setup — required for instant replies</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Paste these into Facebook App Dashboard → Webhooks → <span className="font-mono">Page</span> subscription.
+            Otherwise replies only fire on Check Now or every 20 minutes.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <div>
+          <Label className="text-xs mb-1.5 block text-muted-foreground">Callback URL</Label>
+          <div className="flex gap-2">
+            <Input readOnly value={info.webhookUrl} className="font-mono text-xs bg-background/50" onClick={(e) => (e.target as HTMLInputElement).select()} />
+            <Button size="sm" variant="outline" className="shrink-0" onClick={() => copy("url", info.webhookUrl)}>
+              {copied === "url" ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+            </Button>
+          </div>
+        </div>
+        <div>
+          <Label className="text-xs mb-1.5 block text-muted-foreground">Verify Token</Label>
+          <div className="flex gap-2">
+            <Input readOnly value={info.verifyToken} className="font-mono text-xs bg-background/50" onClick={(e) => (e.target as HTMLInputElement).select()} />
+            <Button size="sm" variant="outline" className="shrink-0" onClick={() => copy("token", info.verifyToken)}>
+              {copied === "token" ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+            </Button>
+          </div>
+        </div>
+        <div>
+          <Label className="text-xs mb-1.5 block text-muted-foreground">Subscribe to fields</Label>
+          <code className="block text-xs font-mono bg-background/50 border border-border/40 rounded-md px-3 py-2">{info.callbackFields}</code>
+        </div>
+      </div>
+
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer hover:text-foreground transition-colors">How to verify it's working</summary>
+        <ol className="list-decimal ml-5 mt-2 space-y-1">
+          <li>Open <a href="https://developers.facebook.com/apps" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline inline-flex items-center gap-1">developers.facebook.com/apps <ExternalLink className="w-3 h-3" /></a> → your app → Webhooks → Page.</li>
+          <li>Click "Edit subscription", paste the URL + token above, save. Facebook will GET the URL once — must return the challenge.</li>
+          <li>Subscribe to the <span className="font-mono">messages</span> field.</li>
+          <li>Send a test DM to your page from another account — it should appear here within seconds with an AI reply.</li>
+        </ol>
+      </details>
     </Card>
   );
 }
