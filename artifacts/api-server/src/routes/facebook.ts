@@ -378,6 +378,88 @@ router.post("/facebook/connect-page", requireToolUser, async (req: Request, res:
   }
 });
 
+/* ── Manual token connect ────────────────────────────────────────────────────
+   Power-user shortcut for users who already have a Page Access Token (e.g.
+   from Graph API Explorer or a long-lived token they've generated). Avoids
+   the OAuth round-trip entirely — paste the token, we verify it against
+   `/me?fields=id,name`, subscribe webhooks, and store the page. Works for
+   self-managed pages where the user can't / doesn't want to do the full
+   Facebook Login dance. */
+router.post("/facebook/connect-by-token", requireToolUser, async (req: Request, res: Response): Promise<void> => {
+  const uid = toolUserId(req);
+  const body = (req.body ?? {}) as { pageAccessToken?: unknown; userAccessToken?: unknown };
+  const pageAccessToken = typeof body.pageAccessToken === "string" ? body.pageAccessToken.trim() : "";
+  const userAccessToken = typeof body.userAccessToken === "string" ? body.userAccessToken.trim() : "";
+  if (!pageAccessToken) { res.status(400).json({ error: "pageAccessToken is required" }); return; }
+
+  try {
+    /* Verify the token by asking Graph who it belongs to. A Page Access Token
+       returns the Page; a User Access Token returns the user (which we
+       reject because we don't know which page they meant). */
+    const me = await fbGet("/me?fields=id,name,category", pageAccessToken) as {
+      id?: string; name?: string; category?: string;
+      error?: { message?: string; type?: string; code?: number };
+    };
+    if (me.error || !me.id || !me.name) {
+      res.status(400).json({
+        error: me.error?.message
+          ?? "Token is invalid or expired. Make sure you pasted a Page Access Token, not a User Access Token.",
+      });
+      return;
+    }
+    /* User Access Tokens come back without a `category` field and `/me` is
+       a User node; refuse with a clear hint instead of silently storing junk. */
+    if (!me.category) {
+      res.status(400).json({
+        error: "This looks like a User Access Token. You need a Page Access Token. "
+          + "In Graph API Explorer: pick your Page from the dropdown, request `pages_show_list`, `pages_messaging`, `pages_read_engagement`, then copy the token.",
+      });
+      return;
+    }
+
+    /* Subscribe the page to message webhooks so auto-reply works. Best-effort:
+       if the App ID isn't configured, we still save the page (user may only
+       want manual processing). */
+    try {
+      const sub = await fbPost(`/${me.id}/subscribed_apps`, pageAccessToken, {
+        subscribed_fields: "messages,messaging_postbacks,feed",
+      }) as { error?: { message?: string } };
+      if (sub?.error?.message) {
+        console.warn(`[FB] Webhook subscribe non-fatal error for page ${me.id}: ${sub.error.message}`);
+      }
+    } catch (err) {
+      console.warn(`[FB] Webhook subscribe threw for page ${me.id} (continuing):`, err);
+    }
+
+    /* Upsert — same logic as OAuth flow's connect-page so reconnecting just
+       refreshes the token instead of creating a duplicate row. */
+    const [existing] = await db.select().from(facebookPagesTable)
+      .where(and(eq(facebookPagesTable.toolUserId, uid), eq(facebookPagesTable.pageId, me.id)));
+
+    if (existing) {
+      await db.update(facebookPagesTable).set({
+        pageName: me.name,
+        pageAccessToken,
+        userAccessToken: userAccessToken || existing.userAccessToken,
+        isActive: true,
+      }).where(eq(facebookPagesTable.id, existing.id));
+    } else {
+      await db.insert(facebookPagesTable).values({
+        toolUserId: uid,
+        pageId: me.id,
+        pageName: me.name,
+        pageAccessToken,
+        userAccessToken: userAccessToken || null,
+      });
+    }
+
+    res.json({ ok: true, pageName: me.name, pageId: me.id, reconnected: !!existing });
+  } catch (err) {
+    logger.error({ err }, "facebook: connect-by-token failed");
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
 /* ── Pages Management ─────────────────────────────────────────────────────── */
 
 router.get("/facebook/pages", requireToolUser, async (req: Request, res: Response) => {

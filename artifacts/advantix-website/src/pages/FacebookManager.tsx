@@ -6,7 +6,7 @@ import {
   Facebook, Plus, Trash2, CheckCircle2, XCircle, RefreshCw,
   MessageCircle, BarChart2, Settings2, Loader2, ExternalLink,
   Zap, Brain, ChevronRight, AlertCircle, LogIn,
-  ToggleLeft, ToggleRight, ArrowLeft, Eye, EyeOff,
+  ToggleLeft, ToggleRight, ArrowLeft, Eye, EyeOff, KeyRound,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -86,6 +86,9 @@ export default function FacebookManager() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("pages");
   const [selectedPageId, setSelectedPageId] = useState<number | null>(null);
+  const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
+  const [pageAccessTokenInput, setPageAccessTokenInput] = useState("");
+  const [showTokenValue, setShowTokenValue] = useState(false);
 
   const { data: pages = [], isLoading: loadingPages } = useQuery<FbPage[]>({
     queryKey: ["fb-pages"],
@@ -111,6 +114,22 @@ export default function FacebookManager() {
     enabled: !!user && tab === "messages",
   });
 
+
+  const connectByToken = useMutation({
+    mutationFn: (pageAccessToken: string) =>
+      apiFetch("/facebook/connect-by-token", { method: "POST", body: JSON.stringify({ pageAccessToken }) }),
+    onSuccess: (d: { pageName?: string; reconnected?: boolean }) => {
+      qc.invalidateQueries({ queryKey: ["fb-pages"] });
+      setTokenDialogOpen(false);
+      setPageAccessTokenInput("");
+      setShowTokenValue(false);
+      toast({
+        title: d.reconnected ? "Page reconnected" : "Page connected",
+        description: d.pageName ? `Linked to "${d.pageName}".` : undefined,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Could not connect page", description: e.message, variant: "destructive" }),
+  });
 
   const disconnectPage = useMutation({
     mutationFn: (id: number) => apiFetch(`/facebook/pages/${id}`, { method: "DELETE" }),
@@ -222,9 +241,15 @@ export default function FacebookManager() {
             className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">Connected Pages ({pages.length})</h2>
-              <Button size="sm" onClick={startOAuth} className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="w-3.5 h-3.5 mr-1.5" />Connect Page
-              </Button>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setTokenDialogOpen(true)}
+                  className="border-border/40">
+                  <KeyRound className="w-3.5 h-3.5 mr-1.5" />Use Token
+                </Button>
+                <Button size="sm" onClick={startOAuth} className="bg-blue-600 hover:bg-blue-700">
+                  <Plus className="w-3.5 h-3.5 mr-1.5" />Connect Page
+                </Button>
+              </div>
             </div>
 
             {loadingPages && (
@@ -478,6 +503,71 @@ export default function FacebookManager() {
         )}
 
       </div>
+
+      {/* ── Token-based connect dialog ────────────────────────────────────── */}
+      {tokenDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => {
+            if (connectByToken.isPending) return;
+            setTokenDialogOpen(false);
+            setPageAccessTokenInput("");
+            setShowTokenValue(false);
+          }}>
+          <Card className="w-full max-w-lg p-6 border-border/40 bg-card" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
+                <KeyRound className="w-5 h-5 text-blue-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold">Connect with Page Access Token</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Skip the OAuth login by pasting a Page Access Token directly.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs mb-1.5 block">Page Access Token</Label>
+                <div className="relative">
+                  <Input type={showTokenValue ? "text" : "password"} value={pageAccessTokenInput}
+                    onChange={(e) => setPageAccessTokenInput(e.target.value)}
+                    placeholder="EAA..." className="pr-10 font-mono text-xs"
+                    disabled={connectByToken.isPending} />
+                  <button type="button" onClick={() => setShowTokenValue((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showTokenValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <Card className="p-3 bg-muted/30 border-border/30 text-xs space-y-1.5">
+                <p className="font-semibold text-foreground">How to get a Page Access Token</p>
+                <ol className="list-decimal list-inside space-y-0.5 text-muted-foreground">
+                  <li>Open <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer"
+                    className="text-blue-400 hover:underline inline-flex items-center gap-0.5">
+                    Graph API Explorer<ExternalLink className="w-3 h-3" /></a></li>
+                  <li>Pick your app, then choose your Page from the user/page dropdown</li>
+                  <li>Add permissions: <code className="text-foreground">pages_show_list</code>, <code className="text-foreground">pages_messaging</code>, <code className="text-foreground">pages_read_engagement</code>, <code className="text-foreground">pages_manage_metadata</code></li>
+                  <li>Click <span className="text-foreground">Generate Access Token</span> and copy it here</li>
+                </ol>
+              </Card>
+            </div>
+
+            <div className="flex gap-2 mt-5">
+              <Button onClick={() => connectByToken.mutate(pageAccessTokenInput.trim())}
+                disabled={connectByToken.isPending || !pageAccessTokenInput.trim()}
+                className="bg-blue-600 hover:bg-blue-700 flex-1">
+                {connectByToken.isPending
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Verifying…</>
+                  : <><CheckCircle2 className="w-4 h-4 mr-2" />Connect</>}
+              </Button>
+              <Button variant="outline" onClick={() => setTokenDialogOpen(false)}
+                disabled={connectByToken.isPending}>Cancel</Button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
