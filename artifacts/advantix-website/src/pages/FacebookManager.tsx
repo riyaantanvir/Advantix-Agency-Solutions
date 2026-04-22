@@ -126,7 +126,13 @@ export default function FacebookManager() {
 
   /* Webhook setup info — what to paste into Facebook App Dashboard so DMs
      fire instantly instead of waiting for the 20-min scheduler / Check Now. */
-  const { data: webhookInfo } = useQuery<{ webhookUrl: string; verifyToken: string; callbackFields: string }>({
+  const { data: webhookInfo } = useQuery<{
+    webhookUrl: string;
+    configuredWebhookUrl: string;
+    isDevEnvironment: boolean;
+    verifyToken: string;
+    callbackFields: string;
+  }>({
     queryKey: ["fb-webhook-info"],
     queryFn: () => apiFetch("/facebook/webhook-info"),
     enabled: !!user && tab === "pages",
@@ -907,9 +913,9 @@ function CreateRuleForm({
 /* Shows the Webhook URL + Verify Token the user must paste into Facebook
    App Dashboard → Webhooks → Page subscription. Without this, FB never POSTs
    to /facebook/webhook and replies only fire on Check Now / scheduler. */
-function WebhookSetupCard({ info }: { info: { webhookUrl: string; verifyToken: string; callbackFields: string } }) {
-  const [copied, setCopied] = useState<"url" | "token" | null>(null);
-  const copy = (kind: "url" | "token", value: string) => {
+function WebhookSetupCard({ info }: { info: { webhookUrl: string; configuredWebhookUrl: string; isDevEnvironment: boolean; verifyToken: string; callbackFields: string } }) {
+  const [copied, setCopied] = useState<"url" | "configured" | "token" | null>(null);
+  const copy = (kind: "url" | "configured" | "token", value: string) => {
     navigator.clipboard.writeText(value).then(() => {
       setCopied(kind);
       setTimeout(() => setCopied(null), 1500);
@@ -930,9 +936,23 @@ function WebhookSetupCard({ info }: { info: { webhookUrl: string; verifyToken: s
         </div>
       </div>
 
+      {info.isDevEnvironment && (
+        <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-3 text-xs space-y-1">
+          <p className="font-semibold text-yellow-300 flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5" />You're viewing from a dev/preview URL
+          </p>
+          <p className="text-yellow-200/80">
+            The "Callback URL" below points to this dev environment so you can test live here. For production,
+            use the "Production URL" further down (Facebook only allows one URL per app — switch when you deploy).
+          </p>
+        </div>
+      )}
+
       <div className="space-y-2">
         <div>
-          <Label className="text-xs mb-1.5 block text-muted-foreground">Callback URL</Label>
+          <Label className="text-xs mb-1.5 block text-muted-foreground">
+            Callback URL {info.isDevEnvironment && <span className="text-yellow-400">(this dev environment)</span>}
+          </Label>
           <div className="flex gap-2">
             <Input readOnly value={info.webhookUrl} className="font-mono text-xs bg-background/50" onClick={(e) => (e.target as HTMLInputElement).select()} />
             <Button size="sm" variant="outline" className="shrink-0" onClick={() => copy("url", info.webhookUrl)}>
@@ -940,6 +960,17 @@ function WebhookSetupCard({ info }: { info: { webhookUrl: string; verifyToken: s
             </Button>
           </div>
         </div>
+        {info.isDevEnvironment && (
+          <div>
+            <Label className="text-xs mb-1.5 block text-muted-foreground">Production URL</Label>
+            <div className="flex gap-2">
+              <Input readOnly value={info.configuredWebhookUrl} className="font-mono text-xs bg-background/50" onClick={(e) => (e.target as HTMLInputElement).select()} />
+              <Button size="sm" variant="outline" className="shrink-0" onClick={() => copy("configured", info.configuredWebhookUrl)}>
+                {copied === "configured" ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+              </Button>
+            </div>
+          </div>
+        )}
         <div>
           <Label className="text-xs mb-1.5 block text-muted-foreground">Verify Token</Label>
           <div className="flex gap-2">

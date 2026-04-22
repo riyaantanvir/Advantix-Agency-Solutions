@@ -838,9 +838,21 @@ router.post("/facebook/data-deletion", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/facebook/webhook-info", requireToolUser, async (_req: Request, res: Response) => {
+router.get("/facebook/webhook-info", requireToolUser, async (req: Request, res: Response) => {
+  /* Show the URL that matches the host the user is *currently* viewing this
+     page from (dev preview vs production), so they paste a URL Facebook can
+     actually reach. Fall back to the configured base for OAuth redirects. */
+  const fwdProto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0]?.trim();
+  const fwdHost = (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0]?.trim();
+  const host = fwdHost ?? req.headers.host;
+  const proto = fwdProto ?? (req.secure ? "https" : "http");
+  const currentBase = host ? `${proto}://${host}` : await getWebhookBase();
+  const configuredBase = await getWebhookBase();
+
   res.json({
-    webhookUrl: `${await getWebhookBase()}/api/facebook/webhook`,
+    webhookUrl: `${currentBase}/api/facebook/webhook`,
+    configuredWebhookUrl: `${configuredBase}/api/facebook/webhook`,
+    isDevEnvironment: currentBase !== configuredBase,
     verifyToken: await getVerifyToken(),
     callbackFields: "messages,messaging_postbacks",
   });
