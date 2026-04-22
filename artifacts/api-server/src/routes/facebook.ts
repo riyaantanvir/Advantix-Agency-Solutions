@@ -11,6 +11,7 @@ import {
 import { eq, desc, and, count, sql, isNull, inArray } from "drizzle-orm";
 import { requireToolUser } from "../middleware/toolAuth.js";
 import { requireAdmin } from "../middleware/auth.js";
+import { generateFbAutoReply, getFbAutoReplyConfig } from "../lib/aiReply.js";
 
 const router = Router();
 
@@ -95,32 +96,11 @@ async function fbPost(path: string, token: string, body: object): Promise<Record
   return r.json() as Promise<Record<string, unknown>>;
 }
 
+/* AI reply generation lives in lib/aiReply.ts so it's shared with the
+   scheduler and respects the admin-configured provider/model from the
+   integrations table (FB_AUTOREPLY_PROVIDER, FB_AUTOREPLY_MODEL). */
 async function getAiReply(instructions: string, userMessage: string): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
-  const isOpenRouter = !!process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return "";
-
-  const r = await fetch(
-    isOpenRouter ? "https://openrouter.ai/api/v1/chat/completions" : "https://api.openai.com/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-        ...(isOpenRouter ? { "HTTP-Referer": "https://advantix.digital" } : {}),
-      },
-      body: JSON.stringify({
-        model: isOpenRouter ? "z-ai/glm-5.1" : "gpt-4o-mini",
-        max_tokens: 500,
-        messages: [
-          { role: "system", content: instructions },
-          { role: "user", content: userMessage },
-        ],
-      }),
-    }
-  );
-  const d = await r.json() as { choices?: Array<{ message: { content: string } }> };
-  return d.choices?.[0]?.message?.content?.trim() ?? "";
+  return generateFbAutoReply(instructions, userMessage);
 }
 
 /* ── Auto-Reply Engine ────────────────────────────────────────────────────── */
@@ -672,7 +652,9 @@ router.post("/facebook/check-now", requireToolUser, async (req: Request, res: Re
     sendErrors: string[];
     graphError?: string;
   };
-  const aiKeyConfigured = !!(process.env.OPENROUTER_API_KEY ?? process.env.OPENAI_API_KEY);
+  /* Reflects the *active* FB auto-reply provider's configured key (DB or env),
+     not just OPENROUTER/OPENAI env vars. */
+  const aiKeyConfigured = (await getFbAutoReplyConfig()).apiKeyConfigured;
   const diags: PageDiag[] = [];
   let totalNew = 0;
   let totalReplied = 0;

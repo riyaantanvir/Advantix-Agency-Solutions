@@ -74,6 +74,43 @@ export default function Integrations() {
   const [isCustom, setIsCustom] = useState(false);
   const [testResults, setTestResults] = useState<Record<number, { loading: boolean; ok?: boolean; message?: string }>>({});
 
+  // ── Facebook Auto-Reply provider/model config ──
+  type FbProviderInfo = { id: string; label: string; defaultModel: string; keyName: string; keyConfigured: boolean };
+  const [fbAi, setFbAi] = useState<{ provider: string; model: string; providers: FbProviderInfo[] } | null>(null);
+  const [fbAiSaving, setFbAiSaving] = useState(false);
+  const [fbAiSaved, setFbAiSaved] = useState(false);
+
+  async function loadFbAi() {
+    try {
+      const r = await fetch("/api/admin/settings/fb-autoreply", { credentials: "include" });
+      if (r.ok) setFbAi(await r.json());
+    } catch { /* ignore */ }
+  }
+
+  async function saveFbAi(next: { provider?: string; model?: string }) {
+    if (!fbAi) return;
+    setFbAiSaving(true); setFbAiSaved(false);
+    const merged = {
+      provider: next.provider ?? fbAi.provider,
+      model: next.model ?? fbAi.model,
+    };
+    try {
+      const r = await fetch("/api/admin/settings/fb-autoreply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(merged),
+      });
+      if (r.ok) {
+        setFbAi({ ...fbAi, ...merged });
+        setFbAiSaved(true);
+        setTimeout(() => setFbAiSaved(false), 2000);
+      }
+    } finally { setFbAiSaving(false); }
+  }
+
+  useEffect(() => { loadFbAi(); }, []);
+
   useEffect(() => { loadIntegrations(); }, []);
 
   async function loadIntegrations() {
@@ -176,6 +213,83 @@ export default function Integrations() {
           Add Integration
         </button>
       </div>
+
+      {/* Facebook Auto-Reply AI configuration */}
+      {fbAi && (
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-border bg-muted/20">
+            <div className="w-6 h-6 rounded-md flex items-center justify-center border bg-blue-500/10 text-blue-400 border-blue-500/20">
+              <Plug className="w-3 h-3" />
+            </div>
+            <h2 className="text-sm font-medium">Facebook Auto-Reply AI</h2>
+            <span className="ml-auto text-xs text-muted-foreground">
+              Active: <span className="font-mono text-foreground">{fbAi.provider}</span> · <span className="font-mono">{fbAi.model || "default"}</span>
+              {fbAiSaved && <span className="ml-2 text-emerald-400">Saved ✓</span>}
+              {fbAiSaving && <span className="ml-2">Saving…</span>}
+            </span>
+          </div>
+          <div className="p-5 space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Choose which AI provider and model the Facebook auto-reply should use. The selected provider must have its API key configured below — otherwise replies will be skipped.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1.5">Provider</label>
+                <select
+                  value={fbAi.provider}
+                  disabled={fbAiSaving}
+                  onChange={e => {
+                    const p = fbAi.providers.find(x => x.id === e.target.value);
+                    saveFbAi({ provider: e.target.value, model: p?.defaultModel ?? fbAi.model });
+                  }}
+                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:ring-1 focus:ring-primary/50"
+                >
+                  {fbAi.providers.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.label} {p.keyConfigured ? "✓" : "(no key)"}
+                    </option>
+                  ))}
+                </select>
+                {(() => {
+                  const cur = fbAi.providers.find(p => p.id === fbAi.provider);
+                  if (!cur) return null;
+                  return cur.keyConfigured ? (
+                    <p className="text-[11px] text-emerald-400/80 mt-1.5">
+                      {cur.keyName} is configured.
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-amber-400/80 mt-1.5">
+                      No <span className="font-mono">{cur.keyName}</span> set — add it as an integration below for replies to work.
+                    </p>
+                  );
+                })()}
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1.5">Model</label>
+                <input
+                  type="text"
+                  value={fbAi.model}
+                  disabled={fbAiSaving}
+                  onChange={e => setFbAi({ ...fbAi, model: e.target.value })}
+                  onBlur={e => {
+                    /* Only persist if the value actually differs from what's
+                       on the server, to avoid spurious "Saved ✓" flashes and
+                       extra DB writes on every focus loss. */
+                    const next = e.target.value.trim();
+                    const current = (fbAi.model ?? "").trim();
+                    if (next !== current) saveFbAi({ model: next });
+                  }}
+                  placeholder={fbAi.providers.find(p => p.id === fbAi.provider)?.defaultModel ?? ""}
+                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:ring-1 focus:ring-primary/50 font-mono"
+                />
+                <p className="text-[11px] text-muted-foreground mt-1.5">
+                  Default for this provider: <span className="font-mono">{fbAi.providers.find(p => p.id === fbAi.provider)?.defaultModel}</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add panel */}
       {showAdd && (

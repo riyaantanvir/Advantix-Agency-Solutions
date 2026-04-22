@@ -8,6 +8,7 @@ import {
 } from "@workspace/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import pino from "pino";
+import { generateFbAutoReply } from "./aiReply.js";
 
 const logger = pino({ name: "fb-scheduler" });
 
@@ -28,32 +29,7 @@ async function fbPost(path: string, token: string, body: object): Promise<Record
 }
 
 async function getAiReply(instructions: string, userMessage: string): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
-  const isOpenRouter = !!process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return "";
-  const r = await fetch(
-    isOpenRouter
-      ? "https://openrouter.ai/api/v1/chat/completions"
-      : "https://api.openai.com/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-        ...(isOpenRouter ? { "HTTP-Referer": "https://advantix.digital" } : {}),
-      },
-      body: JSON.stringify({
-        model: isOpenRouter ? "z-ai/glm-5.1" : "gpt-4o-mini",
-        max_tokens: 500,
-        messages: [
-          { role: "system", content: instructions },
-          { role: "user", content: userMessage },
-        ],
-      }),
-    }
-  );
-  const d = await r.json() as { choices?: Array<{ message: { content: string } }> };
-  return d.choices?.[0]?.message?.content?.trim() ?? "";
+  return generateFbAutoReply(instructions, userMessage);
 }
 
 async function processAndReply(fbPageDbId: number, messageDbId: number, messageText: string): Promise<void> {

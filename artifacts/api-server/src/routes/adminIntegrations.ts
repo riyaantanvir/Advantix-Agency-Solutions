@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { integrationsTable } from "@workspace/db/schema";
 import { requireSuperAdmin } from "../middleware/auth.js";
+import { getFbAutoReplyConfig, FB_AUTOREPLY_DEFAULT_MODELS } from "../lib/aiReply.js";
 
 const router = Router();
 
@@ -215,6 +216,54 @@ router.post("/admin/settings/assistant-ai", requireSuperAdmin, async (req: Reque
   const { provider, model } = req.body as { provider?: string; model?: string };
   if (provider) await upsertSetting("ASSISTANT_PROVIDER", provider, "Assistant AI Provider");
   if (model !== undefined) await upsertSetting("ASSISTANT_MODEL", model, "Assistant AI Model");
+  res.json({ ok: true });
+});
+
+/* ── Facebook Auto-Reply AI provider/model ────────────────────────────────
+   Lets the admin pick which provider+model the FB auto-reply uses, and shows
+   which providers actually have a key configured (so they can't accidentally
+   pick one that won't work). */
+const FB_AUTOREPLY_PROVIDERS: Array<{ id: string; label: string; keyName: string; defaultModel: string }> = [
+  { id: "openrouter", label: "OpenRouter",        keyName: "OPENROUTER_API_KEY", defaultModel: "z-ai/glm-4.6" },
+  { id: "openai",     label: "OpenAI",            keyName: "OPENAI_API_KEY",     defaultModel: "gpt-4o-mini" },
+  { id: "anthropic",  label: "Anthropic Claude",  keyName: "ANTHROPIC_API_KEY",  defaultModel: "claude-3-5-haiku-latest" },
+  { id: "gemini",     label: "Google Gemini",     keyName: "GEMINI_API_KEY",     defaultModel: "gemini-2.0-flash" },
+  { id: "grok",       label: "Grok (xAI)",        keyName: "GROK_API_KEY",       defaultModel: "grok-2-latest" },
+];
+
+router.get("/admin/settings/fb-autoreply", requireSuperAdmin, async (_req: Request, res: Response) => {
+  const allRows = await db.select().from(integrationsTable);
+  const byName = Object.fromEntries(allRows.map(r => [r.name, r.value ?? ""]));
+  /* Resolve the *effective* provider/model the same way the runtime does, so
+     the UI never shows a different value than what would actually be used. */
+  const effective = await getFbAutoReplyConfig();
+  const providers = FB_AUTOREPLY_PROVIDERS.map(p => ({
+    id: p.id,
+    label: p.label,
+    defaultModel: FB_AUTOREPLY_DEFAULT_MODELS[p.id as keyof typeof FB_AUTOREPLY_DEFAULT_MODELS] ?? p.defaultModel,
+    keyName: p.keyName,
+    /* DB value first, env fallback — matches runtime resolver. */
+    keyConfigured: !!((byName[p.keyName] && byName[p.keyName].trim()) || process.env[p.keyName]),
+  }));
+  res.json({
+    provider: effective.provider,
+    model: effective.model,
+    providers,
+  });
+});
+
+router.post("/admin/settings/fb-autoreply", requireSuperAdmin, async (req: Request, res: Response) => {
+  const { provider, model } = req.body as { provider?: string; model?: string };
+  if (provider) {
+    if (!FB_AUTOREPLY_PROVIDERS.find(p => p.id === provider)) {
+      res.status(400).json({ error: `Unknown provider: ${provider}` });
+      return;
+    }
+    await upsertSetting("FB_AUTOREPLY_PROVIDER", provider, "Facebook Auto-Reply AI Provider");
+  }
+  if (model !== undefined) {
+    await upsertSetting("FB_AUTOREPLY_MODEL", model.trim(), "Facebook Auto-Reply AI Model");
+  }
   res.json({ ok: true });
 });
 
