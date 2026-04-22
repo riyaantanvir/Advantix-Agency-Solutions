@@ -8,7 +8,7 @@ import {
   facebookPagesTable, facebookMessagesTable, facebookAutoReplyRulesTable,
   integrationsTable,
 } from "@workspace/db/schema";
-import { eq, desc, and, count, sql, isNull } from "drizzle-orm";
+import { eq, desc, and, count, sql, isNull, inArray } from "drizzle-orm";
 import { requireToolUser } from "../middleware/toolAuth.js";
 import { requireAdmin } from "../middleware/auth.js";
 
@@ -512,7 +512,7 @@ router.get("/facebook/stats", requireToolUser, async (req: Request, res: Respons
       COUNT(*) FILTER (WHERE is_replied = true AND reply_type = 'template') AS template_replies,
       COUNT(*) FILTER (WHERE is_replied = false AND error IS NULL) AS pending_replies
     FROM facebook_messages
-    WHERE facebook_page_id = ANY(${pageIds})
+    WHERE facebook_page_id = ANY(${sql`ARRAY[${sql.join(pageIds.map(i => sql`${i}`), sql`, `)}]::int[]`})
   `);
   const s = (stats as any).rows[0];
   res.json({
@@ -554,7 +554,7 @@ router.get("/facebook/messages", requireToolUser, async (req: Request, res: Resp
     .innerJoin(facebookPagesTable, eq(facebookMessagesTable.facebookPageId, facebookPagesTable.id))
     .where(pageIdParam
       ? and(eq(facebookMessagesTable.facebookPageId, pageIdParam), eq(facebookPagesTable.toolUserId, uid))
-      : sql`${facebookMessagesTable.facebookPageId} = ANY(${pageIds})`
+      : inArray(facebookMessagesTable.facebookPageId, pageIds)
     )
     .orderBy(desc(facebookMessagesTable.receivedAt))
     .limit(limit);
@@ -575,7 +575,7 @@ router.get("/facebook/rules", requireToolUser, async (req: Request, res: Respons
   const rules = await db.select().from(facebookAutoReplyRulesTable)
     .where(pageIdParam
       ? eq(facebookAutoReplyRulesTable.facebookPageId, pageIdParam)
-      : sql`${facebookAutoReplyRulesTable.facebookPageId} = ANY(${pageIds})`
+      : inArray(facebookAutoReplyRulesTable.facebookPageId, pageIds)
     )
     .orderBy(desc(facebookAutoReplyRulesTable.priority), desc(facebookAutoReplyRulesTable.createdAt));
   res.json({ rules });
@@ -656,19 +656,60 @@ router.post("/facebook/check-now", requireToolUser, async (req: Request, res: Re
     .where(and(eq(facebookPagesTable.toolUserId, uid), eq(facebookPagesTable.isActive, true)));
   const targetPages = pageId ? pages.filter(p => p.id === pageId) : pages;
 
-  let newMessages = 0;
-  let repliedCount = 0;
+  /* Detailed per-page diagnostics so the user can SEE why auto-reply isn't
+     firing. Silent failures (no rules, no AI key, FB error, etc.) used to
+     get swallowed — now each page reports back its own status. */
+  type PageDiag = {
+    pageName: string;
+    pageId: string;
+    rulesCount: number;
+    activeRulesCount: number;
+    aiKeyConfigured: boolean;
+    fetchedMessages: number;
+    newMessages: number;
+    repliedCount: number;
+    matchedNoReply: number;
+    sendErrors: string[];
+    graphError?: string;
+  };
+  const aiKeyConfigured = !!(process.env.OPENROUTER_API_KEY ?? process.env.OPENAI_API_KEY);
+  const diags: PageDiag[] = [];
+  let totalNew = 0;
+  let totalReplied = 0;
 
   for (const page of targetPages) {
+    const diag: PageDiag = {
+      pageName: page.pageName, pageId: page.pageId,
+      rulesCount: 0, activeRulesCount: 0, aiKeyConfigured,
+      fetchedMessages: 0, newMessages: 0, repliedCount: 0, matchedNoReply: 0,
+      sendErrors: [],
+    };
+
+    /* Count rules so we can tell the user "you have no rules yet" — the #1
+       reason auto-reply silently does nothing. */
+    const allRules = await db.select().from(facebookAutoReplyRulesTable)
+      .where(eq(facebookAutoReplyRulesTable.facebookPageId, page.id));
+    diag.rulesCount = allRules.length;
+    diag.activeRulesCount = allRules.filter(r => r.isActive).length;
+
     try {
-      /* Fetch conversations from Graph API */
       const convRes = await fbGet(
         `/me/conversations?fields=messages{message,from,created_time,id}&limit=10`,
         page.pageAccessToken
-      ) as { data?: Array<{ messages?: { data?: Array<{ id: string; message: string; from: { id: string; name: string }; created_time: string }> } }> };
+      ) as {
+        data?: Array<{ messages?: { data?: Array<{ id: string; message: string; from: { id: string; name: string }; created_time: string }> } }>;
+        error?: { message?: string; code?: number; type?: string };
+      };
+
+      if (convRes.error) {
+        diag.graphError = `${convRes.error.type ?? "Error"} (${convRes.error.code ?? "?"}): ${convRes.error.message ?? "Unknown"}`;
+        diags.push(diag);
+        continue;
+      }
 
       for (const conv of convRes.data ?? []) {
         for (const msg of conv.messages?.data ?? []) {
+          diag.fetchedMessages++;
           if (msg.from.id === page.pageId) continue; /* skip page's own messages */
 
           const [existing] = await db.select({ id: facebookMessagesTable.id })
@@ -685,20 +726,30 @@ router.post("/facebook/check-now", requireToolUser, async (req: Request, res: Re
           }).onConflictDoNothing().returning();
 
           if (newMsg) {
-            newMessages++;
+            diag.newMessages++;
+            totalNew++;
             await processAndReply(page.id, newMsg.id, newMsg.messageText);
-            repliedCount++;
+
+            /* Re-read to discover whether processAndReply actually replied or
+               recorded an error — the function itself is fire-and-forget. */
+            const [after] = await db.select().from(facebookMessagesTable)
+              .where(eq(facebookMessagesTable.id, newMsg.id));
+            if (after?.isReplied) { diag.repliedCount++; totalReplied++; }
+            else if (after?.error) diag.sendErrors.push(after.error);
+            else diag.matchedNoReply++; /* no rule matched OR AI returned empty */
           }
         }
       }
 
       await db.update(facebookPagesTable).set({ lastCheckedAt: new Date() }).where(eq(facebookPagesTable.id, page.id));
     } catch (err) {
+      diag.graphError = err instanceof Error ? err.message : String(err);
       console.error(`[FB] Check failed for page ${page.pageName}:`, err);
     }
+    diags.push(diag);
   }
 
-  res.json({ ok: true, newMessages, repliedCount });
+  res.json({ ok: true, processed: totalNew, repliedCount: totalReplied, pages: diags });
 });
 
 /* ── Webhook URL info ─────────────────────────────────────────────────────── */

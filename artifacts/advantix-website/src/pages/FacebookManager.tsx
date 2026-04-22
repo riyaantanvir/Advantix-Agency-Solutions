@@ -89,6 +89,14 @@ export default function FacebookManager() {
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
   const [pageAccessTokenInput, setPageAccessTokenInput] = useState("");
   const [showTokenValue, setShowTokenValue] = useState(false);
+  const [checkResult, setCheckResult] = useState<null | {
+    processed: number; repliedCount: number;
+    pages: Array<{
+      pageName: string; pageId: string; rulesCount: number; activeRulesCount: number;
+      aiKeyConfigured: boolean; fetchedMessages: number; newMessages: number;
+      repliedCount: number; matchedNoReply: number; sendErrors: string[]; graphError?: string;
+    }>;
+  }>(null);
 
   const { data: pages = [], isLoading: loadingPages } = useQuery<FbPage[]>({
     queryKey: ["fb-pages"],
@@ -155,7 +163,11 @@ export default function FacebookManager() {
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["fb-messages"] });
       qc.invalidateQueries({ queryKey: ["fb-stats"] });
-      toast({ title: `Done — ${d.processed ?? 0} new messages processed` });
+      setCheckResult({
+        processed: d.processed ?? 0,
+        repliedCount: d.repliedCount ?? 0,
+        pages: d.pages ?? [],
+      });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -503,6 +515,91 @@ export default function FacebookManager() {
         )}
 
       </div>
+
+      {/* ── Check Now diagnostics dialog ──────────────────────────────────── */}
+      {checkResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => setCheckResult(null)}>
+          <Card className="w-full max-w-2xl p-6 border-border/40 bg-card max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start gap-3 mb-4">
+              <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+                checkResult.repliedCount > 0 ? "bg-green-500/10" : "bg-yellow-500/10")}>
+                {checkResult.repliedCount > 0
+                  ? <CheckCircle2 className="w-5 h-5 text-green-400" />
+                  : <AlertCircle className="w-5 h-5 text-yellow-400" />}
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold">Check Now — Results</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {checkResult.processed} new message(s) found · {checkResult.repliedCount} auto-replied
+                </p>
+              </div>
+            </div>
+
+            {checkResult.pages.length === 0 && (
+              <Card className="p-4 bg-yellow-500/5 border-yellow-500/30 text-sm">
+                No active pages connected. Connect a page first.
+              </Card>
+            )}
+
+            <div className="space-y-3">
+              {checkResult.pages.map((p) => {
+                const issues: string[] = [];
+                if (p.graphError) issues.push(`Facebook API error: ${p.graphError}`);
+                if (p.activeRulesCount === 0) issues.push(
+                  p.rulesCount === 0
+                    ? "No auto-reply rules created for this page yet — go to the Rules tab and create one."
+                    : "Rules exist but none are active. Toggle them on in the Rules tab."
+                );
+                if (!p.aiKeyConfigured && p.activeRulesCount > 0) issues.push(
+                  "AI reply mode needs an OpenAI/OpenRouter key configured by your admin. Template-mode rules will still work."
+                );
+                if (p.matchedNoReply > 0) issues.push(
+                  `${p.matchedNoReply} message(s) had no matching rule (or AI returned an empty response).`
+                );
+                if (p.sendErrors.length) issues.push(
+                  `Reply send failed: ${p.sendErrors[0]}`
+                );
+
+                return (
+                  <Card key={p.pageId} className="p-4 border-border/40">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Facebook className="w-4 h-4 text-blue-400" />
+                      <p className="font-semibold text-sm">{p.pageName}</p>
+                      <Badge variant="outline" className="text-[10px]">ID {p.pageId}</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground mb-2">
+                      <div>Rules: <span className="text-foreground">{p.activeRulesCount}/{p.rulesCount} active</span></div>
+                      <div>AI key: <span className={p.aiKeyConfigured ? "text-green-400" : "text-yellow-400"}>{p.aiKeyConfigured ? "configured" : "missing"}</span></div>
+                      <div>Fetched: <span className="text-foreground">{p.fetchedMessages} msg</span></div>
+                      <div>New + replied: <span className="text-foreground">{p.newMessages} new / {p.repliedCount} replied</span></div>
+                    </div>
+                    {issues.length === 0 ? (
+                      <div className="text-xs text-green-400 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5" />Looks healthy.
+                      </div>
+                    ) : (
+                      <ul className="text-xs space-y-1 mt-1">
+                        {issues.map((issue, i) => (
+                          <li key={i} className="flex items-start gap-1.5 text-yellow-300">
+                            <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                            <span>{issue}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end mt-5">
+              <Button onClick={() => setCheckResult(null)}>Close</Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* ── Token-based connect dialog ────────────────────────────────────── */}
       {tokenDialogOpen && (
