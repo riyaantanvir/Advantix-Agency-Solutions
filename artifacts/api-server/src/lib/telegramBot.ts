@@ -12,6 +12,7 @@ import { isAgentConnected, getAgentInfo, sendToolCall } from "./agentManager.js"
 import { sql, eq, desc } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { logger } from "./logger.js";
+import { transcribeAudio } from "./audioTranscribe.js";
 
 /* ── DB helper ─────────────────────────────────────────────────────────── */
 async function getIntegration(name: string): Promise<string | null> {
@@ -502,12 +503,37 @@ export async function startTelegramBot(): Promise<void> {
 
   bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
-    const text = msg.text?.trim();
+    let text = msg.text?.trim();
 
     /* Only respond to the owner */
     if (chatId !== ownerChatId) {
       await bot.sendMessage(chatId, "⛔ Unauthorized. This bot is private.").catch(() => {});
       return;
+    }
+
+    /* ── Voice / audio message → transcribe with Gemini Flash ────────────── */
+    const voiceOrAudio = msg.voice ?? msg.audio;
+    if (!text && voiceOrAudio) {
+      await bot.sendChatAction(chatId, "typing").catch(() => {});
+      try {
+        const fileLink = await bot.getFileLink(voiceOrAudio.file_id);
+        const audioRes = await fetch(fileLink);
+        if (!audioRes.ok) throw new Error(`Failed to download audio: ${audioRes.status}`);
+        const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+        /* Telegram voice notes are always OGG/OPUS; audio files can vary */
+        const mimeType = (msg.voice ? "audio/ogg" : (msg.audio?.mime_type ?? "audio/mpeg"));
+        text = await transcribeAudio(audioBuffer, mimeType);
+        if (!text) {
+          await bot.sendMessage(chatId, "⚠️ Voice message transcription returned empty. Please try again.");
+          return;
+        }
+        /* Echo the transcript so the user knows what was understood */
+        await bot.sendMessage(chatId, `🎤 _Transcribed:_ "${text}"`, { parse_mode: "Markdown" }).catch(() => {});
+      } catch (err) {
+        logger.error({ err }, "Voice transcription error");
+        await bot.sendMessage(chatId, `❌ Could not transcribe voice message: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
     }
 
     if (!text) return;

@@ -12,6 +12,7 @@ import { eq, desc, and, count, sql, isNull, inArray } from "drizzle-orm";
 import { requireToolUser } from "../middleware/toolAuth.js";
 import { requireAdmin } from "../middleware/auth.js";
 import { generateFbAutoReply, generateFbAutoReplyDetailed, getFbAutoReplyConfig } from "../lib/aiReply.js";
+import { transcribeAudio } from "../lib/audioTranscribe.js";
 
 const router = Router();
 
@@ -229,7 +230,14 @@ router.post("/facebook/webhook", async (req: Request, res: Response) => {
         sender: { id: string };
         recipient: { id: string };
         timestamp: number;
-        message?: { mid: string; text: string };
+        message?: {
+          mid: string;
+          text?: string;
+          attachments?: Array<{
+            type: string;
+            payload: { url?: string };
+          }>;
+        };
       }>;
     }>;
   };
@@ -244,7 +252,32 @@ router.post("/facebook/webhook", async (req: Request, res: Response) => {
     if (!fbPage) continue;
 
     for (const event of entry.messaging ?? []) {
-      if (!event.message?.text || event.sender.id === pageId) continue;
+      /* Skip echoes (page sending to itself) */
+      if (event.sender.id === pageId) continue;
+      const evMsg = event.message;
+      if (!evMsg) continue;
+
+      /* ── Resolve message text (typed or voice-transcribed) ──────────────── */
+      let messageText = evMsg.text ?? "";
+
+      if (!messageText) {
+        const audioAtt = evMsg.attachments?.find(a => a.type === "audio");
+        if (audioAtt?.payload?.url) {
+          try {
+            /* Facebook audio CDN URLs are public — no auth header needed */
+            const audioRes = await fetch(audioAtt.payload.url);
+            if (!audioRes.ok) throw new Error(`Audio download failed: ${audioRes.status}`);
+            const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+            messageText = await transcribeAudio(audioBuffer, "audio/mpeg");
+            if (!messageText) messageText = "[Voice message — could not transcribe]";
+          } catch (err) {
+            messageText = `[Voice message — transcription error: ${err instanceof Error ? err.message : String(err)}]`;
+          }
+        }
+      }
+
+      /* Skip if still no usable text (sticker, image, video, etc.) */
+      if (!messageText) continue;
 
       /* Get sender name */
       let senderName: string | null = null;
@@ -256,10 +289,10 @@ router.post("/facebook/webhook", async (req: Request, res: Response) => {
       /* Store message */
       const [msg] = await db.insert(facebookMessagesTable).values({
         facebookPageId: fbPage.id,
-        messageId: event.message.mid,
+        messageId: evMsg.mid,
         senderId: event.sender.id,
         senderName,
-        messageText: event.message.text,
+        messageText,
         receivedAt: new Date(event.timestamp),
       }).onConflictDoNothing().returning();
 
