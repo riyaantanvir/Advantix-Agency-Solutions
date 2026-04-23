@@ -49,12 +49,15 @@ router.get("/admin/personal-gpt/settings", requireAdmin, async (_req: Request, r
   try {
     const s = await loadSettings();
     res.json({
-      systemPrompt:      s.systemPrompt,
-      personality:       s.personality,
-      hasTelegramToken:  s.hasTelegramToken,
-      telegramChatId:    s.telegramChatId,
-      enabled:           s.enabled,
-      botRunning:        isPersonalGptBotRunning(),
+      systemPrompt:              s.systemPrompt,
+      personality:               s.personality,
+      hasTelegramToken:          s.hasTelegramToken,
+      telegramChatId:            s.telegramChatId,
+      enabled:                   s.enabled,
+      botRunning:                isPersonalGptBotRunning(),
+      taskRemindIntervalHours:   s.taskRemindIntervalHours,
+      workHoursStart:            s.workHoursStart,
+      workHoursEnd:              s.workHoursEnd,
     });
   } catch (err) {
     logger.error({ err }, "personal-gpt: load settings failed");
@@ -71,6 +74,9 @@ router.put("/admin/personal-gpt/settings", requireAdmin, async (req: Request, re
       telegramBotToken?: string | null;
       telegramChatId?: string | null;
       enabled?: boolean;
+      taskRemindIntervalHours?: number;
+      workHoursStart?: number;
+      workHoursEnd?: number;
     };
 
     const patch: Parameters<typeof updateSettings>[0] = {};
@@ -104,6 +110,15 @@ router.put("/admin/personal-gpt/settings", requireAdmin, async (req: Request, re
         res.status(400).json({ error: "Invalid Telegram chat ID (numeric, comma-separated for multiple)" });
         return;
       }
+    }
+    if (typeof body.taskRemindIntervalHours === "number" && body.taskRemindIntervalHours >= 1) {
+      patch.taskRemindIntervalHours = body.taskRemindIntervalHours;
+    }
+    if (typeof body.workHoursStart === "number") {
+      patch.workHoursStart = ((body.workHoursStart % 24) + 24) % 24;
+    }
+    if (typeof body.workHoursEnd === "number") {
+      patch.workHoursEnd = ((body.workHoursEnd % 24) + 24) % 24;
     }
 
     await updateSettings(patch);

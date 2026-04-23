@@ -29,6 +29,9 @@ type Settings = {
   telegramChatId: string | null;
   enabled: boolean;
   botRunning: boolean;
+  taskRemindIntervalHours: number;
+  workHoursStart: number;
+  workHoursEnd: number;
 };
 
 type Message = { id: string; role: "user" | "assistant"; content: string };
@@ -504,9 +507,13 @@ function SettingsPanel({ settings, toast, qc }: {
   const [enabled, setEnabled] = useState(true);
   const [tgToken, setTgToken] = useState("");           // empty unless user types a new one
   const [tgChatId, setTgChatId] = useState("");
+  const [taskRemindIntervalHours, setTaskRemindIntervalHours] = useState(2);
+  const [workHoursStart, setWorkHoursStart] = useState(15);
+  const [workHoursEnd, setWorkHoursEnd] = useState(4);
   const [savingPrompt, setSavingPrompt] = useState(false);
   const [savingPersonality, setSavingPersonality] = useState(false);
   const [savingTelegram, setSavingTelegram] = useState(false);
+  const [savingTaskAlert, setSavingTaskAlert] = useState(false);
   const [retraining, setRetraining] = useState(false);
 
   const retrainFromArchive = async () => {
@@ -567,6 +574,9 @@ function SettingsPanel({ settings, toast, qc }: {
     setPersonality(settings.personality ?? EMPTY_PERSONALITY);
     setEnabled(settings.enabled);
     setTgChatId(settings.telegramChatId ?? "");
+    setTaskRemindIntervalHours(settings.taskRemindIntervalHours ?? 2);
+    setWorkHoursStart(settings.workHoursStart ?? 15);
+    setWorkHoursEnd(settings.workHoursEnd ?? 4);
     /* tgToken intentionally NOT pre-filled — server never returns it */
   }, [settings]);
 
@@ -804,6 +814,100 @@ function SettingsPanel({ settings, toast, qc }: {
         <BackupRestoreCard toast={toast} qc={qc} />
 
         {/* Telegram */}
+        <Card className="p-5">
+          {/* ── Task Overdue Alert Settings ── */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center">
+              <Bell className="w-4 h-4 text-amber-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-sm">Task Overdue Alerts</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Overdue task থাকলে কতক্ষণ পর পর Telegram-এ alert পাঠাবে সেটা এখানে সেট করুন।
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                Alert interval (প্রতি কত ঘণ্টায় একবার)
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={24}
+                  step={1}
+                  value={taskRemindIntervalHours}
+                  onChange={e => setTaskRemindIntervalHours(Math.max(1, Math.round(Number(e.target.value))))}
+                  className="w-24 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-sm font-mono focus:outline-none focus:border-primary/50 text-center"
+                />
+                <span className="text-sm text-muted-foreground">ঘণ্টা পর পর alert</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                যেমন: <strong>2</strong> দিলে প্রতি ২ ঘণ্টায় একবার overdue tasks-এর remind আসবে।
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-2 block flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" /> Active hours (এই সময়ের মধ্যেই alert পাঠাবে)
+              </label>
+              <div className="flex items-center gap-3">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] text-muted-foreground">শুরু (hour, 0–23)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={workHoursStart}
+                    onChange={e => setWorkHoursStart(Math.min(23, Math.max(0, Math.round(Number(e.target.value)))))}
+                    className="w-20 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-sm font-mono focus:outline-none focus:border-primary/50 text-center"
+                  />
+                </div>
+                <span className="text-muted-foreground mt-4">→</span>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] text-muted-foreground">শেষ (hour, 0–23)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
+                    value={workHoursEnd}
+                    onChange={e => setWorkHoursEnd(Math.min(23, Math.max(0, Math.round(Number(e.target.value)))))}
+                    className="w-20 px-3 py-2 bg-secondary/50 border border-border/50 rounded-lg text-sm font-mono focus:outline-none focus:border-primary/50 text-center"
+                  />
+                </div>
+                <div className="mt-4 text-[11px] text-muted-foreground">
+                  {workHoursStart > workHoursEnd
+                    ? `(${workHoursStart}:00 → পরের দিন ${workHoursEnd}:00)`
+                    : `(${workHoursStart}:00 → ${workHoursEnd}:00)`}
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1.5">
+                Default: <strong>15:00 → 4:00</strong> (রাত ৩টা পর্যন্ত active)। এর বাইরে কোনো alert যাবে না।
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <Button
+              size="sm"
+              onClick={() => save(
+                { taskRemindIntervalHours, workHoursStart, workHoursEnd },
+                setSavingTaskAlert,
+                "Task alert settings saved"
+              )}
+              disabled={savingTaskAlert}
+              className="gap-1.5"
+            >
+              {savingTaskAlert ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              Save Alert Settings
+            </Button>
+          </div>
+        </Card>
+
+        {/* ── Telegram Connection ── */}
         <Card className="p-5">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-9 h-9 rounded-lg bg-sky-500/10 flex items-center justify-center">

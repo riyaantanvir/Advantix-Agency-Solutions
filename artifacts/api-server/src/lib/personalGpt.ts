@@ -123,9 +123,10 @@ function normalizePersonality(input: unknown): Personality {
   };
 }
 
-export async function loadSettings(): Promise<PersonalGptSettings & { telegramBotToken: string | null }> {
+export async function loadSettings(): Promise<PersonalGptSettings & { telegramBotToken: string | null; taskRemindIntervalHours: number; workHoursStart: number; workHoursEnd: number }> {
   const r = await db.execute(sql`
-    SELECT system_prompt, personality, telegram_bot_token, telegram_chat_id, enabled
+    SELECT system_prompt, personality, telegram_bot_token, telegram_chat_id, enabled,
+           task_remind_interval_hours, work_hours_start, work_hours_end
     FROM personal_gpt_settings WHERE id = 1
   `);
   const row = r.rows[0] as {
@@ -134,6 +135,9 @@ export async function loadSettings(): Promise<PersonalGptSettings & { telegramBo
     telegram_bot_token: string | null;
     telegram_chat_id: string | null;
     enabled: boolean;
+    task_remind_interval_hours: number | null;
+    work_hours_start: number | null;
+    work_hours_end: number | null;
   } | undefined;
   if (!row) {
     return {
@@ -143,6 +147,9 @@ export async function loadSettings(): Promise<PersonalGptSettings & { telegramBo
       hasTelegramToken: false,
       telegramChatId: null,
       enabled: true,
+      taskRemindIntervalHours: 2,
+      workHoursStart: 15,
+      workHoursEnd: 4,
     };
   }
   return {
@@ -152,17 +159,22 @@ export async function loadSettings(): Promise<PersonalGptSettings & { telegramBo
     hasTelegramToken: Boolean(row.telegram_bot_token),
     telegramChatId: row.telegram_chat_id,
     enabled: Boolean(row.enabled),
+    taskRemindIntervalHours: Math.max(1, Number(row.task_remind_interval_hours ?? 2)),
+    workHoursStart: Number(row.work_hours_start ?? 15),
+    workHoursEnd: Number(row.work_hours_end ?? 4),
   };
 }
 
 export async function updateSettings(patch: {
   systemPrompt?: string;
   personality?: Personality;
-  telegramBotToken?: string | null;  // null = clear, undefined = leave as is
+  telegramBotToken?: string | null;
   telegramChatId?: string | null;
   enabled?: boolean;
+  taskRemindIntervalHours?: number;
+  workHoursStart?: number;
+  workHoursEnd?: number;
 }): Promise<void> {
-  /* We build a partial UPDATE so unspecified fields stay untouched. */
   const sets: ReturnType<typeof sql>[] = [];
   if (patch.systemPrompt !== undefined) {
     sets.push(sql`system_prompt = ${patch.systemPrompt}`);
@@ -179,6 +191,15 @@ export async function updateSettings(patch: {
   }
   if (patch.enabled !== undefined) {
     sets.push(sql`enabled = ${patch.enabled}`);
+  }
+  if (patch.taskRemindIntervalHours !== undefined) {
+    sets.push(sql`task_remind_interval_hours = ${Math.max(1, Math.round(patch.taskRemindIntervalHours))}`);
+  }
+  if (patch.workHoursStart !== undefined) {
+    sets.push(sql`work_hours_start = ${patch.workHoursStart}`);
+  }
+  if (patch.workHoursEnd !== undefined) {
+    sets.push(sql`work_hours_end = ${patch.workHoursEnd}`);
   }
   if (!sets.length) return;
   sets.push(sql`updated_at = now()`);
