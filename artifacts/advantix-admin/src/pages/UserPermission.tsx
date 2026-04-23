@@ -44,6 +44,7 @@ const TOOL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = 
   "advantix-assistant":   Terminal,
   "facebook-auto-reply":  Facebook,
   "social-media-manager": Share2,
+  "project-management":   FolderKanban,
 };
 const TOOL_COLORS: Record<string, string> = {
   "url-shortener":        "text-blue-400 bg-blue-500/10",
@@ -53,6 +54,7 @@ const TOOL_COLORS: Record<string, string> = {
   "advantix-assistant":   "text-green-400 bg-green-500/10",
   "facebook-auto-reply":  "text-blue-400 bg-blue-500/10",
   "social-media-manager": "text-cyan-400 bg-cyan-500/10",
+  "project-management":   "text-cyan-400 bg-cyan-500/10",
 };
 
 function ToolToggle({ slug, name, enabled, onChange }: { slug: string; name: string; enabled: boolean; onChange: (v: boolean) => void }) {

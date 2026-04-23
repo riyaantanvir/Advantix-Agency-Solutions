@@ -16,6 +16,7 @@ export const ALL_TOOLS = [
   { slug: "facebook-auto-reply",      name: "Facebook Auto-Reply",        description: "Auto-reply to Facebook comments and DMs" },
   { slug: "finance",                  name: "Finance Management",         description: "Track income, expenses, planned payments and subscriptions" },
   { slug: "whatsapp",                 name: "WhatsApp Assistant",         description: "Connect WhatsApp and chat with the assistant from any phone" },
+  { slug: "project-management",       name: "Manage Your Project",        description: "Multi-tenant workspaces with projects, tasks, board, comments, members and Telegram alerts" },
 ];
 
 export const ALL_TOOL_SLUGS = ALL_TOOLS.map(t => t.slug);
