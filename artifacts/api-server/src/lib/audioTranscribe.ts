@@ -1,73 +1,78 @@
 /**
- * Audio transcription using Gemini Flash multimodal.
- * Accepts a Buffer of audio data + MIME type, returns the transcript string.
- * Used by both the Telegram Personal GPT bot and the Facebook webhook handler.
+ * Audio transcription using OpenRouter → google/gemini-2.0-flash (multimodal).
+ * Reuses the existing OPENROUTER_API_KEY — no separate Gemini key needed.
  */
 
 import { db } from "@workspace/db";
 import { integrationsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 
-async function getGeminiKey(): Promise<string | null> {
+async function getOpenRouterKey(): Promise<string | null> {
   try {
-    const [row] = await db.select().from(integrationsTable).where(eq(integrationsTable.name, "GEMINI_API_KEY"));
+    const [row] = await db.select().from(integrationsTable).where(eq(integrationsTable.name, "OPENROUTER_API_KEY"));
     const v = row?.value?.trim();
     if (v) return v;
   } catch { /* fall through */ }
-  return process.env.GEMINI_API_KEY?.trim() ?? null;
+  return process.env.OPENROUTER_API_KEY?.trim() ?? null;
 }
 
-const TRANSCRIBE_MODEL = "gemini-2.0-flash";
-
 /**
- * Transcribe audio using Gemini Flash.
+ * Transcribe audio using OpenRouter → Gemini 2.0 Flash (multimodal).
  * @param audioBuffer  Raw audio bytes
- * @param mimeType     e.g. "audio/ogg", "audio/mpeg", "audio/mp4", "audio/webm"
- * @returns Transcript string, or empty string on failure
+ * @param mimeType     e.g. "audio/ogg", "audio/mpeg", "audio/mp4"
+ * @returns Transcript string, or throws on failure
  */
 export async function transcribeAudio(audioBuffer: Buffer, mimeType: string): Promise<string> {
-  const apiKey = await getGeminiKey();
+  const apiKey = await getOpenRouterKey();
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY not configured. Set it in Admin → Integrations.");
+    throw new Error("OPENROUTER_API_KEY not configured.");
   }
 
   const base64Audio = audioBuffer.toString("base64");
 
   const payload = {
-    contents: [{
-      parts: [
-        {
-          inlineData: {
-            mimeType,
-            data: base64Audio,
+    model: "google/gemini-2.0-flash",
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:${mimeType};base64,${base64Audio}`,
+            },
           },
-        },
-        {
-          text: "Please transcribe this voice message exactly as spoken. " +
-                "The speaker may use Bangla, Banglish (Bangla written in English letters), or English — " +
-                "transcribe in the exact language and script used. " +
-                "Return ONLY the transcript with no extra commentary, labels, or formatting.",
-        },
-      ],
-    }],
-    generationConfig: { maxOutputTokens: 1024 },
+          {
+            type: "text",
+            text:
+              "Please transcribe this voice message exactly as spoken. " +
+              "The speaker may use Bangla, Banglish (Bangla in English letters), or English — " +
+              "transcribe in the exact language and script used. " +
+              "Return ONLY the transcript, no extra commentary or labels.",
+          },
+        ],
+      },
+    ],
+    max_tokens: 1024,
   };
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${TRANSCRIBE_MODEL}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }
-  );
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://advantix.digital",
+      "X-Title": "Advantix Voice Transcription",
+    },
+    body: JSON.stringify(payload),
+  });
 
-  const data = await res.json() as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  const data = (await res.json()) as {
+    choices?: Array<{ message: { content: string } }>;
     error?: { message?: string };
   };
 
-  if (data.error) throw new Error(`Gemini transcription error: ${data.error.message}`);
+  if (data.error) throw new Error(`OpenRouter transcription error: ${data.error.message}`);
 
-  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+  return data.choices?.[0]?.message?.content?.trim() ?? "";
 }
