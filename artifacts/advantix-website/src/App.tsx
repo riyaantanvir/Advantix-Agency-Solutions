@@ -368,10 +368,16 @@ function Router() {
               <Route path="/tools/finance">
                 <ToolGuard slug="finance"><FinancePage /></ToolGuard>
               </Route>
-              <Route path="/tools/project-management/:rest*">
+              <Route path="/tools/project-management">
                 <ToolGuard slug="project-management"><ProjectManagement /></ToolGuard>
               </Route>
-              <Route path="/tools/project-management">
+              <Route path="/tools/project-management/projects/:id">
+                <ToolGuard slug="project-management"><ProjectManagement /></ToolGuard>
+              </Route>
+              <Route path="/tools/project-management/members">
+                <ToolGuard slug="project-management"><ProjectManagement /></ToolGuard>
+              </Route>
+              <Route path="/tools/project-management/telegram">
                 <ToolGuard slug="project-management"><ProjectManagement /></ToolGuard>
               </Route>
               <Route path="/tools/workspace/join/:code"><WorkspaceQuickJoinPage /></Route>
