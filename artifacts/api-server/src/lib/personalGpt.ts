@@ -1138,42 +1138,139 @@ export async function deleteTask(id: number): Promise<boolean> {
   return r.rows.length > 0;
 }
 
+export type TaskActionIntent =
+  | { action: "done" | "cancel"; scope: "all" }
+  | { action: "done" | "cancel"; scope: "ids"; ids: number[] }
+  | { action: "done" | "cancel"; scope: "name"; query: string };
+
 /**
- * Detect natural-language task-completion intent.
- * Returns { type:"all" } when the user wants ALL pending tasks done,
- * { type:"specific", ids:number[] } for named IDs, or null if not a done-intent.
+ * Detect natural-language task done/cancel intent.
+ * Handles:
+ *   - ALL tasks:  "sob done", "all done", "sob task cancel", "all cancel"
+ *   - By ID:     "1 done", "#2 cancel", "done 3", "1 2 cancel"
+ *   - By name:   "bazar done", "bazarer task cancel", "admission card print korte hobe done"
  *
- * Examples that match:
- *   "sob done" / "all done" / "sob task done" / "all tasks done"
- *   "1 done" / "task 1 done" / "#1 done" / "done 1" / "1 2 3 done"
- *   "bazar done" / "1 ar 2 done" (Bangla mix)
+ * Returns null if the text doesn't look like a task action.
  */
-export function detectTaskCompletionIntent(
-  text: string,
-): { type: "all" } | { type: "specific"; ids: number[] } | null {
-  const t = text.trim().toLowerCase();
+export function detectTaskActionIntent(text: string): TaskActionIntent | null {
+  const t = text.trim();
+  const tl = t.toLowerCase();
 
-  /* ── ALL-tasks variants ─────────────────────────────────────────────── */
+  /* ── helpers ─────────────────────────────────────────────────────────── */
+  const doneWords   = /\b(done|complete[d]?|finish(ed)?|sesh|শেষ|হয়ে গেছে|hoyeche|hoye gache|hoye geche)\b/i;
+  const cancelWords = /\b(cancel(led)?|drop|remove|delete|na\s*hobe|bad\s*di|badh?\s*daw?|বাদ|বাতিল|batil|cancel\s*kore?\s*(di|dao|daw|de)?)\b/i;
+
+  const isDone   = doneWords.test(tl);
+  const isCancel = cancelWords.test(tl);
+  if (!isDone && !isCancel) return null;
+
+  const action: "done" | "cancel" = isCancel ? "cancel" : "done";
+
+  /* ── ALL scope ───────────────────────────────────────────────────────── */
   const allPatterns = [
-    /\b(sob|all|sab|shob|shovb?)\s*(task|kaj|gulo|gula|guli)?\s*(done|complete[d]?|finish(ed)?|sesh|শেষ)\b/i,
-    /\b(done|complete|finish)\s*(all|sob|sab|shob)\b/i,
-    /\b(all|sob|sab)\s*done\b/i,
-    /\bmark\s*(all|sob|sab)?\s*(tasks?)?\s*(as\s*)?(done|complete)\b/i,
-    /\bsob\s*gulo\s*(done|sesh|complete)\b/i,
+    /\b(sob|all|sab|shob)\s*(task|kaj|gulo|gula|guli|টা|গুলো)?\b/i,
+    /\bmark\s*(all|sob|sab)?\s*(tasks?)?\s*(as\s*)?(done|cancel)/i,
+    /\bsob\s*gulo\b/i,
   ];
-  if (allPatterns.some(p => p.test(t))) return { type: "all" };
+  if (allPatterns.some(p => p.test(tl))) return { action, scope: "all" };
 
-  /* ── SPECIFIC IDs ───────────────────────────────────────────────────── */
-  /* e.g. "1 done", "#2 done", "done 3", "task 1 done", "1 2 3 done", "1 ar 2 done" */
-  const specificPattern =
-    /(?:^|task[s#]?\s*)(?:#?\d+(?:\s*(?:,|ar|and|o|&|\s)\s*#?\d+)*)\s*(?:done|complete[d]?|finish(ed)?|sesh)\b/i;
-  const specificPatternRev =
-    /\b(?:done|complete[d]?|finish(ed)?)\s*(?:task[s#]?\s*)?(?:#?\d+(?:\s*(?:,|ar|and|o|&|\s)\s*#?\d+)*)/i;
+  /* ── By ID scope ─────────────────────────────────────────────────────── */
+  /* matches: "1 done", "#2 cancel", "task 1 2 done", "1 ar 2 cancel" */
+  const idPattern = /(?:task[s#\s]*)?(?:#?\d+(?:\s*(?:,|ar|and|o|&|\s)\s*#?\d+)+)|(?:task[s#]?\s*#?\d+)|(?:^#?\d+\s)/i;
+  const idMatch = tl.match(idPattern);
+  if (idMatch) {
+    const ids = [...(idMatch[0].matchAll(/\d+/g))].map(m => Number(m[0]));
+    if (ids.length) return { action, scope: "ids", ids };
+  }
+  /* single number before/after the action word */
+  const singleId = tl.match(/(?:^|\s)#?(\d+)(?:\s|$)/);
+  if (singleId) {
+    return { action, scope: "ids", ids: [Number(singleId[1])] };
+  }
 
-  let match = t.match(specificPattern) ?? t.match(specificPatternRev);
-  if (match) {
-    const ids = [...(match[0].matchAll(/\d+/g))].map(m => Number(m[0]));
-    if (ids.length) return { type: "specific", ids };
+  /* ── By name scope ───────────────────────────────────────────────────── */
+  /* Strip the action word and task/er/ke noise, use what remains as search query */
+  const stripped = t
+    .replace(/\b(done|complete[d]?|finish(ed)?|sesh|cancel(led)?|drop|remove|delete|na\s*hobe|batil|বাতিল|বাদ|bad\s*di|hoyeche|hoye gache)\b/gi, "")
+    .replace(/\b(task|kaj|kaaj|টা|টি|ta|ti|er|ke|kore|daw|dao|de|koro)\b/gi, "")
+    .replace(/[#\d]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (stripped.length >= 2) return { action, scope: "name", query: stripped };
+
+  return null;
+}
+
+/** @deprecated use detectTaskActionIntent */
+export function detectTaskCompletionIntent(text: string): { type: "all" } | { type: "specific"; ids: number[] } | null {
+  const r = detectTaskActionIntent(text);
+  if (!r || r.action !== "done") return null;
+  if (r.scope === "all") return { type: "all" };
+  if (r.scope === "ids") return { type: "specific", ids: r.ids };
+  return null;
+}
+
+/** Given a list of pending tasks and a name query, return the best matches (fuzzy). */
+export function findTasksByName(tasks: Task[], query: string): Task[] {
+  const q = query.toLowerCase().trim();
+  if (!q) return [];
+  const exact = tasks.filter(t => t.title.toLowerCase().includes(q));
+  if (exact.length) return exact;
+  const words = q.split(/\s+/).filter(w => w.length >= 2);
+  return tasks.filter(t => words.some(w => t.title.toLowerCase().includes(w)));
+}
+
+/**
+ * Execute a task action intent (done/cancel) against the DB.
+ * Returns a human-readable reply string, or null if nothing matched.
+ */
+export async function executeTaskActionIntent(intent: TaskActionIntent): Promise<string | null> {
+  const act = intent.action;
+  const applyAction = (id: number) =>
+    act === "done" ? completeTask(id) : cancelTask(id);
+  const doneEmoji   = act === "done" ? "✅" : "🗑️";
+  const doneLabel   = act === "done" ? "done" : "cancelled";
+  const doneLabelBn = act === "done" ? "done করা হয়েছে" : "cancel করা হয়েছে";
+
+  if (intent.scope === "all") {
+    const pending = await listTasks({ status: "pending", limit: 100 }).catch(() => [] as Task[]);
+    if (!pending.length) return `কোনো pending task নেই, সব already clear! ✅`;
+    const acted: Task[] = [];
+    for (const t of pending) {
+      const r = await applyAction(t.id).catch(() => null);
+      if (r) acted.push(r);
+    }
+    if (!acted.length) return null;
+    return `${doneEmoji} ${acted.length}টা task সব ${doneLabelBn}:\n` +
+      acted.map(t => `• #${t.id} — ${t.title}`).join("\n");
+  }
+
+  if (intent.scope === "ids") {
+    const results: { id: number; task: Task | null }[] = [];
+    for (const id of intent.ids) {
+      results.push({ id, task: await applyAction(id).catch(() => null) });
+    }
+    const ok = results.filter(r => r.task !== null);
+    const missing = results.filter(r => r.task === null);
+    let reply = "";
+    if (ok.length) reply += `${doneEmoji} ${doneLabel.charAt(0).toUpperCase() + doneLabel.slice(1)}: ${ok.map(r => `${r.task!.title} (#${r.id})`).join(", ")}`;
+    if (missing.length) reply += `\n⚠️ Task not found: ${missing.map(r => `#${r.id}`).join(", ")}`;
+    return reply.trim() || null;
+  }
+
+  if (intent.scope === "name") {
+    const pending = await listTasks({ status: "pending", limit: 100 }).catch(() => [] as Task[]);
+    const matched = findTasksByName(pending, intent.query);
+    if (!matched.length) {
+      return `⚠️ "${intent.query}" নামে কোনো pending task পাইনি। \`/tasks\` দিয়ে list দেখুন।`;
+    }
+    const acted: Task[] = [];
+    for (const t of matched) {
+      const r = await applyAction(t.id).catch(() => null);
+      if (r) acted.push(r);
+    }
+    if (!acted.length) return null;
+    return `${doneEmoji} ${acted.map(t => `*${t.title}* (#${t.id})`).join(", ")} — ${doneLabelBn}`;
   }
 
   return null;
@@ -2490,38 +2587,12 @@ export async function runPersonalGptTurn(userText: string, opts: TurnOptions): P
   const settings = await loadSettings();
   if (!settings.enabled) throw new Error("Personal GPT is disabled in settings");
 
-  /* ── Natural-language task completion (web + non-Telegram chat) ─────────
-     Catches "sob done", "1 done", "all tasks done" etc. before sending to the
-     main LLM — so the action actually happens in the DB instead of the AI
-     just saying "okay done" without doing anything. */
-  const nlDone = detectTaskCompletionIntent(userText);
-  if (nlDone) {
-    let reply = "";
-    if (nlDone.type === "all") {
-      const pending = await listTasks({ status: "pending", limit: 100 }).catch(() => [] as Task[]);
-      if (!pending.length) {
-        reply = "কোনো pending task নেই, সব already clear! ✅";
-      } else {
-        const completed: Task[] = [];
-        for (const t of pending) {
-          const done = await completeTask(t.id).catch(() => null);
-          if (done) completed.push(done);
-        }
-        reply = `✅ ${completed.length}টা task সব done করা হয়েছে:\n` +
-          completed.map(t => `• #${t.id} — ${t.title}`).join("\n");
-      }
-    } else {
-      const results: { id: number; task: Task | null }[] = [];
-      for (const id of nlDone.ids) {
-        const done = await completeTask(id).catch(() => null);
-        results.push({ id, task: done });
-      }
-      const ok = results.filter(r => r.task !== null);
-      const missing = results.filter(r => r.task === null);
-      if (ok.length) reply += `✅ Done: ${ok.map(r => `${r.task!.title} (#${r.id})`).join(", ")}`;
-      if (missing.length) reply += `\n⚠️ Task not found: ${missing.map(r => `#${r.id}`).join(", ")}`;
-      reply = reply.trim();
-    }
+  /* ── Natural-language task done/cancel (web chat) ───────────────────────
+     Catches "sob done", "bazar cancel", "1 done", "sob task cancel" etc.
+     BEFORE the main LLM so the action actually hits the DB. */
+  const nlIntent = detectTaskActionIntent(userText);
+  if (nlIntent) {
+    const reply = await executeTaskActionIntent(nlIntent).catch(() => null);
     if (reply) {
       if (opts.persist) {
         await appendTurn("user", userText, opts.source).catch(() => {});
@@ -2610,35 +2681,10 @@ export async function runPersonalGptTurnStream(
     const settings = await loadSettings();
     if (!settings.enabled) throw new Error("Personal GPT is disabled in settings");
 
-    /* ── Natural-language task completion (streaming path) ──────────────── */
-    const nlDoneStream = detectTaskCompletionIntent(userText);
-    if (nlDoneStream) {
-      let reply = "";
-      if (nlDoneStream.type === "all") {
-        const pending = await listTasks({ status: "pending", limit: 100 }).catch(() => [] as Task[]);
-        if (!pending.length) {
-          reply = "কোনো pending task নেই, সব already clear! ✅";
-        } else {
-          const completed: Task[] = [];
-          for (const t of pending) {
-            const done = await completeTask(t.id).catch(() => null);
-            if (done) completed.push(done);
-          }
-          reply = `✅ ${completed.length}টা task সব done করা হয়েছে:\n` +
-            completed.map(t => `• #${t.id} — ${t.title}`).join("\n");
-        }
-      } else {
-        const results: { id: number; task: Task | null }[] = [];
-        for (const id of nlDoneStream.ids) {
-          const done = await completeTask(id).catch(() => null);
-          results.push({ id, task: done });
-        }
-        const ok = results.filter(r => r.task !== null);
-        const missing = results.filter(r => r.task === null);
-        if (ok.length) reply += `✅ Done: ${ok.map(r => `${r.task!.title} (#${r.id})`).join(", ")}`;
-        if (missing.length) reply += `\n⚠️ Task not found: ${missing.map(r => `#${r.id}`).join(", ")}`;
-        reply = reply.trim();
-      }
+    /* ── Natural-language task done/cancel (streaming path) ─────────────── */
+    const nlIntentStream = detectTaskActionIntent(userText);
+    if (nlIntentStream) {
+      const reply = await executeTaskActionIntent(nlIntentStream).catch(() => null);
       if (reply) {
         onEvent({ type: "chunk", text: reply });
         await appendTurn("user", userText, source).catch(() => {});
@@ -3114,45 +3160,17 @@ export async function startPersonalGptBot(): Promise<void> {
         return;
       }
 
-      /* ── Natural-language task completion ─────────────────────────────
-         Handles "sob done", "all done", "1 done", "task 2 done", etc.
-         without requiring the user to type a slash command. */
-      const nlDoneIntent = detectTaskCompletionIntent(text);
-      if (nlDoneIntent) {
-        if (nlDoneIntent.type === "all") {
-          const pending = await listTasks({ status: "pending", limit: 100 }).catch(() => [] as Task[]);
-          if (!pending.length) {
-            await bot.sendMessage(chatId, "✅ কোনো pending task নেই, সব clear!", { parse_mode: "Markdown" }).catch(() => {});
-            return;
-          }
-          const completed: Task[] = [];
-          for (const t of pending) {
-            const done = await completeTask(t.id).catch(() => null);
-            if (done) completed.push(done);
-          }
-          const lines = completed.map(t => `• #${t.id} — *${t.title}*`).join("\n");
-          await bot.sendMessage(chatId, `✅ *${completed.length}টা task সব done করা হয়েছে:*\n${lines}`, { parse_mode: "Markdown" }).catch(() => {});
+      /* ── Natural-language task done/cancel ────────────────────────────
+         Handles "sob done", "bazar cancel", "1 done", "sob task cancel" etc.
+         without requiring slash commands. */
+      const nlTgIntent = detectTaskActionIntent(text);
+      if (nlTgIntent) {
+        const reply = await executeTaskActionIntent(nlTgIntent).catch(() => null);
+        if (reply) {
+          await bot.sendMessage(chatId, reply, { parse_mode: "Markdown" }).catch(() => {});
           await appendTurn("user", text, "telegram").catch(() => {});
-          await appendTurn("assistant", `[Marked ${completed.length} task(s) as done: ${completed.map(t => `#${t.id}`).join(", ")}]`, "telegram").catch(() => {});
+          await appendTurn("assistant", `[Task action: ${reply.replace(/\*/g, "")}]`, "telegram").catch(() => {});
           return;
-        }
-        if (nlDoneIntent.type === "specific") {
-          const results: { id: number; task: Task | null }[] = [];
-          for (const id of nlDoneIntent.ids) {
-            const done = await completeTask(id).catch(() => null);
-            results.push({ id, task: done });
-          }
-          const ok = results.filter(r => r.task !== null);
-          const missing = results.filter(r => r.task === null);
-          let reply = "";
-          if (ok.length) reply += `✅ Done: ${ok.map(r => `*${r.task!.title}* (#${r.id})`).join(", ")}`;
-          if (missing.length) reply += `\n⚠️ Not found: ${missing.map(r => `#${r.id}`).join(", ")}`;
-          if (reply) {
-            await bot.sendMessage(chatId, reply.trim(), { parse_mode: "Markdown" }).catch(() => {});
-            await appendTurn("user", text, "telegram").catch(() => {});
-            await appendTurn("assistant", `[Task completion: ${reply.replace(/\*/g, "")}]`, "telegram").catch(() => {});
-            return;
-          }
         }
       }
     }
