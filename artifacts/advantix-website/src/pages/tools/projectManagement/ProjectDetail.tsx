@@ -61,6 +61,14 @@ export function ProjectDetail({ projectId }: { projectId: number }) {
     } catch (e) { toast.error((e as Error).message); }
   }
 
+  async function quickAddInColumn(title: string, status: TaskStatus) {
+    if (!current) return;
+    try {
+      await workspaceApi.createTask(current.id, { title, projectId, status });
+      load();
+    } catch (e) { toast.error((e as Error).message); }
+  }
+
   async function moveTask(taskId: number, status: TaskStatus) {
     if (!current) return;
     setTasks(ts => ts.map(t => t.id === taskId ? { ...t, status } : t));
@@ -112,6 +120,7 @@ export function ProjectDetail({ projectId }: { projectId: number }) {
         <ListView tasks={tasks} onOpen={setOpenTask} onMove={moveTask} />
       ) : (
         <BoardView tasks={tasks} onOpen={setOpenTask} onMove={moveTask}
+          onQuickAdd={quickAddInColumn}
           draggingId={draggingId} setDraggingId={setDraggingId} />
       )}
 
@@ -163,11 +172,19 @@ function ListView({ tasks, onOpen, onMove }: { tasks: WorkspaceTask[]; onOpen: (
 }
 
 /* ── BOARD VIEW (HTML5 drag-and-drop) ─────────────────────────────── */
-function BoardView({ tasks, onOpen, onMove, draggingId, setDraggingId }: {
+function BoardView({ tasks, onOpen, onMove, onQuickAdd, draggingId, setDraggingId }: {
   tasks: WorkspaceTask[]; onOpen: (t: WorkspaceTask) => void;
   onMove: (id: number, s: TaskStatus) => void;
+  onQuickAdd: (title: string, status: TaskStatus) => Promise<void> | void;
   draggingId: number | null; setDraggingId: (id: number | null) => void;
 }) {
+  const [adding, setAdding] = useState<TaskStatus | null>(null);
+  const [draft, setDraft] = useState("");
+  async function commit(s: TaskStatus) {
+    const t = draft.trim();
+    if (t) await onQuickAdd(t, s);
+    setDraft(""); setAdding(null);
+  }
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
       {STATUSES.map(col => {
@@ -182,6 +199,25 @@ function BoardView({ tasks, onOpen, onMove, draggingId, setDraggingId }: {
               <span className="text-xs text-muted-foreground">{colTasks.length}</span>
             </div>
             <div className="space-y-1.5">
+              {adding === col.id ? (
+                <div className="space-y-1">
+                  <Input
+                    autoFocus value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") commit(col.id); if (e.key === "Escape") { setDraft(""); setAdding(null); } }}
+                    placeholder="Task title…" className="h-8 text-xs" />
+                  <div className="flex gap-1">
+                    <Button size="sm" className="h-7 text-xs flex-1" onClick={() => commit(col.id)}>Add</Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setDraft(""); setAdding(null); }}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setAdding(col.id)}
+                  className="w-full text-left text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded border border-dashed border-border/40 hover:border-primary/40 hover:bg-muted/30 transition-colors">
+                  + Add task
+                </button>
+              )}
               {colTasks.map(t => (
                 <Card key={t.id}
                   draggable
