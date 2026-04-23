@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { ArrowLeft, Plus, LayoutList, KanbanSquare, MessageSquare, Trash2, Calendar, User as UserIcon, X } from "lucide-react";
+import { ArrowLeft, Plus, LayoutList, KanbanSquare, MessageSquare, Trash2, Calendar, User as UserIcon, X, Send, Flag, UserCircle2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,10 +62,10 @@ export function ProjectDetail({ projectId }: { projectId: number }) {
     } catch (e) { toast.error((e as Error).message); }
   }
 
-  async function quickAddInColumn(title: string, status: TaskStatus) {
+  async function quickAddInColumn(data: { title: string; status: TaskStatus; priority?: TaskPriority; assignedToToolUserId?: number | null; dueDate?: string | null; }) {
     if (!current) return;
     try {
-      await workspaceApi.createTask(current.id, { title, projectId, status });
+      await workspaceApi.createTask(current.id, { ...data, projectId });
       load();
     } catch (e) { toast.error((e as Error).message); }
   }
@@ -119,7 +120,7 @@ export function ProjectDetail({ projectId }: { projectId: number }) {
       {view === "list" ? (
         <ListView tasks={tasks} onOpen={setOpenTask} onMove={moveTask} />
       ) : (
-        <BoardView tasks={tasks} onOpen={setOpenTask} onMove={moveTask}
+        <BoardView tasks={tasks} members={members} onOpen={setOpenTask} onMove={moveTask}
           onQuickAdd={quickAddInColumn}
           draggingId={draggingId} setDraggingId={setDraggingId} />
       )}
@@ -171,20 +172,107 @@ function ListView({ tasks, onOpen, onMove }: { tasks: WorkspaceTask[]; onOpen: (
   );
 }
 
+/* ── INLINE ADD CARD (admin-style) ─────────────────────────────── */
+function InlineAddCard({ status, members, onSave, onCancel }: {
+  status: TaskStatus; members: WorkspaceMember[];
+  onSave: (data: { title: string; status: TaskStatus; priority?: TaskPriority; assignedToToolUserId?: number | null; dueDate?: string | null }) => Promise<void> | void;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [assignee, setAssignee] = useState<number | null>(null);
+  const [dueDate, setDueDate] = useState<string>("");
+  const [priority, setPriority] = useState<TaskPriority | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function commit() {
+    const t = title.trim();
+    if (!t || busy) return;
+    setBusy(true);
+    try {
+      await onSave({
+        title: t, status,
+        priority: priority ?? "medium",
+        assignedToToolUserId: assignee,
+        dueDate: dueDate || null,
+      });
+    } finally { setBusy(false); }
+  }
+
+  const assigneeName = assignee != null ? members.find(m => m.tool_user_id === assignee)?.name ?? "?" : null;
+
+  return (
+    <Card className="p-2.5 border-primary/40 bg-card">
+      <div className="flex items-start gap-1.5 mb-2">
+        <Input
+          autoFocus value={title}
+          onChange={e => setTitle(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") onCancel(); }}
+          placeholder="Task Name…"
+          className="h-7 text-sm border-0 px-1 focus-visible:ring-0 bg-transparent" />
+        <Button size="sm" className="h-6 px-2 text-[10px] gap-1 shrink-0" disabled={!title.trim() || busy} onClick={commit}>
+          <Send className="w-3 h-3" /> Save
+        </Button>
+      </div>
+      <div className="space-y-0.5 text-[11px]">
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className="w-full flex items-center gap-1.5 px-1 py-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground">
+              <UserCircle2 className="w-3 h-3" />
+              {assigneeName ? <span className="text-foreground">{assigneeName}</span> : <span>Add assignee</span>}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-52 p-1" align="start">
+            <button onClick={() => setAssignee(null)} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted">Unassigned</button>
+            {members.map(m => (
+              <button key={m.id} onClick={() => setAssignee(m.tool_user_id)}
+                className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted">
+                {m.name ?? m.email}
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className="w-full flex items-center gap-1.5 px-1 py-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground">
+              <Calendar className="w-3 h-3" />
+              {dueDate ? <span className="text-foreground">{new Date(dueDate).toLocaleDateString()}</span> : <span>Add dates</span>}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-2" align="start">
+            <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="h-8 text-xs" />
+            {dueDate && <Button size="sm" variant="ghost" className="h-6 text-[10px] mt-1 w-full" onClick={() => setDueDate("")}>Clear</Button>}
+          </PopoverContent>
+        </Popover>
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className="w-full flex items-center gap-1.5 px-1 py-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground">
+              <Flag className="w-3 h-3" />
+              {priority ? <span className="text-foreground capitalize">{priority}</span> : <span>Add Priority</span>}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-32 p-1" align="start">
+            {(["low","medium","high","urgent"] as TaskPriority[]).map(p => (
+              <button key={p} onClick={() => setPriority(p)}
+                className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted capitalize">{p}</button>
+            ))}
+          </PopoverContent>
+        </Popover>
+        <button onClick={onCancel} className="w-full flex items-center gap-1.5 px-1 py-1 rounded hover:bg-muted/50 text-muted-foreground hover:text-red-400">
+          <X className="w-3 h-3" /> Cancel
+        </button>
+      </div>
+    </Card>
+  );
+}
+
 /* ── BOARD VIEW (HTML5 drag-and-drop) ─────────────────────────────── */
-function BoardView({ tasks, onOpen, onMove, onQuickAdd, draggingId, setDraggingId }: {
-  tasks: WorkspaceTask[]; onOpen: (t: WorkspaceTask) => void;
+function BoardView({ tasks, members, onOpen, onMove, onQuickAdd, draggingId, setDraggingId }: {
+  tasks: WorkspaceTask[]; members: WorkspaceMember[]; onOpen: (t: WorkspaceTask) => void;
   onMove: (id: number, s: TaskStatus) => void;
-  onQuickAdd: (title: string, status: TaskStatus) => Promise<void> | void;
+  onQuickAdd: (data: { title: string; status: TaskStatus; priority?: TaskPriority; assignedToToolUserId?: number | null; dueDate?: string | null; }) => Promise<void> | void;
   draggingId: number | null; setDraggingId: (id: number | null) => void;
 }) {
   const [adding, setAdding] = useState<TaskStatus | null>(null);
-  const [draft, setDraft] = useState("");
-  async function commit(s: TaskStatus) {
-    const t = draft.trim();
-    if (t) await onQuickAdd(t, s);
-    setDraft(""); setAdding(null);
-  }
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
       {STATUSES.map(col => {
@@ -195,27 +283,30 @@ function BoardView({ tasks, onOpen, onMove, onQuickAdd, draggingId, setDraggingI
             onDrop={() => { if (draggingId != null) { onMove(draggingId, col.id); setDraggingId(null); } }}
             className="bg-muted/20 rounded-lg p-2 min-h-[200px]">
             <div className="flex items-center justify-between mb-2 px-1">
-              <Badge variant="outline" className={`text-[10px] ${col.color}`}>{col.label}</Badge>
-              <span className="text-xs text-muted-foreground">{colTasks.length}</span>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className={`text-[10px] ${col.color}`}>{col.label}</Badge>
+                <span className="text-xs text-muted-foreground">{colTasks.length}</span>
+              </div>
+              <button
+                onClick={() => setAdding(col.id)}
+                className="w-5 h-5 rounded hover:bg-muted/60 flex items-center justify-center text-muted-foreground hover:text-foreground"
+                title="Add task">
+                <Plus className="w-3.5 h-3.5" />
+              </button>
             </div>
             <div className="space-y-1.5">
-              {adding === col.id ? (
-                <div className="space-y-1">
-                  <Input
-                    autoFocus value={draft}
-                    onChange={e => setDraft(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter") commit(col.id); if (e.key === "Escape") { setDraft(""); setAdding(null); } }}
-                    placeholder="Task title…" className="h-8 text-xs" />
-                  <div className="flex gap-1">
-                    <Button size="sm" className="h-7 text-xs flex-1" onClick={() => commit(col.id)}>Add</Button>
-                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setDraft(""); setAdding(null); }}>Cancel</Button>
-                  </div>
-                </div>
-              ) : (
+              {adding === col.id && (
+                <InlineAddCard
+                  status={col.id} members={members}
+                  onCancel={() => setAdding(null)}
+                  onSave={async (data) => { await onQuickAdd(data); setAdding(null); }}
+                />
+              )}
+              {colTasks.length === 0 && adding !== col.id && (
                 <button
                   onClick={() => setAdding(col.id)}
-                  className="w-full text-left text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded border border-dashed border-border/40 hover:border-primary/40 hover:bg-muted/30 transition-colors">
-                  + Add task
+                  className="w-full text-left text-xs text-muted-foreground hover:text-foreground px-2 py-1.5 rounded hover:bg-muted/30 transition-colors flex items-center gap-1">
+                  <Plus className="w-3 h-3" /> Add Task
                 </button>
               )}
               {colTasks.map(t => (
