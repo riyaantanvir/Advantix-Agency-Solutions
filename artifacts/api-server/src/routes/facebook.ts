@@ -556,29 +556,31 @@ router.get("/facebook/stats", requireToolUser, async (req: Request, res: Respons
   const pageIds = pages.map(p => p.id);
 
   if (!pageIds.length) {
-    res.json({ totalMessages: 0, aiReplies: 0, templateReplies: 0, pendingReplies: 0, connectedPages: 0 });
+    res.json({ pages: 0, totalMessages: 0, repliedMessages: 0, failedMessages: 0, replyRate: 0, lastActivity: null });
     return;
   }
 
-  /* drizzle's db.execute returns a `{ rows: [...] }` result object, NOT an
-     iterable — destructuring it threw "(intermediate value) is not iterable"
-     and 500'd this endpoint on every poll. Read .rows directly. */
   const result = await db.execute(sql`
     SELECT
-      COUNT(*) AS total_messages,
-      COUNT(*) FILTER (WHERE is_replied = true AND reply_type = 'ai') AS ai_replies,
-      COUNT(*) FILTER (WHERE is_replied = true AND reply_type = 'template') AS template_replies,
-      COUNT(*) FILTER (WHERE is_replied = false AND error IS NULL) AS pending_replies
+      COUNT(*)                                                        AS total_messages,
+      COUNT(*) FILTER (WHERE is_replied = true)                       AS replied_messages,
+      COUNT(*) FILTER (WHERE error IS NOT NULL AND is_replied = false) AS failed_messages,
+      MAX(replied_at)                                                  AS last_activity
     FROM facebook_messages
     WHERE facebook_page_id = ANY(${sql`ARRAY[${sql.join(pageIds.map(i => sql`${i}`), sql`, `)}]::int[]`})
   `);
   const s = (result as any).rows?.[0] ?? {};
+  const total     = Number(s.total_messages)    || 0;
+  const replied   = Number(s.replied_messages)  || 0;
+  const failed    = Number(s.failed_messages)   || 0;
+  const replyRate = total > 0 ? Math.round((replied / total) * 100) : 0;
   res.json({
-    totalMessages: Number(s.total_messages),
-    aiReplies: Number(s.ai_replies),
-    templateReplies: Number(s.template_replies),
-    pendingReplies: Number(s.pending_replies),
-    connectedPages: pageIds.length,
+    pages:           pageIds.length,
+    totalMessages:   total,
+    repliedMessages: replied,
+    failedMessages:  failed,
+    replyRate,
+    lastActivity:    s.last_activity ?? null,
   });
 });
 
