@@ -158,10 +158,26 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
       return;
     }
 
-    /* Send reply via Facebook Graph API */
+    /* React on the customer's message first (best-effort — don't fail the
+       whole reply if reaction is rejected, just record it in the error column
+       so we still send the text). */
+    let reactionError: string | null = null;
+    try {
+      const reactRes = await fbPost(`/me/messages`, fbPage.pageAccessToken, {
+        recipient: { id: msgRow.senderId },
+        sender_action: "react",
+        payload: { message_id: msgRow.messageId, reaction: "love" },
+      });
+      const re = (reactRes as any).error;
+      if (re) reactionError = `reaction failed: ${re.message ?? JSON.stringify(re)}`;
+    } catch (e) {
+      reactionError = `reaction threw: ${e instanceof Error ? e.message : String(e)}`;
+    }
+
+    /* Send reply threaded to the customer's specific message via Graph API */
     const sendResult = await fbPost(`/me/messages`, fbPage.pageAccessToken, {
       recipient: { id: msgRow.senderId },
-      message: { text: replyText },
+      message: { text: replyText, reply_to: { mid: msgRow.messageId } },
       messaging_type: "RESPONSE",
     });
 

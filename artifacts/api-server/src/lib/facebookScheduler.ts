@@ -80,9 +80,19 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
       return;
     }
 
+    /* React on the customer's message first (best-effort) */
+    try {
+      await fbPost(`/me/messages`, fbPage.pageAccessToken, {
+        recipient: { id: msgRow.senderId },
+        sender_action: "react",
+        payload: { message_id: msgRow.messageId, reaction: "love" },
+      });
+    } catch { /* ignore — reactions can be unsupported, don't block the text reply */ }
+
+    /* Send reply threaded to the customer's specific message */
     const sendResult = await fbPost(`/me/messages`, fbPage.pageAccessToken, {
       recipient: { id: msgRow.senderId },
-      message: { text: replyText },
+      message: { text: replyText, reply_to: { mid: msgRow.messageId } },
       messaging_type: "RESPONSE",
     });
 
