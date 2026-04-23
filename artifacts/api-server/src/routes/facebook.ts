@@ -138,6 +138,9 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
 
     let replyText = "";
     let replyType = "template";
+    /* AI picks the reaction based on the customer's tone (love for warm,
+       like for neutral, none for abusive/profane). null = skip reaction. */
+    let aiReaction: "love" | "like" | "smile" | "wow" | "sad" | "angry" | null = null;
 
     if (matchedRule.replyMode === "template" && matchedRule.replyTemplate) {
       replyText = matchedRule.replyTemplate.replace("{name}", msgRow.senderName ?? "there");
@@ -145,6 +148,7 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
       const ai = await generateFbAutoReplyDetailed(matchedRule.aiInstructions, messageText);
       replyText = ai.text;
       replyType = "ai";
+      aiReaction = ai.reaction;
       if (!replyText) {
         await db.update(facebookMessagesTable)
           .set({ ruleId: matchedRule.id, error: `AI (${ai.provider}/${ai.model}): ${ai.error ?? "empty response"}` })
@@ -158,20 +162,18 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
       return;
     }
 
-    /* React on the customer's message first (best-effort — don't fail the
-       whole reply if reaction is rejected, just record it in the error column
-       so we still send the text). */
-    let reactionError: string | null = null;
-    try {
-      const reactRes = await fbPost(`/me/messages`, fbPage.pageAccessToken, {
-        recipient: { id: msgRow.senderId },
-        sender_action: "react",
-        payload: { message_id: msgRow.messageId, reaction: "love" },
-      });
-      const re = (reactRes as any).error;
-      if (re) reactionError = `reaction failed: ${re.message ?? JSON.stringify(re)}`;
-    } catch (e) {
-      reactionError = `reaction threw: ${e instanceof Error ? e.message : String(e)}`;
+    /* React on the customer's message based on AI's tone classification.
+       AI returns null reaction for abusive/profane/spam messages — we skip
+       the reaction in that case (no heart on insults). Best-effort: failure
+       here doesn't block the text reply. */
+    if (aiReaction) {
+      try {
+        await fbPost(`/me/messages`, fbPage.pageAccessToken, {
+          recipient: { id: msgRow.senderId },
+          sender_action: "react",
+          payload: { message_id: msgRow.messageId, reaction: aiReaction },
+        });
+      } catch { /* swallow — reactions are optional */ }
     }
 
     /* Send reply threaded to the customer's specific message via Graph API */

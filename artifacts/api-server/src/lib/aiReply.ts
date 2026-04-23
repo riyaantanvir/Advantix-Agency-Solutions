@@ -64,9 +64,49 @@ export async function getFbAutoReplyConfig(): Promise<FbAutoReplyConfig> {
  *  message so the user can see *why* nothing was sent. */
 export interface AiReplyResult {
   text: string;
+  /** Reaction to drop on the customer's message. `null` means "do not react"
+   *  (negative/abusive/inappropriate messages should NOT get a heart). */
+  reaction: "love" | "like" | "smile" | "wow" | "sad" | "angry" | null;
   error?: string;
   provider: AiProvider;
   model: string;
+}
+
+const VALID_REACTIONS = new Set(["love", "like", "smile", "wow", "sad", "angry"]);
+
+/** Append a directive that asks the model to pick a reaction based on the
+ *  customer's tone, then output the reply. Format:
+ *    [REACT:love] (or like/smile/wow/sad/angry/none)
+ *    <reply text on next lines>
+ *  We parse the first line, strip it, and pass the rest as the visible reply. */
+function withReactionDirective(instructions: string): string {
+  return `${instructions}
+
+---
+RESPONSE FORMAT (very important — follow exactly):
+Your FIRST line must be a reaction tag based on the customer's tone:
+  [REACT:love]   → warm/positive/grateful messages, compliments
+  [REACT:like]   → normal greetings, neutral questions, business inquiries
+  [REACT:smile]  → light/friendly/funny but not super warm
+  [REACT:wow]    → surprising news, big requests
+  [REACT:sad]    → customer expressing sadness, complaint, frustration
+  [REACT:angry]  → customer is angry but the anger is justified
+  [REACT:none]   → abusive language, profanity, insults, spam, scam attempts, harassment — do NOT react to these
+After the [REACT:...] line, write your normal reply on the next lines.
+Do NOT mention the reaction or the [REACT:...] tag in your reply text.`;
+}
+
+/** Strip and extract the leading [REACT:xxx] line. Returns the cleaned reply
+ *  text and the parsed reaction (or null if missing/invalid/none). */
+function parseReaction(raw: string): { text: string; reaction: AiReplyResult["reaction"] } {
+  const match = raw.match(/^\s*\[REACT:\s*([a-zA-Z]+)\s*\]\s*\n?/);
+  if (!match) return { text: raw.trim(), reaction: null };
+  const name = match[1].toLowerCase();
+  const cleaned = raw.slice(match[0].length).trim();
+  return {
+    text: cleaned,
+    reaction: VALID_REACTIONS.has(name) ? name as AiReplyResult["reaction"] : null,
+  };
 }
 
 /** Generate a reply using the configured provider. Always resolves — never
@@ -75,11 +115,12 @@ export async function generateFbAutoReplyDetailed(instructions: string, userMess
   const cfg = await getFbAutoReplyConfig();
   const meta = { provider: cfg.provider, model: cfg.model };
   if (!cfg.apiKey) {
-    return { text: "", error: `No API key for provider "${cfg.provider}". Add ${PROVIDER_KEY_NAMES[cfg.provider]} in admin → Integrations.`, ...meta };
+    return { text: "", reaction: null, error: `No API key for provider "${cfg.provider}". Add ${PROVIDER_KEY_NAMES[cfg.provider]} in admin → Integrations.`, ...meta };
   }
 
+  const wrappedInstructions = withReactionDirective(instructions);
   const messages = [
-    { role: "system", content: instructions },
+    { role: "system", content: wrappedInstructions },
     { role: "user", content: userMessage },
   ];
 
@@ -105,9 +146,11 @@ export async function generateFbAutoReplyDetailed(instructions: string, userMess
         }),
       });
       const d = await r.json() as { choices?: Array<{ message: { content: string } }>; error?: { message?: string } };
-      if (d.error) return { text: "", error: `OpenRouter: ${d.error.message ?? "unknown error"}`, ...meta };
-      const text = d.choices?.[0]?.message?.content?.trim() ?? "";
-      return text ? { text, ...meta } : { text: "", error: `OpenRouter returned no content for model "${cfg.model}". Check model name.`, ...meta };
+      if (d.error) return { text: "", reaction: null, error: `OpenRouter: ${d.error.message ?? "unknown error"}`, ...meta };
+      const raw = d.choices?.[0]?.message?.content?.trim() ?? "";
+      if (!raw) return { text: "", reaction: null, error: `OpenRouter returned no content for model "${cfg.model}". Check model name.`, ...meta };
+      const parsed = parseReaction(raw);
+      return { text: parsed.text, reaction: parsed.reaction, ...meta };
     }
 
     if (cfg.provider === "openai") {
@@ -117,21 +160,25 @@ export async function generateFbAutoReplyDetailed(instructions: string, userMess
         body: JSON.stringify({ model: cfg.model, max_tokens: 500, messages }),
       });
       const d = await r.json() as { choices?: Array<{ message: { content: string } }>; error?: { message?: string } };
-      if (d.error) return { text: "", error: `OpenAI: ${d.error.message ?? "unknown error"}`, ...meta };
-      const text = d.choices?.[0]?.message?.content?.trim() ?? "";
-      return text ? { text, ...meta } : { text: "", error: `OpenAI returned no content for model "${cfg.model}".`, ...meta };
+      if (d.error) return { text: "", reaction: null, error: `OpenAI: ${d.error.message ?? "unknown error"}`, ...meta };
+      const raw = d.choices?.[0]?.message?.content?.trim() ?? "";
+      if (!raw) return { text: "", reaction: null, error: `OpenAI returned no content for model "${cfg.model}".`, ...meta };
+      const parsed = parseReaction(raw);
+      return { text: parsed.text, reaction: parsed.reaction, ...meta };
     }
 
     if (cfg.provider === "anthropic") {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: cfg.model, max_tokens: 500, system: instructions, messages: [{ role: "user", content: userMessage }] }),
+        body: JSON.stringify({ model: cfg.model, max_tokens: 500, system: wrappedInstructions, messages: [{ role: "user", content: userMessage }] }),
       });
       const d = await r.json() as { content?: Array<{ text?: string }>; error?: { message?: string } };
-      if (d.error) return { text: "", error: `Anthropic: ${d.error.message ?? "unknown error"}`, ...meta };
-      const text = d.content?.[0]?.text?.trim() ?? "";
-      return text ? { text, ...meta } : { text: "", error: `Anthropic returned no content for model "${cfg.model}".`, ...meta };
+      if (d.error) return { text: "", reaction: null, error: `Anthropic: ${d.error.message ?? "unknown error"}`, ...meta };
+      const raw = d.content?.[0]?.text?.trim() ?? "";
+      if (!raw) return { text: "", reaction: null, error: `Anthropic returned no content for model "${cfg.model}".`, ...meta };
+      const parsed = parseReaction(raw);
+      return { text: parsed.text, reaction: parsed.reaction, ...meta };
     }
 
     if (cfg.provider === "gemini") {
@@ -139,15 +186,17 @@ export async function generateFbAutoReplyDetailed(instructions: string, userMess
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: instructions }] },
+          systemInstruction: { parts: [{ text: wrappedInstructions }] },
           contents: [{ role: "user", parts: [{ text: userMessage }] }],
           generationConfig: { maxOutputTokens: 500 },
         }),
       });
       const d = await r.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; error?: { message?: string } };
-      if (d.error) return { text: "", error: `Gemini: ${d.error.message ?? "unknown error"}`, ...meta };
-      const text = d.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
-      return text ? { text, ...meta } : { text: "", error: `Gemini returned no content for model "${cfg.model}".`, ...meta };
+      if (d.error) return { text: "", reaction: null, error: `Gemini: ${d.error.message ?? "unknown error"}`, ...meta };
+      const raw = d.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
+      if (!raw) return { text: "", reaction: null, error: `Gemini returned no content for model "${cfg.model}".`, ...meta };
+      const parsed = parseReaction(raw);
+      return { text: parsed.text, reaction: parsed.reaction, ...meta };
     }
 
     if (cfg.provider === "grok") {
@@ -157,14 +206,16 @@ export async function generateFbAutoReplyDetailed(instructions: string, userMess
         body: JSON.stringify({ model: cfg.model, max_tokens: 500, messages }),
       });
       const d = await r.json() as { choices?: Array<{ message: { content: string } }>; error?: { message?: string } };
-      if (d.error) return { text: "", error: `Grok: ${d.error.message ?? "unknown error"}`, ...meta };
-      const text = d.choices?.[0]?.message?.content?.trim() ?? "";
-      return text ? { text, ...meta } : { text: "", error: `Grok returned no content for model "${cfg.model}".`, ...meta };
+      if (d.error) return { text: "", reaction: null, error: `Grok: ${d.error.message ?? "unknown error"}`, ...meta };
+      const raw = d.choices?.[0]?.message?.content?.trim() ?? "";
+      if (!raw) return { text: "", reaction: null, error: `Grok returned no content for model "${cfg.model}".`, ...meta };
+      const parsed = parseReaction(raw);
+      return { text: parsed.text, reaction: parsed.reaction, ...meta };
     }
   } catch (err) {
-    return { text: "", error: `Network/runtime error: ${err instanceof Error ? err.message : String(err)}`, ...meta };
+    return { text: "", reaction: null, error: `Network/runtime error: ${err instanceof Error ? err.message : String(err)}`, ...meta };
   }
-  return { text: "", error: `Unknown provider "${cfg.provider}".`, ...meta };
+  return { text: "", reaction: null, error: `Unknown provider "${cfg.provider}".`, ...meta };
 }
 
 /** Backwards-compatible string-returning wrapper. Prefer the Detailed version. */

@@ -60,6 +60,7 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
 
     let replyText = "";
     let replyType = "template";
+    let aiReaction: "love" | "like" | "smile" | "wow" | "sad" | "angry" | null = null;
 
     if (matchedRule.replyMode === "template" && matchedRule.replyTemplate) {
       replyText = matchedRule.replyTemplate.replace("{name}", msgRow.senderName ?? "there");
@@ -67,6 +68,7 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
       const ai = await generateFbAutoReplyDetailed(matchedRule.aiInstructions, messageText);
       replyText = ai.text;
       replyType = "ai";
+      aiReaction = ai.reaction;
       if (!replyText) {
         await db.update(facebookMessagesTable)
           .set({ ruleId: matchedRule.id, error: `AI (${ai.provider}/${ai.model}): ${ai.error ?? "empty response"}` })
@@ -80,14 +82,17 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
       return;
     }
 
-    /* React on the customer's message first (best-effort) */
-    try {
-      await fbPost(`/me/messages`, fbPage.pageAccessToken, {
-        recipient: { id: msgRow.senderId },
-        sender_action: "react",
-        payload: { message_id: msgRow.messageId, reaction: "love" },
-      });
-    } catch { /* ignore — reactions can be unsupported, don't block the text reply */ }
+    /* React on the customer's message based on AI's tone classification.
+       null reaction = abusive/profane → don't put a heart on insults. */
+    if (aiReaction) {
+      try {
+        await fbPost(`/me/messages`, fbPage.pageAccessToken, {
+          recipient: { id: msgRow.senderId },
+          sender_action: "react",
+          payload: { message_id: msgRow.messageId, reaction: aiReaction },
+        });
+      } catch { /* ignore — reactions are optional, don't block the text reply */ }
+    }
 
     /* Send reply threaded to the customer's specific message */
     const sendResult = await fbPost(`/me/messages`, fbPage.pageAccessToken, {
