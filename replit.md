@@ -472,3 +472,34 @@ Configured via Admin → Notifications. Settings stored in `integrations` DB tab
 - `TELEGRAM_CHAT_ID` — Chat/channel ID
 - `TELEGRAM_NOTIFICATIONS_ENABLED` — `true`/`false`
 - `TELEGRAM_NOTIFY_TASK_CREATED` / `TELEGRAM_NOTIFY_TASK_ASSIGNED` / `TELEGRAM_NOTIFY_TASK_STATUS` — per-event toggles
+
+---
+
+## Manage Your Project Tool (Multi-Tenant Workspaces)
+
+User-facing project management tool at `/tools/project-management` — mirrors the admin Project Management module but multi-tenant (each tool_user can own/join multiple workspaces, Notion-style switcher).
+
+### Database tables (`lib/db/src/schema/`)
+- `workspaces` — id, name, slug, owner_tool_user_id, invite_code (quick-join)
+- `workspace_members` — role: owner|member; UNIQUE(workspace_id, tool_user_id)
+- `workspace_invites` — email + token (unique), expires_at
+- `workspace_projects`, `workspace_tasks` (status: todo|in_progress|review|done|cancelled), `workspace_task_comments`
+- `workspace_telegram_settings` — chat_ids, enabled, task_remind_interval_hours, work_hours_start/end + per-event toggles
+
+### Backend
+- `artifacts/api-server/src/routes/userWorkspaces.ts` — `/api/tools/workspaces` (list/CRUD/members/invites/quick-join + email invite)
+- `artifacts/api-server/src/routes/userProjects.ts` — projects/tasks/comments/telegram settings (member-gated; owner-only mutations where appropriate)
+- `artifacts/api-server/src/lib/workspaceTelegram.ts` — message builders (created/status/comment) + `notifyWorkspace` + 5-min overdue scheduler (per-workspace work-hours + interval respect)
+- Shared platform `TELEGRAM_BOT_TOKEN`. Notifications fire on task create, status change, new comment.
+- Admin oversight: `routes/adminUserWorkspaces.ts` → `/api/admin/user-workspaces` (list/inspect/force-delete; requireAdmin)
+
+### Frontend (advantix-website)
+- `src/lib/workspaceApi.ts` typed client + `src/context/WorkspaceContext.tsx` (multi-workspace, localStorage persistence)
+- `src/pages/tools/ProjectManagement.tsx` — wrapper with `WorkspaceSwitcher` + tabs (Projects / Members / Alerts) + sub-routes via wouter
+- `pages/tools/projectManagement/AllProjects.tsx`, `ProjectDetail.tsx` (List + Board with native HTML5 drag-drop, comments dialog), `MembersPage.tsx`, `TelegramSettings.tsx`
+- `pages/tools/WorkspaceInvite.tsx` exports `WorkspaceQuickJoin` + `WorkspaceEmailInvite` for public `/tools/workspace/join/:code` and `/tools/workspace/invite/:token` routes (outside ToolGuard)
+- Tile registered in `Tools.tsx` and `ToolsDashboard.tsx` with slug `project-management`
+
+### Frontend (advantix-admin)
+- `src/pages/UserWorkspaces.tsx` — list all workspaces with member/project/task counts, inspect dialog (members/projects/recent tasks), force-delete
+- Sidebar entry under Project Management → "User Workspaces" → `/pm/user-workspaces`

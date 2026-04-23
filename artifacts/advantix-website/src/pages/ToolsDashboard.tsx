@@ -4,7 +4,7 @@ import { Link, useLocation } from "wouter";
 import {
   Link2, BarChart2, Copy, CheckCircle, MessageSquare, ArrowRight,
   LogOut, Settings, Plus, Zap, Video, Sparkles, Bot, Heart,
-  Headphones, Facebook, Clock, User, ChevronRight, Send, Wrench, Wallet, MessageCircle,
+  Headphones, Facebook, Clock, User, ChevronRight, Send, Wrench, Wallet, MessageCircle, FolderKanban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toolsApi, type ShortUrl } from "@/lib/toolsApi";
@@ -54,6 +54,7 @@ const TOOLS = [
   { label: "Facebook Auto-Reply", desc: "Auto-reply comments & DMs", icon: Facebook, color: "text-blue-400", bg: "bg-blue-500/10", border: "hover:border-blue-500/40 hover:bg-blue-500/5", href: "/tools/facebook", external: false },
   { label: "Finance Management", desc: "Income, expenses & subscriptions", icon: Wallet, color: "text-emerald-400", bg: "bg-emerald-500/10", border: "hover:border-emerald-500/40 hover:bg-emerald-500/5", href: "/tools/finance", external: false },
   { label: "WhatsApp Assistant", desc: "Chat with assistant from any phone", icon: MessageCircle, color: "text-green-400", bg: "bg-green-500/10", border: "hover:border-green-500/40 hover:bg-green-500/5", href: "/tools/whatsapp", external: false },
+  { label: "Manage Your Project", desc: "Workspaces, tasks & team", icon: FolderKanban, color: "text-cyan-400", bg: "bg-cyan-500/10", border: "hover:border-cyan-500/40 hover:bg-cyan-500/5", href: "/tools/project-management", external: false },
   { label: "URL Shortener", desc: "Create & manage short links", icon: Link2, color: "text-indigo-400", bg: "bg-indigo-500/10", border: "hover:border-indigo-500/40 hover:bg-indigo-500/5", href: "/tools/url-shortener", external: false },
   { label: "Screen Recorder", desc: "Record up to 10 minutes", icon: Video, color: "text-purple-400", bg: "bg-purple-500/10", border: "hover:border-purple-500/40 hover:bg-purple-500/5", href: "/tools/screen-recorder", external: false },
   { label: "PDF to Audio", desc: "Listen to any document", icon: Headphones, color: "text-rose-400", bg: "bg-rose-500/10", border: "hover:border-rose-500/40 hover:bg-rose-500/5", href: "/tools/pdf-audio", external: false },

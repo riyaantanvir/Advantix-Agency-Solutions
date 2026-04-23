@@ -48,6 +48,9 @@ import personalGptRouter from "./personalGpt.js";
 import facebookRouter from "./facebook.js";
 import financeRouter from "./finance.js";
 import whatsappRouter from "./whatsapp.js";
+import userWorkspacesRouter from "./userWorkspaces.js";
+import userProjectsRouter from "./userProjects.js";
+import adminUserWorkspacesRouter from "./adminUserWorkspaces.js";
 
 const router: IRouter = Router();
 
@@ -102,5 +105,8 @@ router.use(personalGptRouter);
 router.use(facebookRouter);
 router.use(financeRouter);
 router.use(whatsappRouter);
+router.use(userWorkspacesRouter);
+router.use(userProjectsRouter);
+router.use(adminUserWorkspacesRouter);
 
 export default router;

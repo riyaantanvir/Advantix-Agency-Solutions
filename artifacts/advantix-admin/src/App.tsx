@@ -45,6 +45,7 @@ const AssignedToMePage  = lazy(() => import("./pages/AssignedToMePage"));
 const TodayOverduePage  = lazy(() => import("./pages/TodayOverduePage"));
 const PMRepliesPage     = lazy(() => import("./pages/PMRepliesPage"));
 const AssignedCommentsPage = lazy(() => import("./pages/AssignedCommentsPage"));
+const UserWorkspaces    = lazy(() => import("./pages/UserWorkspaces"));
 const SocialMedia = lazy(() => import("./pages/SocialMedia"));
 const SocialMediaSchedule = lazy(() => import("./pages/SocialMediaSchedule"));
 const SocialMediaSettings = lazy(() => import("./pages/SocialMediaSettings"));
@@ -315,6 +316,10 @@ function Router() {
 
       <Route path="/pm/all-projects">
         <ProtectedLayout><AllProjects /></ProtectedLayout>
+      </Route>
+
+      <Route path="/pm/user-workspaces">
+        <ProtectedLayout><UserWorkspaces /></ProtectedLayout>
       </Route>
 
       <Route path="/pm/projects/:id">

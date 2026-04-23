@@ -288,6 +288,9 @@ const SocialMediaTool = lazy(() => import("@/pages/SocialMediaTool"));
 const FacebookManager = lazy(() => import("@/pages/FacebookManager"));
 const FinancePage = lazy(() => import("@/pages/FinancePage"));
 const WhatsAppPage = lazy(() => import("@/pages/WhatsAppPage"));
+const ProjectManagement = lazy(() => import("@/pages/tools/ProjectManagement"));
+const WorkspaceInvitePage = lazy(() => import("@/pages/tools/WorkspaceInvite").then(m => ({ default: m.WorkspaceEmailInvite })));
+const WorkspaceQuickJoinPage = lazy(() => import("@/pages/tools/WorkspaceInvite").then(m => ({ default: m.WorkspaceQuickJoin })));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
@@ -365,6 +368,14 @@ function Router() {
               <Route path="/tools/finance">
                 <ToolGuard slug="finance"><FinancePage /></ToolGuard>
               </Route>
+              <Route path="/tools/project-management/:rest*">
+                <ToolGuard slug="project-management"><ProjectManagement /></ToolGuard>
+              </Route>
+              <Route path="/tools/project-management">
+                <ToolGuard slug="project-management"><ProjectManagement /></ToolGuard>
+              </Route>
+              <Route path="/tools/workspace/join/:code"><WorkspaceQuickJoinPage /></Route>
+              <Route path="/tools/workspace/invite/:token"><WorkspaceInvitePage /></Route>
               <Route path="/tools/whatsapp">
                 <ToolGuard slug="whatsapp"><WhatsAppPage /></ToolGuard>
               </Route>

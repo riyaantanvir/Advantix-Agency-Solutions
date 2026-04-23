@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { Link2, Video, ArrowRight, Zap, Sparkles, Headphones, Lock, Terminal, Share2, Wallet, MessageCircle } from "lucide-react";
+import { Link2, Video, ArrowRight, Zap, Sparkles, Headphones, Lock, Terminal, Share2, Wallet, MessageCircle, FolderKanban } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { useToolsUser } from "@/context/ToolsUserContext";
 
@@ -78,6 +78,17 @@ const tools = [
     href: "/tools/finance",
     color: "text-emerald-400",
     bg: "bg-emerald-500/10",
+    badge: "New",
+    external: false,
+  },
+  {
+    slug: "project-management",
+    icon: FolderKanban,
+    name: "Manage Your Project",
+    description: "Multi-tenant workspaces with projects, tasks (list + Kanban board), assignees, comments and Telegram alerts. Invite team members by email or share a quick-join link.",
+    href: "/tools/project-management",
+    color: "text-cyan-400",
+    bg: "bg-cyan-500/10",
     badge: "New",
     external: false,
   },

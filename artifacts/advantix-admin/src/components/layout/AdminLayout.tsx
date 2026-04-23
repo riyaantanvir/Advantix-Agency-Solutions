@@ -87,6 +87,7 @@ const navItems: NavItem[] = [
       { path: "/pm/my-tasks", label: "My Tasks", icon: ClipboardList },
       { path: "/pm/assigned-to-me", label: "Assigned to me", icon: UserCheck },
       { path: "/pm/today-overdue", label: "Today & Overdue", icon: CalendarClock },
+      { path: "/pm/user-workspaces", label: "User Workspaces", icon: FolderKanban },
     ],
   },
   {
