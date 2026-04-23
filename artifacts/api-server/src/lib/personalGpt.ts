@@ -1138,6 +1138,32 @@ export async function deleteTask(id: number): Promise<boolean> {
   return r.rows.length > 0;
 }
 
+/**
+ * Detect natural-language "show me my tasks" queries.
+ * Returns true when the user is asking to SEE the task list (not create/done/cancel).
+ * Examples: "any pending tasks?", "task list", "ki ki task ache", "tasks gula dekhao"
+ */
+export function detectTaskListQueryIntent(text: string): boolean {
+  const t = text.trim().toLowerCase();
+
+  /* explicit show/list request */
+  if (/\b(show|list|dekhao|dekha[ow]?|dikhao|dkhao)\b.*\b(task|kaj)\b/i.test(t)) return true;
+  if (/\b(task|kaj)\b.*\b(show|list|dekhao|dekha[ow]?|dikhao|gula|gulo|list)\b/i.test(t)) return true;
+
+  /* "any pending tasks?", "kono pending task ache?", "pending tasks ki ache?" */
+  if (/\b(any|kono|ki\s*ki?|koto|koto\s*gulo)\b.*\b(pending|active|open)?\s*(task|kaj)\b/i.test(t)) return true;
+  if (/\b(pending|active|open)\s*(task|kaj)\b/i.test(t)) return true;
+
+  /* "task ache?", "kaj ache?", "tasks ki ache?" */
+  if (/\b(task|kaj)\s*(ki|ache|gula|gulo|list|আছে|কী)?\s*\??$/i.test(t)) return true;
+  if (/^(task|tasks|kaj)\s*\??$/i.test(t)) return true;
+
+  /* Bangla script */
+  if (/কাজ|টাস্ক/.test(t) && /আছে|তালিকা|দেখ|কী/.test(t)) return true;
+
+  return false;
+}
+
 export type TaskActionIntent =
   | { action: "done" | "cancel"; scope: "all" }
   | { action: "done" | "cancel"; scope: "ids"; ids: number[] }
@@ -2587,6 +2613,22 @@ export async function runPersonalGptTurn(userText: string, opts: TurnOptions): P
   const settings = await loadSettings();
   if (!settings.enabled) throw new Error("Personal GPT is disabled in settings");
 
+  /* ── Natural-language task LIST query (web chat) ────────────────────────
+     "any pending tasks?", "task list dekhao" → show real DB tasks. */
+  if (detectTaskListQueryIntent(userText)) {
+    const tasks = await listTasks({ status: "pending", limit: 100 }).catch(() => [] as Task[]);
+    const reply = tasks.length
+      ? `📋 তোমার pending tasks (${tasks.length}টা):\n\n` +
+        tasks.map(t => `• #${t.id} — ${t.title}${t.dueAt ? `\n   📅 ${formatLocalTime(t.dueAt)}` : ""}`).join("\n") +
+        `\n\n_Done করতে:_ \`/done <id>\`  _Cancel করতে:_ \`/cancel <id>\``
+      : "✅ কোনো pending task নেই! সব clear.";
+    if (opts.persist) {
+      await appendTurn("user", userText, opts.source).catch(() => {});
+      await appendTurn("assistant", reply, opts.source).catch(() => {});
+    }
+    return { reply, personalityUpdated: false };
+  }
+
   /* ── Natural-language task done/cancel (web chat) ───────────────────────
      Catches "sob done", "bazar cancel", "1 done", "sob task cancel" etc.
      BEFORE the main LLM so the action actually hits the DB. */
@@ -2680,6 +2722,21 @@ export async function runPersonalGptTurnStream(
 
     const settings = await loadSettings();
     if (!settings.enabled) throw new Error("Personal GPT is disabled in settings");
+
+    /* ── Natural-language task LIST query (streaming path) ──────────────── */
+    if (detectTaskListQueryIntent(userText)) {
+      const tasks = await listTasks({ status: "pending", limit: 100 }).catch(() => [] as Task[]);
+      const reply = tasks.length
+        ? `📋 তোমার pending tasks (${tasks.length}টা):\n\n` +
+          tasks.map(t => `• #${t.id} — ${t.title}${t.dueAt ? `\n   📅 ${formatLocalTime(t.dueAt)}` : ""}`).join("\n") +
+          `\n\n_Done করতে:_ \`/done <id>\`  _Cancel করতে:_ \`/cancel <id>\``
+        : "✅ কোনো pending task নেই! সব clear.";
+      onEvent({ type: "chunk", text: reply });
+      await appendTurn("user", userText, source).catch(() => {});
+      await appendTurn("assistant", reply, source).catch(() => {});
+      onEvent({ type: "done", reply, personalityUpdated: false });
+      return;
+    }
 
     /* ── Natural-language task done/cancel (streaming path) ─────────────── */
     const nlIntentStream = detectTaskActionIntent(userText);
@@ -3157,6 +3214,17 @@ export async function startPersonalGptBot(): Promise<void> {
         const t = await cancelTask(id).catch(() => null);
         if (!t) { await bot.sendMessage(chatId, `⚠️ Task #${id} not found.`); return; }
         await bot.sendMessage(chatId, `🗑️ Cancelled — *${t.title}* (#${t.id})`, { parse_mode: "Markdown" }).catch(() => {});
+        return;
+      }
+
+      /* ── Natural-language task LIST query ─────────────────────────────
+         "any pending tasks?", "task list", "ki ki task ache" etc.
+         → show real DB tasks, not AI memory. */
+      if (detectTaskListQueryIntent(text)) {
+        const tasks = await listTasks({ status: "pending", limit: 100 }).catch(() => [] as Task[]);
+        await bot.sendMessage(chatId, formatTasksList(tasks), { parse_mode: "Markdown" }).catch(() => {});
+        await appendTurn("user", text, "telegram").catch(() => {});
+        await appendTurn("assistant", `[Showed ${tasks.filter(t => t.status === "pending").length} pending task(s)]`, "telegram").catch(() => {});
         return;
       }
 
