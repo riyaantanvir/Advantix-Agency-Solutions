@@ -792,7 +792,7 @@ router.post("/facebook/check-now", requireToolUser, async (req: Request, res: Re
 
     try {
       const convRes = await fbGet(
-        `/me/conversations?fields=messages{message,from,created_time,id}&limit=10`,
+        `/me/conversations?platform=messenger&fields=messages{message,from,created_time,id}&limit=10`,
         page.pageAccessToken
       ) as {
         data?: Array<{ messages?: { data?: Array<{ id: string; message: string; from: { id: string; name: string }; created_time: string }> } }>;

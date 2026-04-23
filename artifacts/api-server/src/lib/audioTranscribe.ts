@@ -31,7 +31,7 @@ export async function transcribeAudio(audioBuffer: Buffer, mimeType: string): Pr
   const base64Audio = audioBuffer.toString("base64");
 
   const payload = {
-    model: "google/gemini-2.0-flash",
+    model: "google/gemini-2.0-flash-001",
     messages: [
       {
         role: "user",
