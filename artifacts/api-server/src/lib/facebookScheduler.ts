@@ -94,10 +94,12 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
       } catch { /* ignore — reactions are optional, don't block the text reply */ }
     }
 
-    /* Send reply threaded to the customer's specific message */
+    /* Send reply via Facebook Graph API. Messenger Send API rejects `reply_to`
+       inside `message` for Page→user replies, so we just send the text. The
+       reaction we placed above visually links it to the customer's message. */
     const sendResult = await fbPost(`/me/messages`, fbPage.pageAccessToken, {
       recipient: { id: msgRow.senderId },
-      message: { text: replyText, reply_to: { mid: msgRow.messageId } },
+      message: { text: replyText },
       messaging_type: "RESPONSE",
     });
 

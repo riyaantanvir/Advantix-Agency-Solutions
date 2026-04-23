@@ -176,10 +176,14 @@ async function processAndReply(fbPageDbId: number, messageDbId: number, messageT
       } catch { /* swallow — reactions are optional */ }
     }
 
-    /* Send reply threaded to the customer's specific message via Graph API */
+    /* Send reply via Facebook Graph API.
+       NOTE: Messenger's Send API does NOT accept `reply_to` inside `message`
+       for Page→user replies (returns "Invalid keys reply_to" error). The
+       AI-picked reaction we drop on the customer's message above already
+       provides the visual link between their message and our response. */
     const sendResult = await fbPost(`/me/messages`, fbPage.pageAccessToken, {
       recipient: { id: msgRow.senderId },
-      message: { text: replyText, reply_to: { mid: msgRow.messageId } },
+      message: { text: replyText },
       messaging_type: "RESPONSE",
     });
 
