@@ -35,6 +35,7 @@ export type PersonalGptSettings = {
   hasTelegramToken: boolean;
   telegramChatId: string | null;
   enabled: boolean;
+  telegramEnabled: boolean;
 };
 
 type RecentTurn = { role: "user" | "assistant"; content: string };
@@ -125,7 +126,7 @@ function normalizePersonality(input: unknown): Personality {
 
 export async function loadSettings(): Promise<PersonalGptSettings & { telegramBotToken: string | null; taskRemindIntervalHours: number; workHoursStart: number; workHoursEnd: number }> {
   const r = await db.execute(sql`
-    SELECT system_prompt, personality, telegram_bot_token, telegram_chat_id, enabled,
+    SELECT system_prompt, personality, telegram_bot_token, telegram_chat_id, enabled, telegram_enabled,
            task_remind_interval_hours, work_hours_start, work_hours_end
     FROM personal_gpt_settings WHERE id = 1
   `);
@@ -135,6 +136,7 @@ export async function loadSettings(): Promise<PersonalGptSettings & { telegramBo
     telegram_bot_token: string | null;
     telegram_chat_id: string | null;
     enabled: boolean;
+    telegram_enabled: boolean | null;
     task_remind_interval_hours: number | null;
     work_hours_start: number | null;
     work_hours_end: number | null;
@@ -147,6 +149,7 @@ export async function loadSettings(): Promise<PersonalGptSettings & { telegramBo
       hasTelegramToken: false,
       telegramChatId: null,
       enabled: true,
+      telegramEnabled: true,
       taskRemindIntervalHours: 2,
       workHoursStart: 15,
       workHoursEnd: 4,
@@ -159,6 +162,7 @@ export async function loadSettings(): Promise<PersonalGptSettings & { telegramBo
     hasTelegramToken: Boolean(row.telegram_bot_token),
     telegramChatId: row.telegram_chat_id,
     enabled: Boolean(row.enabled),
+    telegramEnabled: row.telegram_enabled == null ? true : Boolean(row.telegram_enabled),
     taskRemindIntervalHours: Math.max(1, Number(row.task_remind_interval_hours ?? 2)),
     workHoursStart: Number(row.work_hours_start ?? 15),
     workHoursEnd: Number(row.work_hours_end ?? 4),
@@ -171,6 +175,7 @@ export async function updateSettings(patch: {
   telegramBotToken?: string | null;
   telegramChatId?: string | null;
   enabled?: boolean;
+  telegramEnabled?: boolean;
   taskRemindIntervalHours?: number;
   workHoursStart?: number;
   workHoursEnd?: number;
@@ -191,6 +196,9 @@ export async function updateSettings(patch: {
   }
   if (patch.enabled !== undefined) {
     sets.push(sql`enabled = ${patch.enabled}`);
+  }
+  if (patch.telegramEnabled !== undefined) {
+    sets.push(sql`telegram_enabled = ${patch.telegramEnabled}`);
   }
   if (patch.taskRemindIntervalHours !== undefined) {
     sets.push(sql`task_remind_interval_hours = ${Math.max(1, Math.round(patch.taskRemindIntervalHours))}`);
@@ -948,6 +956,12 @@ export async function extractReminderIntent(userText: string, apiKey: string): P
    scheduler doesn't need to re-instantiate either. Idempotent: only one
    poller per process. */
 let reminderPollerHandle: NodeJS.Timeout | null = null;
+export function stopReminderScheduler(): void {
+  if (reminderPollerHandle) {
+    clearInterval(reminderPollerHandle);
+    reminderPollerHandle = null;
+  }
+}
 export function startReminderScheduler(
   bot: TelegramBot,
   defaultChatId: number,
@@ -1491,6 +1505,12 @@ export async function extractTaskListIntent(userText: string, apiKey: string): P
    send a reminder ping and bump the counter. */
 const TASK_POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 let taskPollerHandle: NodeJS.Timeout | null = null;
+export function stopTaskScheduler(): void {
+  if (taskPollerHandle) {
+    clearInterval(taskPollerHandle);
+    taskPollerHandle = null;
+  }
+}
 
 /* Is `nowDate` (in REMINDER_TZ) inside the [start, end) hour window?
    If end <= start, the window WRAPS past midnight (e.g. 15→4 means
@@ -3029,9 +3049,18 @@ export async function startPersonalGptBot(): Promise<void> {
     pgBotInstance = null;
     pgBotUsername = null;
   }
+  /* Always stop background schedulers before deciding whether to restart them.
+     They hold the bot reference captured at start; if we re-enable later we'll
+     start fresh ones bound to the new bot instance. */
+  stopReminderScheduler();
+  stopTaskScheduler();
 
   if (!settings.enabled) {
     logger.info("Personal GPT bot not started: feature is disabled.");
+    return;
+  }
+  if (!settings.telegramEnabled) {
+    logger.info("Personal GPT bot not started: Telegram connection is disabled.");
     return;
   }
   if (!settings.telegramBotToken || !settings.telegramChatId) {

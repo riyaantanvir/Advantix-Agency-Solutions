@@ -469,7 +469,8 @@ export async function runMigrations(): Promise<void> {
     ALTER TABLE personal_gpt_settings
       ADD COLUMN IF NOT EXISTS work_hours_start integer NOT NULL DEFAULT 15,
       ADD COLUMN IF NOT EXISTS work_hours_end integer NOT NULL DEFAULT 4,
-      ADD COLUMN IF NOT EXISTS task_remind_interval_hours integer NOT NULL DEFAULT 2
+      ADD COLUMN IF NOT EXISTS task_remind_interval_hours integer NOT NULL DEFAULT 2,
+      ADD COLUMN IF NOT EXISTS telegram_enabled boolean NOT NULL DEFAULT true
   `);
 
   // ── AI tables ─────────────────────────────────────────────────────────────

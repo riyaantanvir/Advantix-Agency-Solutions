@@ -54,6 +54,7 @@ router.get("/admin/personal-gpt/settings", requireAdmin, async (_req: Request, r
       hasTelegramToken:          s.hasTelegramToken,
       telegramChatId:            s.telegramChatId,
       enabled:                   s.enabled,
+      telegramEnabled:           s.telegramEnabled,
       botRunning:                isPersonalGptBotRunning(),
       taskRemindIntervalHours:   s.taskRemindIntervalHours,
       workHoursStart:            s.workHoursStart,
@@ -74,6 +75,7 @@ router.put("/admin/personal-gpt/settings", requireAdmin, async (req: Request, re
       telegramBotToken?: string | null;
       telegramChatId?: string | null;
       enabled?: boolean;
+      telegramEnabled?: boolean;
       taskRemindIntervalHours?: number;
       workHoursStart?: number;
       workHoursEnd?: number;
@@ -84,6 +86,7 @@ router.put("/admin/personal-gpt/settings", requireAdmin, async (req: Request, re
     if (typeof body.systemPrompt === "string") patch.systemPrompt = body.systemPrompt.slice(0, 8000);
     if (body.personality && typeof body.personality === "object") patch.personality = body.personality;
     if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
+    if (typeof body.telegramEnabled === "boolean") patch.telegramEnabled = body.telegramEnabled;
 
     /* Token: empty string or explicit null both clear the token. Anything
        else must look like a Telegram bot token (digits:alnum-) — basic guard
@@ -125,7 +128,7 @@ router.put("/admin/personal-gpt/settings", requireAdmin, async (req: Request, re
 
     /* Hot-restart the bot whenever Telegram credentials OR the enabled flag change.
        Disabling must actually stop polling, not just refuse web turns. */
-    if (body.telegramBotToken !== undefined || body.telegramChatId !== undefined || body.enabled !== undefined) {
+    if (body.telegramBotToken !== undefined || body.telegramChatId !== undefined || body.enabled !== undefined || body.telegramEnabled !== undefined) {
       startPersonalGptBot().catch(err => logger.warn({ err }, "Personal GPT bot restart failed"));
     }
 
